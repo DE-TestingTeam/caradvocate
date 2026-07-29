@@ -18,9 +18,30 @@
     --muted-foreground: 0 0% 45.1%;
     --accent: 0 0% 96.1%;
     --accent-foreground: 0 0% 9%;
-    --destructive: 0 72% 51%;
+    /*
+     * A brick red rather than a pillar-box one. The app shows bad news often --
+     * recalls, overdue maintenance, overpriced quotes -- and a neon red repeated
+     * down a list stops registering as a signal.
+     *
+     * Desaturating and darkening together keeps the tints exactly as visible as
+     * before (bg-destructive/15 measures 1.263 against white, was 1.261) while
+     * improving white-on-solid from a marginal 4.59:1 to 6.09:1.
+     */
+    --destructive: 0 52% 44%;
     --destructive-foreground: 0 0% 98%;
+    /*
+     * Amber needs two values, because one cannot do both jobs.
+     *
+     * `--warning` is a *fill*: pale and saturated, so a tint of it reads as amber
+     * without overpowering the red beside it. As a foreground it measures 2.14:1 on
+     * white -- an icon drawn in it is nearly invisible.
+     *
+     * `--warning-strong` is the foreground: darkened to 4.18:1 so a 16px glyph is
+     * legible. Darkening `--warning` itself instead would fix the icon and then make
+     * the medium badge tint louder than the high one, inverting the hierarchy.
+     */
     --warning: 38 92% 50%;
+    --warning-strong: 32 75% 40%;
     --warning-foreground: 0 0% 9%;
     --border: 0 0% 89.8%;
     --input: 0 0% 89.8%;

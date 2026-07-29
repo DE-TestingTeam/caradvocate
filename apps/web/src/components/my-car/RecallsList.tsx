@@ -1,7 +1,7 @@
 import { AlertTriangle, ShieldCheck } from 'lucide-react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Badge } from '@/components/ui/badge';
-import { formatLongDate, formatRecallComponent, formatRecallProse } from '@/lib/format';
+import { formatLongDate, formatRecallComponent, formatNhtsaProse } from '@/lib/format';
 import type { Recall, RecallReport } from '@caradvocate/shared';
 
 /**
@@ -34,8 +34,10 @@ export function RecallsList({ report }: { report: RecallReport }) {
         <li key={recall.id} className="rounded-lg border p-3">
           <div className="flex items-start justify-between gap-3">
             <span className="flex min-w-0 items-center gap-2">
+              {/* warning-strong, not warning: the fill amber measures 2.14:1 on
+                  white and all but disappears at this size. */}
               <AlertTriangle
-                className={`h-4 w-4 shrink-0 ${recall.severity === 'high' ? 'text-destructive' : 'text-muted-foreground'}`}
+                className={`h-4 w-4 shrink-0 ${recall.parkIt ? 'text-destructive' : 'text-warning-strong'}`}
               />
               <span className="min-w-0 font-medium">{formatRecallComponent(recall.component)}</span>
             </span>
@@ -44,7 +46,7 @@ export function RecallsList({ report }: { report: RecallReport }) {
 
           {/* The risk is never collapsed. It is the reason to act, and someone
               scanning this list is deciding whether to drive tomorrow. */}
-          {recall.consequence && <p className="mt-2 text-sm">{formatRecallProse(recall.consequence)}</p>}
+          {recall.consequence && <p className="mt-2 text-sm">{formatNhtsaProse(recall.consequence)}</p>}
 
           <p className="mt-2 text-xs text-muted-foreground">
             {/* The campaign number is what a dealer needs to look the recall up. */}
@@ -57,8 +59,8 @@ export function RecallsList({ report }: { report: RecallReport }) {
               <AccordionItem value="detail" className="border-0">
                 <AccordionTrigger className="py-2 text-sm">What to do about it</AccordionTrigger>
                 <AccordionContent className="space-y-3 pb-1 text-sm">
-                  {recall.summary && <Detail label="What is wrong">{formatRecallProse(recall.summary)}</Detail>}
-                  {recall.remedy && <Detail label="Remedy">{formatRecallProse(recall.remedy)}</Detail>}
+                  {recall.summary && <Detail label="What is wrong">{formatNhtsaProse(recall.summary)}</Detail>}
+                  {recall.remedy && <Detail label="Remedy">{formatNhtsaProse(recall.remedy)}</Detail>}
                 </AccordionContent>
               </AccordionItem>
             </Accordion>
@@ -88,6 +90,9 @@ export function RecallsList({ report }: { report: RecallReport }) {
  * different things to someone deciding whether to drive to work tomorrow.
  */
 function UrgencyBadge({ recall }: { recall: Recall }) {
+  // Red is reserved for "do not drive this". Park-outside is serious but strictly
+  // less restrictive -- the car is still drivable, it just should not sit next to a
+  // building -- so it takes the middle colour rather than the same red.
   if (recall.parkIt) {
     return (
       <Badge variant="destructive" className="shrink-0">
@@ -97,7 +102,7 @@ function UrgencyBadge({ recall }: { recall: Recall }) {
   }
   if (recall.parkOutside) {
     return (
-      <Badge variant="destructive" className="shrink-0">
+      <Badge variant="warning" className="shrink-0">
         Park outside
       </Badge>
     );

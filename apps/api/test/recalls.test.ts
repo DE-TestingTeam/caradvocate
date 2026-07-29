@@ -14,6 +14,7 @@ import { getModelRecalls, setRecallFetcherForTesting } from '../src/services/rec
 import type { FetchedRecall } from '../src/services/recalls.js';
 import type { Database } from '../src/db/index.js';
 import { check, section } from './assert.js';
+import { goOffline } from './offline.js';
 import { startTestServer } from './server.js';
 
 /** Captured from api.nhtsa.gov for a 2019 Honda Civic. */
@@ -229,7 +230,7 @@ export async function run(): Promise<void> {
     const lowercased = await getModelRecalls(db as unknown as Database, { year: 2019, make: 'honda', model: 'civic' }, new Date());
     check('a differently-cased lookup finds the same mirror', lowercased.recalls.length === 1);
   } finally {
-    setRecallFetcherForTesting(undefined);
+    goOffline();
     await close();
   }
 }

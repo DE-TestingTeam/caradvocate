@@ -18,6 +18,7 @@ import { createApp } from '../apps/api/src/app.js';
 import { assessments, serviceRecords, users, vehicles } from '../apps/api/src/db/schema.js';
 import { createTestDb } from '../apps/api/test/harness.js';
 import { HttpError } from '../apps/api/src/lib/httpError.js';
+import { setComplaintFetcherForTesting } from '../apps/api/src/services/complaintSync.js';
 import { setRecallFetcherForTesting } from '../apps/api/src/services/recallSync.js';
 import type { Database } from '../apps/api/src/db/index.js';
 
@@ -49,8 +50,8 @@ console.log('Starting the API on PGlite...');
 const { db, close: closeDb } = await createTestDb();
 
 /**
- * The one thing stubbed in this suite, and only because it is not part of the
- * contract under test: NHTSA is a third party, so a live call would make the run
+ * The only things stubbed in this suite, and only because they are not part of the
+ * contract under test: NHTSA is a third party, so live calls would make the run
  * depend on their uptime and on which campaigns they happen to list today.
  *
  * Everything downstream of the fetch is real -- the sync, the mirror, the mapper,
@@ -79,6 +80,38 @@ setRecallFetcherForTesting(async () => [
     parkOutside: false,
     reportedOn: '2011-12-19',
   },
+]);
+
+/**
+ * Aggregated owner complaints. One group carries casualties so the high-severity
+ * path renders, one is a repeated-but-harmless pattern, and one has too few reports
+ * to be called a fault.
+ */
+setComplaintFetcherForTesting(async () => [
+  {
+    component: 'STEERING',
+    reportCount: 31,
+    crashCount: 3,
+    fireCount: 0,
+    injuryCount: 1,
+    deathCount: 0,
+    latestIncidentOn: '2024-11-24',
+    // One sentence-case account and one in the capitals many owners type in.
+    quotes: [
+      { text: 'The steering locked up without warning and I hit a guard rail.', incidentOn: '2024-11-24' },
+      { text: 'STEERING WHEEL SHUDDERS BADLY ABOVE FORTY MILES PER HOUR.', incidentOn: '2023-03-08' },
+    ],
+  },
+  {
+    component: 'SERVICE BRAKES',
+    reportCount: 6,
+    crashCount: 0,
+    fireCount: 0,
+    injuryCount: 0,
+    deathCount: 0,
+    quotes: [{ text: 'Brake pedal travels almost to the floor before anything happens.' }],
+  },
+  { component: 'TRIM', reportCount: 2, crashCount: 0, fireCount: 0, injuryCount: 0, deathCount: 0, quotes: [] },
 ]);
 
 let actingEmail = 'alex.rivera@email.com';
@@ -206,7 +239,27 @@ const check = (name: string, pass: boolean, detail = '') => checks.push({ name, 
   check('My Car masks the VIN from the real column', body.includes('2HGFC2F53KH••••••'));
   check('My Car renders the trade-in range', body.includes('Trade in range $12,100–$14,600'));
   check('maintenance comes through with its recall badge', body.includes('Fuel Pump Control Unit') && body.includes('Open recall'));
-  check('model known issues come through', body.includes('Transmission hesitation under load'));
+  check('curated known issues come through', body.includes('Transmission hesitation under load'));
+
+  // Owner complaints, aggregated by component and labelled with their counts.
+  check('a complained-about system is rendered, cased for reading', body.includes('Steering'));
+  check('the report count is shown rather than asserted as a fault', body.includes('31 owner reports'));
+  check('casualties recorded by NHTSA are surfaced', body.includes('3 involved a crash') && body.includes('1 involved an injury'));
+  check('a two-report system is not dressed up as a pattern', body.includes('2 owner reports'));
+  check('the list states where the counts come from', body.includes('complaints owners filed with NHTSA'));
+
+  // The prose stays at NHTSA. The section shows the shape of the problem and links
+  // out, rather than reproducing paragraphs per report.
+  check('complaint prose is not reproduced in the page', !body.includes('The steering locked up without warning'));
+  check('the link is labelled for what it gives you', body.includes('Read them on NHTSA'));
+
+  const nhtsaLink = dom.window.document.querySelector('a[href*="nhtsa.gov/vehicle"]');
+  check(
+    'it points at the NHTSA page for this exact vehicle',
+    nhtsaLink?.getAttribute('href') === 'https://www.nhtsa.gov/vehicle/2019/HONDA/CIVIC',
+    nhtsaLink?.getAttribute('href') ?? 'no link found',
+  );
+  check('and opens in a new tab without leaking the referrer', nhtsaLink?.getAttribute('rel')?.includes('noopener') === true);
 
   // Recalls: fetched, mirrored, mapped and rendered.
   check('a recall component is cased for reading, not shouted', body.includes('Air Bags · Frontal · Driver Side · Inflator Module'));

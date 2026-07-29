@@ -32,13 +32,22 @@ same engine the test suites use.
 It is a development convenience, not a deployment target, and the API refuses to
 start with it when `NODE_ENV=production`.
 
-Two caveats worth knowing:
+Three caveats worth knowing:
 
 - **No external client can connect.** It lives in the API process, so Postico,
   TablePlus and `psql` cannot attach. Use the app, or add a throwaway route.
 - **One connection.** Fine for one dev; not a load-testing environment.
+- **It does not survive a hard kill.** Because Postgres runs *inside* the API
+  process, killing that process mid-write can leave `.pgdata` in a state PGlite
+  cannot reopen — the database is then unrecoverable without a native Postgres 16
+  to dump it. `apps/api/src/index.ts` handles SIGTERM and SIGINT and closes the
+  database before exiting, which makes `kill`, `pkill` and Ctrl-C safe. **`kill -9`
+  is not, and never will be.** Real Postgres has none of this fragility.
 
 To wipe it and start over: `rm -rf .pgdata && npm run db:setup`.
+
+For anything you would be annoyed to lose, use a real Postgres — see below. PGlite
+is for getting started, not for data you care about.
 
 ### Switching to Supabase
 
@@ -232,6 +241,76 @@ Older campaigns are stored by NHTSA IN FULL CAPITALS, so `formatRecallProse`
 rewrites overwhelmingly-uppercase text to sentence case for display and leaves
 modern sentence-case prose untouched.
 
+## Known issues
+
+"Known Issues for Your Model" has two sources, and the UI distinguishes them
+because they carry very different weight:
+
+- **Curated** entries are written by us. There are three, for the seeded 2019
+  Civic; they are placeholders for editorial content.
+- **Owner reports** are complaints filed with NHTSA, aggregated by the component
+  they concern. Free, real, and available for any model:
+
+```
+curl 'https://api.nhtsa.gov/complaints/complaintsByVehicle?make=nissan&model=pathfinder&modelYear=2011'
+```
+
+Complaints are **unverified first-hand accounts, not findings**. Recalls are the
+official counterpart. So a complaint group is shown with its report count and any
+casualties NHTSA recorded — "31 owner reports · 3 involved a crash" — rather than
+asserted as a fault, and the list says where the numbers came from. Severity is
+derived from those counts: harm reported is high, a repeated pattern is medium,
+a couple of reports is low. Unlike recalls, `low` is meaningful here — two
+complaints about a model is noise.
+
+### The prose stays at NHTSA
+
+My Car shows the *shape* of the problem — which systems, how often, how badly — and
+links out for the accounts themselves. Each complaint runs to a paragraph and a
+popular model has hundreds, so reproducing them buried the one thing the list is
+for: seeing at a glance which systems are trouble. `apps/web/src/lib/nhtsa.ts`
+builds the link, keyed by year/make/model exactly like the feeds.
+
+Up to three representative complaints per component **are** still stored, because
+the selection is the expensive part and grounding an Ask CA answer will want them.
+They are simply not joined onto the known-issues response, which would be a
+per-request query nothing renders — anything needing the prose should read
+`model_owner_report_quotes` directly.
+
+Which three, when something does: an account where someone crashed, caught fire or
+was hurt leads, because that is the one that changes a decision; recency breaks the
+tie, since a 2025 report describes the car being driven now while a 2013 one may
+describe a fault long since fixed. Stubs shorter than 40 characters ("SEE SUMMARY")
+are dropped, and text repeated by an owner filing twice is stored once.
+
+### Two details that took measuring
+
+**The dates are month-first.** `complaintsByVehicle` serves **MM/DD/YYYY** while
+`recallsByVehicle`, on the same host, serves **DD/MM/YYYY**. This was confirmed by
+scanning both feeds: recall dates reach 28 in the first segment, complaint dates
+never exceed 12 there while reaching 31 in the second. The two parsers are
+deliberately separate, and `apps/api/test/complaints.test.ts` asserts that
+`"05/06/2020"` means 6 May as a complaint and 5 June as a recall. Sharing one
+parser would corrupt every date that is not impossible to misread, silently.
+
+**NHTSA's component taxonomy changed.** The same fuel problem is tagged
+`FUEL SYSTEM`, `GASOLINE` or `FUEL/PROPULSION SYSTEM` depending on the era, and
+one complaint often carries several. `CANONICAL_COMPONENT` in
+`apps/api/src/services/complaints.ts` merges the confirmed clusters, and each
+complaint is deduplicated after canonicalising so a triple-tagged one counts once.
+On a 2019 Civic that turns three redundant rows of 63 / 62 / 62 into one true
+count of **125 distinct complaints** — 63 filed under the old taxonomy, 62 under
+the new, with no overlap. The map is deliberately minimal and unknown labels pass
+through untouched.
+
+### Shared feed machinery
+
+Recalls and complaints are both model-keyed NHTSA feeds with identical freshness
+needs, so `apps/api/src/services/modelFeed.ts` owns the policy once — the
+week-long trust window, the 15-minute retry cooldown, the case normalising, and
+one `model_feed_syncs` table keyed by feed name. A third feed should need only a
+fetcher and a table.
+
 ## The real open question: benchmark pricing
 
 The product claim is "your $320 quote is fair." That judgement is made in
@@ -256,8 +335,8 @@ drop-in.
 
 ```bash
 npm test           # typecheck + API suite + end-to-end
-npm run test:api   # 238 checks, no database required
-npm run test:e2e   # 60 checks, full stack
+npm run test:api   # 315 checks, no database required
+npm run test:e2e   # 69 checks, full stack
 ```
 
 Neither suite touches Supabase, or needs any database running. Both use

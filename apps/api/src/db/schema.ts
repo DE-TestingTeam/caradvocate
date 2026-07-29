@@ -16,9 +16,9 @@
  *      second source of truth that can disagree with the first.
  *
  *   3. Global reference data has no owner at all: repairs, repairBenchmarks and
- *      their children, modelKnownIssues, and modelRecalls. These are the same for
- *      every user. "Known Issues for Your Model" and safety recalls are keyed by
- *      year/make/model, not by person.
+ *      their children, modelKnownIssues, modelRecalls and modelOwnerReports. These
+ *      are the same for every user. Known issues, safety recalls and owner
+ *      complaints are keyed by year/make/model, not by person.
  *
  * MONEY is stored as integer whole dollars. The product never shows cents.
  * HOURS are numeric(4,2) because labor times are quoted in tenths of an hour.
@@ -222,20 +222,92 @@ export const modelRecalls = pgTable(
 );
 
 /**
- * When each model was last checked against NHTSA.
+ * Owner complaints filed with NHTSA, aggregated by the component they concern.
  *
- * Kept separate from the recalls themselves because "no recalls" and "never
- * checked" are different facts, and the UI must not report the first while
- * meaning the second. A row with `succeeded` and no matching recalls is a genuine
- * all-clear; no row at all means nobody has looked yet.
+ * The raw feed is one row per complaint; what the UI needs is "how often does this
+ * system get reported", so aggregation happens at sync time and one row here is one
+ * component for one model.
  *
- * Failed attempts are recorded too, so an NHTSA outage is retried on a short
- * cooldown rather than on every single request.
+ * These are *unverified owner reports*, not findings. Recalls are the official
+ * counterpart. Every count is kept rather than collapsed into a severity, because
+ * "12 owners reported this, 2 involved a crash" is the honest version and a lone
+ * severity badge is not.
  */
-export const modelRecallSyncs = pgTable(
-  'model_recall_syncs',
+export const modelOwnerReports = pgTable(
+  'model_owner_reports',
   {
     id: uuid('id').primaryKey().defaultRandom(),
+    year: integer('year').notNull(),
+    make: text('make').notNull(),
+    model: text('model').notNull(),
+    /** NHTSA component label, canonicalised. e.g. "SERVICE BRAKES". */
+    component: text('component').notNull(),
+    reportCount: integer('report_count').notNull(),
+    crashCount: integer('crash_count').notNull().default(0),
+    fireCount: integer('fire_count').notNull().default(0),
+    injuryCount: integer('injury_count').notNull().default(0),
+    deathCount: integer('death_count').notNull().default(0),
+    /** Most recent incident date across the complaints in this group. */
+    latestIncidentOn: date('latest_incident_on'),
+  },
+  (table) => ({
+    byModel: index('model_owner_reports_model_idx').on(table.year, table.make, table.model),
+    componentPerModel: uniqueIndex('model_owner_reports_component_unique').on(
+      table.year,
+      table.make,
+      table.model,
+      table.component,
+    ),
+  }),
+);
+
+/**
+ * A few representative complaints behind each component group.
+ *
+ * The counts say how often a system is reported; these say what owners actually
+ * describe -- "rear sub frame has significant rust, snapped while driving" is worth
+ * more to someone deciding whether to see a mechanic than "6 reports" is. NHTSA
+ * returns this prose in the same response the counts come from.
+ *
+ * A child of the aggregate rather than a column on it, matching how
+ * vehicleValuePoints hangs off a vehicle: an ordered short list read with its
+ * parent and never queried on its own.
+ */
+export const modelOwnerReportQuotes = pgTable(
+  'model_owner_report_quotes',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    reportId: uuid('report_id')
+      .notNull()
+      .references(() => modelOwnerReports.id, { onDelete: 'cascade' }),
+    /** The owner's own words, as filed. Cased for display at render time. */
+    text: text('text').notNull(),
+    /** When it happened, when NHTSA recorded a usable date. */
+    incidentOn: date('incident_on'),
+    position: integer('position').notNull().default(0),
+  },
+  (table) => ({
+    byReport: index('model_owner_report_quotes_report_idx').on(table.reportId, table.position),
+  }),
+);
+
+/**
+ * When each model was last checked against each upstream NHTSA feed.
+ *
+ * Kept separate from the mirrored rows because "nothing found" and "never checked"
+ * are different facts, and the UI must not report the first while meaning the
+ * second. A row with `succeededAt` and no matching rows is a genuine all-clear; no
+ * row at all means nobody has looked yet.
+ *
+ * One table serves every feed -- see services/modelFeed.ts -- because the freshness
+ * policy is a property of mirroring an upstream source, not of recalls specifically.
+ */
+export const modelFeedSyncs = pgTable(
+  'model_feed_syncs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    /** 'recalls' | 'complaints'. Text rather than an enum so adding a feed needs no migration. */
+    feed: text('feed').notNull(),
     year: integer('year').notNull(),
     make: text('make').notNull(),
     model: text('model').notNull(),
@@ -243,14 +315,18 @@ export const modelRecallSyncs = pgTable(
     checkedAt: timestamp('checked_at', { withTimezone: true }).notNull().defaultNow(),
     /**
      * Last attempt that actually reached NHTSA. Null means never. Kept separate
-     * from `checkedAt` so a failed refresh cannot retract an all-clear we already
-     * earned -- the recalls we hold stay trustworthy until a later check replaces
-     * them.
+     * from `checkedAt` so a failed refresh cannot retract data we already earned --
+     * what we hold stays trustworthy until a later check replaces it.
      */
     succeededAt: timestamp('succeeded_at', { withTimezone: true }),
   },
   (table) => ({
-    byModel: uniqueIndex('model_recall_syncs_model_unique').on(table.year, table.make, table.model),
+    byFeedAndModel: uniqueIndex('model_feed_syncs_feed_model_unique').on(
+      table.feed,
+      table.year,
+      table.make,
+      table.model,
+    ),
   }),
 );
 

@@ -7,15 +7,13 @@
  *
  * Freshness is deliberately coarse: campaigns are issued over weeks, not minutes.
  */
-import { and, eq, notInArray, sql } from 'drizzle-orm';
+import { and, notInArray, sql } from 'drizzle-orm';
 import type { Database } from '../db/index.js';
-import { modelRecallSyncs, modelRecalls } from '../db/schema.js';
+import { modelRecalls } from '../db/schema.js';
 import { fetchRecalls, type FetchedRecall, type RecallLookup } from './recalls.js';
+import { dueForCheck, modelMatches, normaliseKey, readSyncState, recordCheck } from './modelFeed.js';
 
-/** A successful check is trusted for a week. */
-const FRESH_MS = 7 * 24 * 60 * 60 * 1000;
-/** A failed one is retried sooner, but not on every request. */
-const RETRY_AFTER_MS = 15 * 60 * 1000;
+const FEED = 'recalls' as const;
 
 type RecallRow = typeof modelRecalls.$inferSelect;
 
@@ -44,11 +42,7 @@ export async function getModelRecalls(
   lookup: RecallLookup,
   now: Date = new Date(),
 ): Promise<{ recalls: RecallRow[]; synced: boolean }> {
-  const [sync] = await db
-    .select()
-    .from(modelRecallSyncs)
-    .where(modelMatches(modelRecallSyncs, lookup))
-    .limit(1);
+  const sync = await readSyncState(db, FEED, lookup);
 
   // Tracked rather than re-read afterwards: this runs on every My Car load, and
   // the sync already knows whether it reached NHTSA.
@@ -65,20 +59,6 @@ export async function getModelRecalls(
   return { recalls, synced: reached };
 }
 
-type SyncRow = { checkedAt: Date; succeededAt: Date | null };
-
-/**
- * Never checked, the last success has aged out, or a previous failure's cooldown
- * has elapsed. The cooldown is checked in every case so a persistent NHTSA outage
- * costs one attempt per window rather than one per request.
- */
-function dueForCheck(sync: SyncRow | undefined, now: Date): boolean {
-  if (!sync) return true;
-  if (now.getTime() - sync.checkedAt.getTime() <= RETRY_AFTER_MS) return false;
-  if (!sync.succeededAt) return true;
-  return now.getTime() - sync.succeededAt.getTime() > FRESH_MS;
-}
-
 /**
  * Fetches and stores one model's recalls.
  *
@@ -92,7 +72,7 @@ async function syncModelRecalls(db: Database, lookup: RecallLookup, now: Date): 
   const fetched = await fetcher(lookup);
 
   if (fetched === undefined) {
-    await recordCheck(db, lookup, now, false);
+    await recordCheck(db, FEED, lookup, now, false);
     return false;
   }
 
@@ -129,30 +109,15 @@ async function syncModelRecalls(db: Database, lookup: RecallLookup, now: Date): 
         });
     }
 
-    await recordCheck(tx, lookup, now, true);
+    await recordCheck(tx, FEED, lookup, now, true);
   });
 
   return true;
 }
 
-/** Accepts a transaction as readily as the pool, since it runs in both. */
-type Executor = Pick<Database, 'insert'>;
-
-async function recordCheck(db: Executor, lookup: RecallLookup, now: Date, succeeded: boolean): Promise<void> {
-  await db
-    .insert(modelRecallSyncs)
-    .values({ ...normalise(lookup), checkedAt: now, succeededAt: succeeded ? now : null })
-    .onConflictDoUpdate({
-      target: [modelRecallSyncs.year, modelRecallSyncs.make, modelRecallSyncs.model],
-      // A failure advances only the attempt clock, leaving the earlier success --
-      // and therefore the recalls it produced -- standing.
-      set: succeeded ? { checkedAt: now, succeededAt: now } : { checkedAt: now },
-    });
-}
-
 function toRow(lookup: RecallLookup, recall: FetchedRecall) {
   return {
-    ...normalise(lookup),
+    ...normaliseKey(lookup),
     campaignNumber: recall.campaignNumber,
     component: recall.component,
     summary: recall.summary,
@@ -162,26 +127,6 @@ function toRow(lookup: RecallLookup, recall: FetchedRecall) {
     parkOutside: recall.parkOutside,
     reportedOn: recall.reportedOn ?? null,
   };
-}
-
-/**
- * Make and model are stored uppercase.
- *
- * NHTSA is case-insensitive on input but echoes uppercase, and a vehicle's own
- * make/model come from either a VIN decode ("HONDA") or a typed form ("Honda").
- * Normalising on the way in keeps one row per model instead of one per spelling.
- */
-function normalise(lookup: RecallLookup): RecallLookup {
-  return {
-    year: lookup.year,
-    make: lookup.make.trim().toUpperCase(),
-    model: lookup.model.trim().toUpperCase(),
-  };
-}
-
-function modelMatches(table: typeof modelRecalls | typeof modelRecallSyncs, lookup: RecallLookup) {
-  const key = normalise(lookup);
-  return and(eq(table.year, key.year), eq(table.make, key.make), eq(table.model, key.model));
 }
 
 /**

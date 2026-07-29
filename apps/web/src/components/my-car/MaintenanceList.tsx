@@ -3,9 +3,10 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import type { MaintenanceItem, MaintenanceStatus } from '@caradvocate/shared';
 
-const statusMeta: Record<MaintenanceStatus, { label: string; variant: 'default' | 'outline' | 'destructive' }> = {
+/** The same red / amber / neutral scale the recall and known-issue badges use. */
+const statusMeta: Record<MaintenanceStatus, { label: string; variant: 'warning' | 'outline' | 'destructive' }> = {
   open_recall: { label: 'Open recall', variant: 'destructive' },
-  overdue: { label: 'Overdue', variant: 'default' },
+  overdue: { label: 'Overdue', variant: 'warning' },
   upcoming: { label: 'Upcoming', variant: 'outline' },
 };
 

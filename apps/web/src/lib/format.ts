@@ -57,16 +57,17 @@ function titleCaseSegment(segment: string): string {
 const KEEP_UPPERCASE = new Set(['NHTSA', 'VIN', 'ABS', 'SUV', 'USA', 'LED', 'GPS', 'AWD', 'FWD', 'RWD', 'TPMS']);
 
 /**
- * NHTSA wrote its older campaigns entirely in capitals, so a 2011 recall arrives
- * as "IF THERE IS AN ENGINE OIL LEAK, THE ENGINE OIL PRESSURE WOULD DROP". Newer
- * ones are already sentence case and pass through untouched.
+ * NHTSA wrote its older records entirely in capitals, so a 2011 recall arrives as
+ * "IF THERE IS AN ENGINE OIL LEAK, THE ENGINE OIL PRESSURE WOULD DROP" -- and owner
+ * complaints are worse, since plenty of people type in caps regardless of the year.
+ * Modern sentence-case prose passes through untouched.
  *
  * Only text that is overwhelmingly uppercase is rewritten, so this cannot quietly
  * restyle prose that was fine to begin with. A handful of acronyms are preserved;
  * anything rarer may come out capitalised as a word, which still reads better than
  * a shouted paragraph.
  */
-export function formatRecallProse(text: string): string {
+export function formatNhtsaProse(text: string): string {
   const letters = text.replace(/[^A-Za-z]/g, '');
   if (letters.length < 12) return text;
 

@@ -1,6 +1,6 @@
 {
-  "id": "599bfeff-3de0-4793-af55-721d566c696b",
-  "prevId": "520f9aae-c833-4efc-a68a-ae08a73bc587",
+  "id": "bfe4580c-cb01-4983-9364-85767de60ae9",
+  "prevId": "599bfeff-3de0-4793-af55-721d566c696b",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -924,6 +924,87 @@
         }
       },
       "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.model_owner_report_quotes": {
+      "name": "model_owner_report_quotes",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "report_id": {
+          "name": "report_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "text": {
+          "name": "text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "incident_on": {
+          "name": "incident_on",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "position": {
+          "name": "position",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        }
+      },
+      "indexes": {
+        "model_owner_report_quotes_report_idx": {
+          "name": "model_owner_report_quotes_report_idx",
+          "columns": [
+            {
+              "expression": "report_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "position",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "model_owner_report_quotes_report_id_model_owner_reports_id_fk": {
+          "name": "model_owner_report_quotes_report_id_model_owner_reports_id_fk",
+          "tableFrom": "model_owner_report_quotes",
+          "tableTo": "model_owner_reports",
+          "columnsFrom": [
+            "report_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},

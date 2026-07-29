@@ -41,6 +41,8 @@ export default {
         },
         warning: {
           DEFAULT: 'hsl(var(--warning))',
+          /** Legible as an icon or text colour, where DEFAULT is not. */
+          strong: 'hsl(var(--warning-strong))',
           foreground: 'hsl(var(--warning-foreground))',
         },
       },

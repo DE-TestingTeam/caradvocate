@@ -67,7 +67,7 @@ export function MyCarPage() {
         {issues.error ? (
           <ErrorState message={issues.error.message} />
         ) : issues.data ? (
-          <KnownIssuesList issues={issues.data} />
+          <KnownIssuesList report={issues.data} vehicle={vehicle} />
         ) : (
           <ListSkeleton rows={3} />
         )}

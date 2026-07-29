@@ -47,7 +47,36 @@ export function toMaintenanceItem(row: Row<typeof t.maintenanceItems>): Maintena
 }
 
 export function toKnownIssue(row: Row<typeof t.modelKnownIssues>): KnownIssue {
-  return { id: row.id, label: row.label, severity: row.severity };
+  return { id: row.id, label: row.label, severity: row.severity, source: 'curated' };
+}
+
+/** A complaint group needs this many reports before it reads as a pattern. */
+const PATTERN_THRESHOLD = 5;
+
+/**
+ * Aggregated owner complaints, presented as a known issue.
+ *
+ * Severity is derived from what NHTSA actually recorded rather than from a
+ * judgement of our own: a group where someone crashed, caught fire or was hurt is
+ * high, a repeatedly-reported one is medium, and a handful of reports is low. Unlike
+ * recalls, `low` is meaningful here -- two complaints about a model is noise, not a
+ * fault, and dressing it up as one would mislead.
+ */
+export function toKnownIssueFromReports(row: Row<typeof t.modelOwnerReports>): KnownIssue {
+  const harmed = row.crashCount > 0 || row.fireCount > 0 || row.injuryCount > 0 || row.deathCount > 0;
+
+  return {
+    id: row.id,
+    label: row.component,
+    severity: harmed ? 'high' : row.reportCount >= PATTERN_THRESHOLD ? 'medium' : 'low',
+    source: 'owner_reports',
+    reportCount: row.reportCount,
+    crashCount: row.crashCount,
+    fireCount: row.fireCount,
+    injuryCount: row.injuryCount,
+    deathCount: row.deathCount,
+    latestIncidentOn: row.latestIncidentOn ?? undefined,
+  };
 }
 
 /**

@@ -11,7 +11,7 @@ import type {
   Assessment,
   ChatMessage,
   DecodedVin,
-  KnownIssue,
+  KnownIssueReport,
   MaintenanceItem,
   NewAssessmentInput,
   NewServiceRecordInput,
@@ -52,8 +52,12 @@ export function getMaintenance(): Promise<MaintenanceItem[]> {
   return http.get<MaintenanceItem[]>('/vehicle/maintenance');
 }
 
-export function getKnownIssues(): Promise<KnownIssue[]> {
-  return http.get<KnownIssue[]>('/vehicle/known-issues');
+/**
+ * Curated known issues plus systems owners have complained about to NHTSA.
+ * `checked` distinguishes "nothing reported" from "the feed was never reached".
+ */
+export function getKnownIssues(): Promise<KnownIssueReport> {
+  return http.get<KnownIssueReport>('/vehicle/known-issues');
 }
 
 /**

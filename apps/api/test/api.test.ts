@@ -22,8 +22,12 @@ export async function run(): Promise<void> {
   check('recall status maps to open_recall', maintenance.body[0].status === 'open_recall');
 
   const issues = await request('GET', '/api/vehicle/known-issues');
-  check('known issues returns 3 for the model', issues.body.length === 3, `got ${issues.body.length}`);
-  check('AC compressor issue is high severity', issues.body.some((i: any) => i.severity === 'high' && i.label.includes('AC compressor')));
+  // The suite runs offline (see offline.ts), so only the curated rows are present
+  // and `checked` is false -- which is exactly the "we could not ask" state.
+  check('known issues returns the 3 curated rows for the model', issues.body.issues.length === 3, `got ${issues.body.issues.length}`);
+  check('AC compressor issue is high severity', issues.body.issues.some((i: any) => i.severity === 'high' && i.label.includes('AC compressor')));
+  check('curated rows are labelled as curated', issues.body.issues.every((i: any) => i.source === 'curated'));
+  check('an unreachable complaint feed is reported as unchecked', issues.body.checked === false);
 
   const patched = await request('PATCH', '/api/vehicle', { body: { mileage: 69000 } });
   check('PATCH /api/vehicle updates mileage', patched.status === 200 && patched.body.mileage === 69000);

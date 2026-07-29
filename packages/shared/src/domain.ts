@@ -96,10 +96,45 @@ export interface RecallReport {
   checked: boolean;
 }
 
+/**
+ * Where a known issue came from, which decides how much weight it carries.
+ *
+ * `curated` entries are written by us. `owner_reports` are aggregated from
+ * complaints filed with NHTSA -- real, but unverified accounts from owners rather
+ * than findings by anyone. The UI must say which is which; presenting a complaint
+ * as an established fault would be the same mistake as inventing a valuation.
+ */
+export type KnownIssueSource = 'curated' | 'owner_reports';
+
 export interface KnownIssue {
   id: string;
   label: string;
   severity: Severity;
+  source: KnownIssueSource;
+  /**
+   * How many owners reported this system, for `owner_reports` entries. Absent for
+   * curated ones, where there is no count to give and a fabricated one would be
+   * worse than none.
+   */
+  reportCount?: number;
+  /** Reports that mentioned a crash or fire, and any casualties NHTSA recorded. */
+  crashCount?: number;
+  fireCount?: number;
+  injuryCount?: number;
+  deathCount?: number;
+  /** ISO yyyy-mm-dd of the most recent reported incident. */
+  latestIncidentOn?: string;
+}
+
+/**
+ * Known issues plus whether the complaint feed has been reached.
+ *
+ * Same reasoning as RecallReport: an empty list could mean "nothing reported" or
+ * "we have never managed to ask", and only one of those is reassuring.
+ */
+export interface KnownIssueReport {
+  issues: KnownIssue[];
+  checked: boolean;
 }
 
 export interface ServiceRecord {

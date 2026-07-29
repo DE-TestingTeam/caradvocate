@@ -1,10 +1,17 @@
 import { and, asc, eq } from 'drizzle-orm';
 import { Router } from 'express';
-import { newVehicleSchema, updateVehicleSchema, vinSchema, type RecallReport } from '@caradvocate/shared';
+import {
+  newVehicleSchema,
+  updateVehicleSchema,
+  vinSchema,
+  type KnownIssueReport,
+  type RecallReport,
+} from '@caradvocate/shared';
 import { maintenanceItems, modelKnownIssues, vehicleValuePoints, vehicles } from '../db/schema.js';
-import { toKnownIssue, toMaintenanceItem, toRecall, toVehicle } from '../mappers.js';
+import { toKnownIssue, toKnownIssueFromReports, toMaintenanceItem, toRecall, toVehicle } from '../mappers.js';
 import { validateBody } from '../middleware/validate.js';
 import { userIdOf } from '../middleware/currentUser.js';
+import { getOwnerReports } from '../services/complaintSync.js';
 import { getModelRecalls } from '../services/recallSync.js';
 import { decodeVin } from '../services/vinDecode.js';
 import { HttpError } from '../lib/httpError.js';
@@ -127,24 +134,43 @@ vehicleRouter.get('/recalls', async (req, res) => {
   res.json({ recalls: recalls.map(toRecall), checked: synced } satisfies RecallReport);
 });
 
+/** Beyond this the list stops informing and starts overwhelming. */
+const MAX_REPORTED_ISSUES = 8;
+
 /**
  * Known issues are global reference data keyed by year/make/model -- there is
  * deliberately no user filter, because the answer is the same for every owner of
  * the same car.
+ *
+ * Two sources, in order. Curated entries come first because they are written for a
+ * reader; aggregated NHTSA complaints follow, capped, because the raw feed runs to
+ * hundreds of reports across dozens of components and a page-long list informs
+ * nobody. `checked` reports whether the complaint feed was ever reached.
  */
 vehicleRouter.get('/known-issues', async (req, res) => {
   const vehicle = await requireOwnVehicle(req);
-  const rows = await req.db
-    .select()
-    .from(modelKnownIssues)
-    .where(
-      and(
-        eq(modelKnownIssues.year, vehicle.year),
-        eq(modelKnownIssues.make, vehicle.make),
-        eq(modelKnownIssues.model, vehicle.model),
-      ),
-    )
-    .orderBy(asc(modelKnownIssues.position));
+  const model = { year: vehicle.year, make: vehicle.make, model: vehicle.model };
 
-  res.json(rows.map(toKnownIssue));
+  const [curated, reported] = await Promise.all([
+    req.db
+      .select()
+      .from(modelKnownIssues)
+      .where(
+        and(
+          eq(modelKnownIssues.year, vehicle.year),
+          eq(modelKnownIssues.make, vehicle.make),
+          eq(modelKnownIssues.model, vehicle.model),
+        ),
+      )
+      .orderBy(asc(modelKnownIssues.position)),
+    getOwnerReports(req.db, model),
+  ]);
+
+  res.json({
+    issues: [
+      ...curated.map(toKnownIssue),
+      ...reported.reports.slice(0, MAX_REPORTED_ISSUES).map(toKnownIssueFromReports),
+    ],
+    checked: reported.synced,
+  } satisfies KnownIssueReport);
 });
