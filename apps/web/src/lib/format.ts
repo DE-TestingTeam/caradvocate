@@ -33,6 +33,51 @@ export function formatLongDate(iso: string): string {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+/**
+ * NHTSA component names arrive as colon-delimited caps:
+ * "FUEL SYSTEM, GASOLINE:DELIVERY:FUEL PUMP" -> "Fuel System, Gasoline · Delivery · Fuel Pump"
+ *
+ * Shouting at the owner is not a design choice we want to inherit from an upstream
+ * feed, so the text is cased for reading while keeping every segment.
+ */
+export function formatRecallComponent(component: string): string {
+  return component
+    .split(':')
+    .map((segment) => segment.trim())
+    .filter(Boolean)
+    .map(titleCaseSegment)
+    .join(' · ');
+}
+
+function titleCaseSegment(segment: string): string {
+  return segment.replace(/[A-Za-z]+/g, (word) => word[0].toUpperCase() + word.slice(1).toLowerCase());
+}
+
+/** Acronyms worth keeping upright when un-shouting NHTSA prose. */
+const KEEP_UPPERCASE = new Set(['NHTSA', 'VIN', 'ABS', 'SUV', 'USA', 'LED', 'GPS', 'AWD', 'FWD', 'RWD', 'TPMS']);
+
+/**
+ * NHTSA wrote its older campaigns entirely in capitals, so a 2011 recall arrives
+ * as "IF THERE IS AN ENGINE OIL LEAK, THE ENGINE OIL PRESSURE WOULD DROP". Newer
+ * ones are already sentence case and pass through untouched.
+ *
+ * Only text that is overwhelmingly uppercase is rewritten, so this cannot quietly
+ * restyle prose that was fine to begin with. A handful of acronyms are preserved;
+ * anything rarer may come out capitalised as a word, which still reads better than
+ * a shouted paragraph.
+ */
+export function formatRecallProse(text: string): string {
+  const letters = text.replace(/[^A-Za-z]/g, '');
+  if (letters.length < 12) return text;
+
+  const uppercaseShare = letters.replace(/[^A-Z]/g, '').length / letters.length;
+  if (uppercaseShare < 0.85) return text;
+
+  const lowered = text.replace(/[A-Z]+/g, (word) => (KEEP_UPPERCASE.has(word) ? word : word.toLowerCase()));
+  // Capitalise the first letter of the text and of anything following . ! or ?
+  return lowered.replace(/(^\s*|[.!?]\s+)([a-z])/g, (_match, lead: string, letter: string) => lead + letter.toUpperCase());
+}
+
 /** 1.5 -> "1.5 hrs", 1 -> "1 hr" */
 export function formatHours(hours: number): string {
   return `${hours} ${hours === 1 ? 'hr' : 'hrs'}`;

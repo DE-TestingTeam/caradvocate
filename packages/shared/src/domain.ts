@@ -61,6 +61,41 @@ export interface MaintenanceItem {
   status: MaintenanceStatus;
 }
 
+/**
+ * One NHTSA safety recall for the owner's model.
+ *
+ * `severity` is derived from NHTSA's own advisories rather than judged here:
+ * "stop driving" and "park outside" are the two escalations it publishes.
+ */
+export interface Recall {
+  id: string;
+  /** NHTSA's campaign number, e.g. "20V314000". Quote it when calling a dealer. */
+  campaignNumber: string;
+  component: string;
+  summary: string;
+  consequence: string;
+  remedy: string;
+  severity: Severity;
+  /** NHTSA says stop driving this vehicle. */
+  parkIt: boolean;
+  /** NHTSA says park away from buildings -- typically a fire risk. */
+  parkOutside: boolean;
+  /** ISO yyyy-mm-dd. Absent when NHTSA reported no usable date. */
+  reportedOn?: string;
+}
+
+/**
+ * Recalls plus whether the upstream check has ever succeeded.
+ *
+ * Without `checked`, an empty list is ambiguous -- it could mean this car is clear
+ * or that NHTSA has never been reachable. Reporting an all-clear we cannot support
+ * is the one outcome worth engineering against here.
+ */
+export interface RecallReport {
+  recalls: Recall[];
+  checked: boolean;
+}
+
 export interface KnownIssue {
   id: string;
   label: string;

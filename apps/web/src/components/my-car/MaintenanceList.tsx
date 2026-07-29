@@ -13,7 +13,8 @@ export function MaintenanceList({ items }: { items: MaintenanceItem[] }) {
   if (items.length === 0) {
     return (
       <p className="py-2 text-sm text-muted-foreground">
-        No recalls or scheduled maintenance on file. This fills in once a recall feed is connected.
+        No scheduled maintenance on file. This fills in once a service-schedule source is connected. Safety recalls are
+        shown in their own section above.
       </p>
     );
   }

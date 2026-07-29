@@ -165,28 +165,72 @@ A new user is sent to `/onboarding` until they have a vehicle.
 Manual entry (year, make, model, mileage) is the primary path because it always
 works. VIN lookup is an accelerator that prefills the same fields.
 
-> **The VIN decode is unverified.** It calls NHTSA's free vPIC API, which the
-> sandbox this was built in cannot reach, so the response shape is coded from the
-> documented field names but has never been exercised against the live service.
-> The parser is defensive — any unexpected shape, timeout or error falls back to
-> manual entry, so a wrong guess degrades the feature rather than blocking
-> onboarding. Check it with:
->
-> ```
-> curl 'https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVinValues/2HGFC2F53KH124821?format=json'
-> ```
->
-> If the field names differ, `parseVpicResponse` in
-> `apps/api/src/services/vinDecode.ts` is the only thing to change, and its tests
-> show the shapes it handles.
+The VIN decode calls NHTSA's free vPIC API and has been verified against the live
+service: `Make`, `Model`, `ModelYear` and `Trim` all arrive as
+`parseVpicResponse` expects, with `Series` used when `Trim` is absent. Check it
+yourself with:
 
-### Newly added cars have no data, on purpose
+```
+curl 'https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVinValues/2HGFC2F53KH124821?format=json'
+```
 
-A car you just added has no valuation, no recalls and no maintenance schedule,
-because none of those sources are connected. The API returns absent values and
-the UI says "Not available yet" rather than showing a zero or a plausible-looking
-number. `estMarketValue`, `tradeInLow` and `tradeInHigh` are optional in the
-contract for exactly this reason.
+The parser stays defensive regardless — any unexpected shape, timeout or error
+falls back to manual entry, so an upstream change degrades the accelerator rather
+than blocking onboarding.
+
+### Newly added cars have no valuation, on purpose
+
+A car you just added has no valuation and no maintenance schedule, because neither
+source is connected. The API returns absent values and the UI says "Not available
+yet" rather than showing a zero or a plausible-looking number. `estMarketValue`,
+`tradeInLow` and `tradeInHigh` are optional in the contract for exactly this
+reason.
+
+Safety recalls *are* connected — see below.
+
+## Safety recalls
+
+Recalls come from NHTSA's free recalls API, keyed by year/make/model:
+
+```
+curl 'https://api.nhtsa.gov/recalls/recallsByVehicle?make=honda&model=civic&modelYear=2019'
+```
+
+Like known issues, recalls belong to the **model** rather than the owner, so they
+are global reference data (`model_recalls`) and one sync serves every owner of that
+car. The first request for a model pays for the upstream fetch; after that it is a
+local query for a week. See `apps/api/src/services/recallSync.ts`.
+
+Three decisions in there are worth knowing about:
+
+- **"No recalls" and "never checked" are different facts.** `model_recall_syncs`
+  records them separately, and the API returns `checked` alongside the list, so the
+  UI only ever shows an all-clear it can actually support.
+- **A failed refresh never erases recalls.** Stale safety data beats none, so a
+  failure advances only the attempt clock — it cannot retract an all-clear already
+  earned, and it is retried on a 15-minute cooldown rather than on every request.
+- **Urgency comes from NHTSA, not from us.** It publishes `parkIt` ("stop driving")
+  and `parkOutSide` ("park away from buildings"); those map to high severity and
+  everything else to medium. No recall is `low` — they are all safety defects.
+- **Recalls never expire, and age never buries one.** Nothing is filtered by date.
+  Within a severity the list is ordered **oldest first**, because a 2011 defect that
+  was never remedied is more overdue than one issued last year — sorting by recency
+  would push the longest-neglected item to the bottom. Undated campaigns sort last
+  rather than masquerading as the oldest.
+
+One limit worth being explicit about: NHTSA's feed is keyed by year/make/model, so
+it reports campaigns affecting *this model* — not whether *this particular car* was
+ever repaired. The UI says so, and the badge reads "Recall" rather than "Open
+recall", because claiming the latter would assert something we cannot know. A
+VIN-level answer needs the manufacturer, not NHTSA.
+
+Two details of that API are easy to get wrong, and both are silent failures. Dates
+are **DD/MM/YYYY** (`28/05/2020` is 28 May), and the flag is spelled `parkOutSide`
+with a capital S. Both are covered in `apps/api/test/recalls.test.ts`.
+
+Older campaigns are stored by NHTSA IN FULL CAPITALS, so `formatRecallProse`
+rewrites overwhelmingly-uppercase text to sentence case for display and leaves
+modern sentence-case prose untouched.
 
 ## The real open question: benchmark pricing
 
@@ -212,8 +256,8 @@ drop-in.
 
 ```bash
 npm test           # typecheck + API suite + end-to-end
-npm run test:api   # 186 checks, no database required
-npm run test:e2e   # 51 checks, full stack
+npm run test:api   # 238 checks, no database required
+npm run test:e2e   # 60 checks, full stack
 ```
 
 Neither suite touches Supabase, or needs any database running. Both use

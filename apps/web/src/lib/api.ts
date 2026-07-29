@@ -16,6 +16,7 @@ import type {
   NewAssessmentInput,
   NewServiceRecordInput,
   NewVehicleInput,
+  RecallReport,
   RepairCatalogItem,
   ServiceRecord,
   UpdateAccountInput,
@@ -53,6 +54,14 @@ export function getMaintenance(): Promise<MaintenanceItem[]> {
 
 export function getKnownIssues(): Promise<KnownIssue[]> {
   return http.get<KnownIssue[]>('/vehicle/known-issues');
+}
+
+/**
+ * Open safety recalls. Carries `checked` so the UI can say "none found" only when
+ * NHTSA was actually reached, rather than implying an all-clear it cannot support.
+ */
+export function getRecalls(): Promise<RecallReport> {
+  return http.get<RecallReport>('/vehicle/recalls');
 }
 
 /* -------------------------------------------------------- service history */

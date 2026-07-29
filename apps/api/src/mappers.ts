@@ -12,6 +12,7 @@ import type {
   ChatMessage,
   KnownIssue,
   MaintenanceItem,
+  Recall,
   RepairCatalogItem,
   ServiceRecord,
   Vehicle,
@@ -47,6 +48,26 @@ export function toMaintenanceItem(row: Row<typeof t.maintenanceItems>): Maintena
 
 export function toKnownIssue(row: Row<typeof t.modelKnownIssues>): KnownIssue {
   return { id: row.id, label: row.label, severity: row.severity };
+}
+
+/**
+ * Severity comes from NHTSA's advisories, not from a judgement made here. Both
+ * "stop driving" and "park outside" are escalations it publishes explicitly; every
+ * other recall is a safety defect too, so none of them map to `low`.
+ */
+export function toRecall(row: Row<typeof t.modelRecalls>): Recall {
+  return {
+    id: row.id,
+    campaignNumber: row.campaignNumber,
+    component: row.component,
+    summary: row.summary,
+    consequence: row.consequence,
+    remedy: row.remedy,
+    severity: row.parkIt || row.parkOutside ? 'high' : 'medium',
+    parkIt: row.parkIt,
+    parkOutside: row.parkOutside,
+    reportedOn: row.reportedOn ?? undefined,
+  };
 }
 
 export function toServiceRecord(row: Row<typeof t.serviceRecords>): ServiceRecord {

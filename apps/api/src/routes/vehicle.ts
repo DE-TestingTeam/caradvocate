@@ -1,10 +1,11 @@
 import { and, asc, eq } from 'drizzle-orm';
 import { Router } from 'express';
-import { newVehicleSchema, updateVehicleSchema, vinSchema } from '@caradvocate/shared';
+import { newVehicleSchema, updateVehicleSchema, vinSchema, type RecallReport } from '@caradvocate/shared';
 import { maintenanceItems, modelKnownIssues, vehicleValuePoints, vehicles } from '../db/schema.js';
-import { toKnownIssue, toMaintenanceItem, toVehicle } from '../mappers.js';
+import { toKnownIssue, toMaintenanceItem, toRecall, toVehicle } from '../mappers.js';
 import { validateBody } from '../middleware/validate.js';
 import { userIdOf } from '../middleware/currentUser.js';
+import { getModelRecalls } from '../services/recallSync.js';
 import { decodeVin } from '../services/vinDecode.js';
 import { HttpError } from '../lib/httpError.js';
 import { requireOwnVehicle, stringParam } from './helpers.js';
@@ -103,6 +104,27 @@ vehicleRouter.get('/maintenance', async (req, res) => {
     .orderBy(asc(maintenanceItems.position));
 
   res.json(rows.map(toMaintenanceItem));
+});
+
+/**
+ * Open safety recalls for the caller's model, mirrored from NHTSA.
+ *
+ * Like known issues this is global reference data keyed by year/make/model. The
+ * first request for a model pays for the upstream fetch; after that it is a local
+ * query for a week (see services/recallSync.ts).
+ *
+ * `checked` is returned alongside the list so the UI can tell an all-clear apart
+ * from never having reached NHTSA, rather than presenting the second as the first.
+ */
+vehicleRouter.get('/recalls', async (req, res) => {
+  const vehicle = await requireOwnVehicle(req);
+  const { recalls, synced } = await getModelRecalls(req.db, {
+    year: vehicle.year,
+    make: vehicle.make,
+    model: vehicle.model,
+  });
+
+  res.json({ recalls: recalls.map(toRecall), checked: synced } satisfies RecallReport);
 });
 
 /**

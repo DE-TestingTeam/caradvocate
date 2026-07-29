@@ -3,19 +3,21 @@ import { CollapsibleSection } from '@/components/my-car/CollapsibleSection';
 import { KnownIssuesList } from '@/components/my-car/KnownIssuesList';
 import { LogServiceDialog } from '@/components/my-car/LogServiceDialog';
 import { MaintenanceList } from '@/components/my-car/MaintenanceList';
+import { RecallsList } from '@/components/my-car/RecallsList';
 import { ServiceHistory } from '@/components/my-car/ServiceHistory';
 import { ValueCard } from '@/components/my-car/ValueCard';
 import { ViewerPlaceholder } from '@/components/my-car/ViewerPlaceholder';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useVehicle } from '@/components/layout/RequireVehicle';
-import { getKnownIssues, getMaintenance, getServiceHistory } from '@/lib/api';
+import { getKnownIssues, getMaintenance, getRecalls, getServiceHistory } from '@/lib/api';
 import { formatMileage, maskVin, vehicleName } from '@/lib/format';
 import { useApi } from '@/lib/useApi';
 
 export function MyCarPage() {
   // Resolved by RequireVehicle, so there is no loading or error state to handle.
   const vehicle = useVehicle();
+  const recalls = useApi(getRecalls);
   const maintenance = useApi(getMaintenance);
   const issues = useApi(getKnownIssues);
   const history = useApi(getServiceHistory);
@@ -39,7 +41,19 @@ export function MyCarPage() {
 
       <ValueCard vehicle={vehicle} />
 
-      <CollapsibleSection title="Recalls & Maintenance">
+      {/* Recalls come from NHTSA and stand on their own; maintenance is still
+          unsourced, so they are separate sections rather than one merged list. */}
+      <CollapsibleSection title="Safety Recalls">
+        {recalls.error ? (
+          <ErrorState message={recalls.error.message} />
+        ) : recalls.data ? (
+          <RecallsList report={recalls.data} />
+        ) : (
+          <ListSkeleton rows={2} />
+        )}
+      </CollapsibleSection>
+
+      <CollapsibleSection title="Scheduled Maintenance">
         {maintenance.error ? (
           <ErrorState message={maintenance.error.message} />
         ) : maintenance.data ? (

@@ -16,14 +16,16 @@
  *      second source of truth that can disagree with the first.
  *
  *   3. Global reference data has no owner at all: repairs, repairBenchmarks and
- *      their children, and modelKnownIssues. These are the same for every user.
- *      "Known Issues for Your Model" is keyed by year/make/model, not by person.
+ *      their children, modelKnownIssues, and modelRecalls. These are the same for
+ *      every user. "Known Issues for Your Model" and safety recalls are keyed by
+ *      year/make/model, not by person.
  *
  * MONEY is stored as integer whole dollars. The product never shows cents.
  * HOURS are numeric(4,2) because labor times are quoted in tenths of an hour.
  */
 import { relations, sql } from 'drizzle-orm';
 import {
+  boolean,
   index,
   integer,
   numeric,
@@ -177,6 +179,78 @@ export const modelKnownIssues = pgTable(
   },
   (table) => ({
     byModel: index('model_known_issues_model_idx').on(table.year, table.make, table.model, table.position),
+  }),
+);
+
+/**
+ * Safety recalls, mirrored from NHTSA.
+ *
+ * Like known issues these belong to the model rather than the owner: every 2019
+ * Civic shares the same campaigns, so one row serves all of them and a sync costs
+ * one upstream request per model rather than one per user.
+ *
+ * `campaignNumber` is NHTSA's own identifier and is what makes a campaign unique
+ * within a model, so a re-sync updates rows in place instead of duplicating them.
+ */
+export const modelRecalls = pgTable(
+  'model_recalls',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    year: integer('year').notNull(),
+    make: text('make').notNull(),
+    model: text('model').notNull(),
+    campaignNumber: text('campaign_number').notNull(),
+    component: text('component').notNull(),
+    summary: text('summary').notNull(),
+    consequence: text('consequence').notNull(),
+    remedy: text('remedy').notNull(),
+    /** NHTSA's "stop driving" and "park away from structures" advisories. */
+    parkIt: boolean('park_it').notNull().default(false),
+    parkOutside: boolean('park_outside').notNull().default(false),
+    /** Null when NHTSA reported an unparseable date; the recall still stands. */
+    reportedOn: date('reported_on'),
+  },
+  (table) => ({
+    byModel: index('model_recalls_model_idx').on(table.year, table.make, table.model),
+    campaignPerModel: uniqueIndex('model_recalls_campaign_unique').on(
+      table.year,
+      table.make,
+      table.model,
+      table.campaignNumber,
+    ),
+  }),
+);
+
+/**
+ * When each model was last checked against NHTSA.
+ *
+ * Kept separate from the recalls themselves because "no recalls" and "never
+ * checked" are different facts, and the UI must not report the first while
+ * meaning the second. A row with `succeeded` and no matching recalls is a genuine
+ * all-clear; no row at all means nobody has looked yet.
+ *
+ * Failed attempts are recorded too, so an NHTSA outage is retried on a short
+ * cooldown rather than on every single request.
+ */
+export const modelRecallSyncs = pgTable(
+  'model_recall_syncs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    year: integer('year').notNull(),
+    make: text('make').notNull(),
+    model: text('model').notNull(),
+    /** Last attempt of any kind. Drives the retry cooldown after a failure. */
+    checkedAt: timestamp('checked_at', { withTimezone: true }).notNull().defaultNow(),
+    /**
+     * Last attempt that actually reached NHTSA. Null means never. Kept separate
+     * from `checkedAt` so a failed refresh cannot retract an all-clear we already
+     * earned -- the recalls we hold stay trustworthy until a later check replaces
+     * them.
+     */
+    succeededAt: timestamp('succeeded_at', { withTimezone: true }),
+  },
+  (table) => ({
+    byModel: uniqueIndex('model_recall_syncs_model_unique').on(table.year, table.make, table.model),
   }),
 );
 

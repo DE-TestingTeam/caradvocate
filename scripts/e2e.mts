@@ -18,6 +18,7 @@ import { createApp } from '../apps/api/src/app.js';
 import { assessments, serviceRecords, users, vehicles } from '../apps/api/src/db/schema.js';
 import { createTestDb } from '../apps/api/test/harness.js';
 import { HttpError } from '../apps/api/src/lib/httpError.js';
+import { setRecallFetcherForTesting } from '../apps/api/src/services/recallSync.js';
 import type { Database } from '../apps/api/src/db/index.js';
 
 const WEB = path.resolve('apps/web');
@@ -46,6 +47,39 @@ fs.writeFileSync(
 
 console.log('Starting the API on PGlite...');
 const { db, close: closeDb } = await createTestDb();
+
+/**
+ * The one thing stubbed in this suite, and only because it is not part of the
+ * contract under test: NHTSA is a third party, so a live call would make the run
+ * depend on their uptime and on which campaigns they happen to list today.
+ *
+ * Everything downstream of the fetch is real -- the sync, the mirror, the mapper,
+ * the route, the bundle and the render. The payload deliberately includes a
+ * stop-driving campaign and one in NHTSA's older ALL-CAPS style so both are
+ * exercised all the way to the DOM.
+ */
+setRecallFetcherForTesting(async () => [
+  {
+    campaignNumber: '23V751000',
+    component: 'AIR BAGS:FRONTAL:DRIVER SIDE:INFLATOR MODULE',
+    summary: 'The driver frontal air bag inflator may rupture.',
+    consequence: 'An inflator rupture can propel metal fragments at the driver.',
+    remedy: 'Dealers will replace the air bag inflator, free of charge.',
+    parkIt: true,
+    parkOutside: false,
+    reportedOn: '2023-10-19',
+  },
+  {
+    campaignNumber: '11V592000',
+    component: 'ENGINE AND ENGINE COOLING',
+    summary: 'THE ENGINE OIL CONNECTOR BOLTS MAY LOOSEN.',
+    consequence: 'IF THERE IS AN ENGINE OIL LEAK, THE ENGINE COULD SEIZE.',
+    remedy: 'DEALERS WILL REPLACE THE CONNECTOR BOLTS FREE OF CHARGE.',
+    parkIt: false,
+    parkOutside: false,
+    reportedOn: '2011-12-19',
+  },
+]);
 
 let actingEmail = 'alex.rivera@email.com';
 const api = createApp(db as unknown as Database, {
@@ -173,6 +207,19 @@ const check = (name: string, pass: boolean, detail = '') => checks.push({ name, 
   check('My Car renders the trade-in range', body.includes('Trade in range $12,100–$14,600'));
   check('maintenance comes through with its recall badge', body.includes('Fuel Pump Control Unit') && body.includes('Open recall'));
   check('model known issues come through', body.includes('Transmission hesitation under load'));
+
+  // Recalls: fetched, mirrored, mapped and rendered.
+  check('a recall component is cased for reading, not shouted', body.includes('Air Bags · Frontal · Driver Side · Inflator Module'));
+  check("NHTSA's stop-driving advisory is surfaced as such", body.includes('Stop driving'));
+  check('the campaign number a dealer needs is shown', body.includes('NHTSA campaign 23V751000'));
+  check('the recall date is formatted from the real column', body.includes('Oct 19, 2023'));
+  // The risk is rendered without a click, so it is asserted here directly.
+  check('an ALL-CAPS legacy recall is un-shouted', body.includes('If there is an engine oil leak, the engine could seize.'));
+  check('recall prose that was already sentence case is untouched', body.includes('An inflator rupture can propel metal fragments at the driver.'));
+  check('the stop-driving recall outranks the ordinary one', body.indexOf('23V751000') < body.indexOf('11V592000'));
+  // A 2011 campaign is as real as a 2023 one; recalls do not expire.
+  check('a 2011 recall is rendered, not aged out', body.includes('NHTSA campaign 11V592000'));
+  check('the list says whose recalls these are and that age does not retire them', body.includes('A recall never expires'));
   check('service history renders the cost-checker suffix', body.includes('Battery replacement via Repair Cost Checker'));
   check('no skeletons are left behind after load', !body.includes('undefined') && body.length > 500);
   dom.window.close();
@@ -351,7 +398,7 @@ const check = (name: string, pass: boolean, detail = '') => checks.push({ name, 
 
   // The honest empty states, rather than invented numbers.
   check('no market value is invented for a new car', afterAdd.includes('Not available yet'));
-  check('an empty maintenance list says so', afterAdd.includes('No recalls or scheduled maintenance on file'));
+  check('an empty maintenance list says so', afterAdd.includes('No scheduled maintenance on file'));
   check('an empty service history says so', afterAdd.includes('No service logged yet'));
 
   const persisted = await fetch(`${ORIGIN}/api/vehicle`).then((r) => r.json());
