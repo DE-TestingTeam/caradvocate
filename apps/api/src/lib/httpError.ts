@@ -1,0 +1,28 @@
+import { httpStatusForCode, type ApiErrorCode } from '@caradvocate/shared';
+
+/** Throw this from anywhere in a route; the error handler turns it into a response. */
+export class HttpError extends Error {
+  readonly code: ApiErrorCode;
+  readonly status: number;
+  readonly details?: { path: string; message: string }[];
+
+  constructor(code: ApiErrorCode, message: string, details?: { path: string; message: string }[]) {
+    super(message);
+    this.name = 'HttpError';
+    this.code = code;
+    this.status = httpStatusForCode[code];
+    this.details = details;
+  }
+
+  static notFound(message = 'Not found'): HttpError {
+    return new HttpError('not_found', message);
+  }
+
+  static unauthenticated(message = 'Not authenticated'): HttpError {
+    return new HttpError('unauthenticated', message);
+  }
+
+  static conflict(message: string): HttpError {
+    return new HttpError('conflict', message);
+  }
+}
