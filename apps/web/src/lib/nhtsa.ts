@@ -30,3 +30,14 @@ export function nhtsaVehicleUrl({ year, make, model }: VehicleKey): string {
   const segment = (value: string) => encodeURIComponent(value.trim().toUpperCase());
   return `${NHTSA_VEHICLE}/${year}/${segment(make)}/${segment(model)}`;
 }
+
+/**
+ * NHTSA's VIN lookup, which is the one place an owner can get a per-car answer.
+ *
+ * Their site queries the manufacturer behind the scenes, so unlike the public API
+ * it does know whether a specific vehicle was repaired. There is no API equivalent
+ * -- that data is only sold -- so a link is genuinely the best we can offer.
+ */
+export function nhtsaVinRecallUrl(vin: string): string {
+  return `https://www.nhtsa.gov/recalls?vin=${encodeURIComponent(vin.trim().toUpperCase())}`;
+}

@@ -229,6 +229,76 @@ export async function run(): Promise<void> {
 
     const lowercased = await getModelRecalls(db as unknown as Database, { year: 2019, make: 'honda', model: 'civic' }, new Date());
     check('a differently-cased lookup finds the same mirror', lowercased.recalls.length === 1);
+
+    /* ------------------------------- what the owner says about their own car */
+
+    section("recalls: the owner's own answer");
+
+    // Real campaign-number shapes, because the endpoint validates them.
+    upstream = [
+      recall({ campaignNumber: '23V751000', parkIt: true, reportedOn: '2023-10-19' }),
+      recall({ campaignNumber: '11V592000', reportedOn: '2011-12-19' }),
+    ];
+    await getModelRecalls(db as unknown as Database, CIVIC, new Date(Date.now() + 60 * 24 * 60 * 60 * 1000));
+
+    const before = await request('GET', '/api/vehicle/recalls');
+    check('a recall nobody has answered has no status', before.body.recalls[0].repaired === undefined);
+
+    const marked = await request('PUT', '/api/vehicle/recalls/11V592000', { body: { repaired: true } });
+    check('marking one repaired returns 204', marked.status === 204, `got ${marked.status}`);
+
+    const after = await request('GET', '/api/vehicle/recalls');
+    const done = after.body.recalls.find((r: any) => r.campaignNumber === '11V592000');
+    const open = after.body.recalls.find((r: any) => r.campaignNumber === '23V751000');
+    check('the answer comes back on the recall', done?.repaired === true);
+    check('the other recall is untouched', open?.repaired === undefined);
+    // Finished work must not compete with outstanding work for attention.
+    check(
+      'a repaired recall sorts below an outstanding one',
+      after.body.recalls.indexOf(open) < after.body.recalls.indexOf(done),
+    );
+
+    const notYet = await request('PUT', '/api/vehicle/recalls/23V751000', { body: { repaired: false } });
+    check('marking one outstanding returns 204', notYet.status === 204, `got ${notYet.status}`);
+    const withBoth = await request('GET', '/api/vehicle/recalls');
+    check(
+      '"not yet" is stored as an answer, distinct from unknown',
+      withBoth.body.recalls.find((r: any) => r.campaignNumber === '23V751000')?.repaired === false,
+    );
+
+    await request('PUT', '/api/vehicle/recalls/11V592000', { body: { repaired: false } });
+    const statusRows = await db.select().from(t.vehicleRecallStatus);
+    check('changing an answer updates in place rather than duplicating', statusRows.length === 2, `got ${statusRows.length}`);
+
+    const cleared = await request('DELETE', '/api/vehicle/recalls/11V592000');
+    check('clearing returns 204', cleared.status === 204, `got ${cleared.status}`);
+    const afterClear = await request('GET', '/api/vehicle/recalls');
+    check(
+      'a cleared recall is unknown again, not "not done"',
+      afterClear.body.recalls.find((r: any) => r.campaignNumber === '11V592000')?.repaired === undefined,
+    );
+
+    /* --------------------------------------------------- refusing bad input */
+
+    const nonsense = await request('PUT', '/api/vehicle/recalls/NOTACAMPAIGN', { body: { repaired: true } });
+    check('a malformed campaign number is a 422', nonsense.status === 422, `got ${nonsense.status}`);
+
+    // The campaign has to be one of *this* model's, or the list would carry answers
+    // to questions this car was never asked.
+    const foreign = await request('PUT', '/api/vehicle/recalls/99V999999', { body: { repaired: true } });
+    check("a campaign that is not this model's is a 404", foreign.status === 404, `got ${foreign.status}`);
+
+    const badBody = await request('PUT', '/api/vehicle/recalls/23V751000', { body: { repaired: 'yes' } });
+    check('a non-boolean answer is a 422', badBody.status === 422, `got ${badBody.status}`);
+
+    // Dana's car is a RAV4, so a Civic campaign must not be answerable by her.
+    const otherTenant = await request('PUT', '/api/vehicle/recalls/23V751000', {
+      body: { repaired: true },
+      as: 'dana@example.com',
+    });
+    check('another tenant cannot answer for this model', otherTenant.status === 404, `got ${otherTenant.status}`);
+    const stillOne = await db.select().from(t.vehicleRecallStatus);
+    check('and no row was written for them', stillOne.length === 1, `got ${stillOne.length}`);
   } finally {
     goOffline();
     await close();

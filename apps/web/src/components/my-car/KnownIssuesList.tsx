@@ -103,6 +103,20 @@ function ReportDetail({ issue }: { issue: KnownIssue }) {
     <p className="mt-0.5 text-xs text-muted-foreground">
       {issue.reportCount === 1 ? '1 owner report' : `${issue.reportCount} owner reports`}
       {harms.length > 0 && ` · ${harms.join(', ')}`}
+      {/*
+        The one number here that is about *your* car rather than the model. "in N of
+        them" is deliberate: the range comes from the subset of complaints that
+        recorded an odometer reading, and hiding that would overstate it.
+      */}
+      {issue.mileage && (
+        <>
+          {' · '}
+          <span className="text-foreground">
+            {issue.mileage.lowMi.toLocaleString('en-US')}–{issue.mileage.highMi.toLocaleString('en-US')} mi
+          </span>
+          {` in ${issue.mileage.sampleCount} of them`}
+        </>
+      )}
     </p>
   );
 }

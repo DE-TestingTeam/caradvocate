@@ -18,8 +18,11 @@ export async function run(): Promise<void> {
   check('full VIN is returned for the owner', vehicle.body.vin === '2HGFC2F53KH124821');
 
   const maintenance = await request('GET', '/api/vehicle/maintenance');
-  check('maintenance returns 4 items in order', maintenance.body.length === 4 && maintenance.body[0].label === 'Fuel Pump Control Unit');
-  check('recall status maps to open_recall', maintenance.body[0].status === 'open_recall');
+  // Ordered by urgency, not insertion: the overdue job leads. Statuses are computed
+  // from the seeded intervals and linked history, never stored.
+  check('maintenance returns the seeded jobs', maintenance.body.length === 5, `got ${maintenance.body.length}`);
+  check('the overdue job leads the list', maintenance.body[0].label === 'Tyre rotation', maintenance.body[0].label);
+  check('its status was computed, not stored', maintenance.body[0].status === 'overdue');
 
   const issues = await request('GET', '/api/vehicle/known-issues');
   // The suite runs offline (see offline.ts), so only the curated rows are present
@@ -43,9 +46,12 @@ export async function run(): Promise<void> {
   /* ----------------------------------------------------- service records */
 
   const history = await request('GET', '/api/service-records');
-  check('service history returns 5 records', history.body.length === 5, `got ${history.body.length}`);
+  check('service history returns 6 records', history.body.length === 6, `got ${history.body.length}`);
   check('history is newest first', history.body[0].date === '2026-06-14');
   check('repair-cost-checker source is preserved', history.body[0].source === 'repair_cost_checker');
+  // The odometer is what lets a record count towards an interval.
+  check('the mileage at service comes through', history.body[0].mileageAtService === 68000);
+  check('a record linked to an upkeep job says which', history.body.some((r: any) => r.maintenanceItemId));
 
   const created = await request('POST', '/api/service-records', {
     body: { description: 'Wiper blades', date: '2026-07-01', cost: 28 },

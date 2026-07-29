@@ -10,7 +10,8 @@
  *      against these MUST filter on userId.
  *
  *   2. Children of those roots (vehicleValuePoints, maintenanceItems,
- *      assessmentParts, assessmentLaborTasks) do NOT carry userId. They are
+ *      vehicleRecallStatus, assessmentParts, assessmentLaborTasks) do NOT carry
+ *      userId. They are
  *      reachable only through their parent, and the parent's userId filter is
  *      what authorises them. Denormalising userId onto children would create a
  *      second source of truth that can disagree with the first.
@@ -41,7 +42,8 @@ import {
 /* ------------------------------------------------------------------- enums */
 
 export const severityEnum = pgEnum('severity', ['low', 'medium', 'high']);
-export const maintenanceStatusEnum = pgEnum('maintenance_status', ['open_recall', 'overdue', 'upcoming']);
+// No maintenance-status enum: the status is computed on read, never stored.
+// See maintenanceItems below and services/maintenanceDue.ts.
 export const quoteVerdictEnum = pgEnum('quote_verdict', ['fair', 'overpriced']);
 export const serviceSourceEnum = pgEnum('service_record_source', ['manual', 'repair_cost_checker']);
 export const chatRoleEnum = pgEnum('chat_role', ['user', 'assistant']);
@@ -144,6 +146,19 @@ export const vehicleValuePoints = pgTable(
   }),
 );
 
+/**
+ * A recurring upkeep job on one car -- oil, tyres, brake fluid.
+ *
+ * There is deliberately no stored status. Whether something is due is arithmetic on
+ * the interval, the last time it was done, and today's odometer, so it is computed
+ * on read (see services/maintenanceDue.ts). A stored status is a value nothing keeps
+ * true: the previous version of this table held one, and the seed had to bake the
+ * answer into the label ("Oil Change - Due in 1,200 mi") because nothing computed it.
+ *
+ * Intervals are owner-supplied. The manufacturer's official schedule is licensed
+ * data; when that is bought it fills in these same two columns and nothing else
+ * changes.
+ */
 export const maintenanceItems = pgTable(
   'maintenance_items',
   {
@@ -152,11 +167,48 @@ export const maintenanceItems = pgTable(
       .notNull()
       .references(() => vehicles.id, { onDelete: 'cascade' }),
     label: text('label').notNull(),
-    status: maintenanceStatusEnum('status').notNull(),
+    /**
+     * How often the job is due. Either, both, or neither: with neither we say so
+     * rather than guessing, and with both whichever falls first wins.
+     */
+    intervalMiles: integer('interval_miles'),
+    intervalMonths: integer('interval_months'),
     position: integer('position').notNull().default(0),
   },
   (table) => ({
     byVehicle: index('maintenance_items_vehicle_idx').on(table.vehicleId, table.position),
+  }),
+);
+
+/**
+ * What the owner says about a recall on *their* car.
+ *
+ * NHTSA's feed is keyed by year/make/model, so it can say a campaign affects this
+ * model but never whether this particular car was repaired -- only the manufacturer
+ * knows that, and only for a fee. The owner knows too, so this records what they
+ * tell us rather than leaving every recall permanently ambiguous.
+ *
+ * Keyed by NHTSA's campaign number rather than a `model_recalls.id`, because those
+ * rows are mirrored data that a resync can replace. The campaign number is the
+ * stable identity and survives.
+ *
+ * A missing row means "unknown", which is the honest default -- distinct from the
+ * owner having told us it is outstanding.
+ */
+export const vehicleRecallStatus = pgTable(
+  'vehicle_recall_status',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    vehicleId: uuid('vehicle_id')
+      .notNull()
+      .references(() => vehicles.id, { onDelete: 'cascade' }),
+    campaignNumber: text('campaign_number').notNull(),
+    /** True when the owner says the work has been done. */
+    repaired: boolean('repaired').notNull(),
+    notedAt: timestamp('noted_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    perVehicle: uniqueIndex('vehicle_recall_status_unique').on(table.vehicleId, table.campaignNumber),
   }),
 );
 
@@ -249,6 +301,23 @@ export const modelOwnerReports = pgTable(
     deathCount: integer('death_count').notNull().default(0),
     /** Most recent incident date across the complaints in this group. */
     latestIncidentOn: date('latest_incident_on'),
+    /**
+     * Mileage at failure, from NHTSA's bulk complaint file.
+     *
+     * The JSON API omits mileage entirely, so these are filled in by a separate
+     * ingest (scripts/ingestComplaintMileage.mts) and stay null until it has run for
+     * this model. That is why they are nullable and counted separately from
+     * `reportCount`: only about two thirds of complaints report an odometer reading,
+     * and a range built from three of them should not masquerade as one built from
+     * thirty.
+     *
+     * Low and high are the 25th and 75th percentiles, not the extremes -- a single
+     * complaint at 600 miles should not widen the range the owner is shown.
+     */
+    mileageSampleCount: integer('mileage_sample_count'),
+    mileageLowMi: integer('mileage_low_mi'),
+    mileageMedianMi: integer('mileage_median_mi'),
+    mileageHighMi: integer('mileage_high_mi'),
   },
   (table) => ({
     byModel: index('model_owner_reports_model_idx').on(table.year, table.make, table.model),
@@ -422,6 +491,24 @@ export const serviceRecords = pgTable(
     serviceDate: date('service_date').notNull(),
     cost: integer('cost').notNull(),
     source: serviceSourceEnum('source').notNull(),
+    /**
+     * Odometer reading when the work was done. Nullable because records created
+     * before this existed have none, and because someone logging an old receipt may
+     * genuinely not know -- but without it no interval can be measured, which is why
+     * the form asks for it.
+     */
+    mileageAtService: integer('mileage_at_service'),
+    /**
+     * The upkeep job this satisfies, when it satisfies one. Set explicitly rather
+     * than matched on the description, because guessing that "oil and filter" means
+     * the oil-change item is the kind of inference that is wrong just often enough
+     * to tell someone their brakes are fine when they are not.
+     *
+     * Nulled rather than cascaded when the item goes: the work still happened.
+     */
+    maintenanceItemId: uuid('maintenance_item_id').references(() => maintenanceItems.id, {
+      onDelete: 'set null',
+    }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({

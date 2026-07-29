@@ -146,20 +146,40 @@ async function seedAlexRivera(db: Database, repairIdBySlug: Map<string, string>)
     })),
   );
 
-  await db.insert(t.maintenanceItems).values([
-    { vehicleId: vehicle.id, label: 'Fuel Pump Control Unit', status: 'open_recall', position: 0 },
-    { vehicleId: vehicle.id, label: 'Oil Change - Due in 1,200 mi', status: 'upcoming', position: 1 },
-    { vehicleId: vehicle.id, label: 'Brake Fluid Flush - Due Sep 2025', status: 'upcoming', position: 2 },
-    { vehicleId: vehicle.id, label: 'Tire Rotation - Overdue', status: 'overdue', position: 3 },
-  ]);
+  /*
+   * Upkeep jobs carry intervals, not statuses. The status is worked out on read from
+   * the interval, the linked service history and the odometer (68,400 here), so these
+   * rows deliberately produce one of every outcome:
+   *
+   *   oil          due_soon  -- 500 miles short of its 5,000-mile interval
+   *   tyres        overdue   -- 6,000-mile interval, last done 10,400 miles ago
+   *   cabin filter ok        -- 15,000-mile interval, plenty left
+   *   brake fluid  unknown   -- no interval set, so there is nothing to compute
+   *   coolant      unknown   -- has an interval but has never been done
+   */
+  const [oil, tyres, brakeFluid, cabinFilter] = await db
+    .insert(t.maintenanceItems)
+    .values([
+      { vehicleId: vehicle.id, label: 'Oil & filter', intervalMiles: 5000, intervalMonths: 12, position: 0 },
+      { vehicleId: vehicle.id, label: 'Tyre rotation', intervalMiles: 6000, position: 1 },
+      { vehicleId: vehicle.id, label: 'Brake fluid flush', position: 2 },
+      { vehicleId: vehicle.id, label: 'Cabin air filter', intervalMiles: 15000, position: 3 },
+      { vehicleId: vehicle.id, label: 'Coolant flush', intervalMiles: 30000, position: 4 },
+    ])
+    .returning();
 
   await db.insert(t.serviceRecords).values([
-    { userId: user.id, vehicleId: vehicle.id, description: 'Battery replacement', serviceDate: '2026-06-14', cost: 175, source: 'repair_cost_checker' },
-    { userId: user.id, vehicleId: vehicle.id, description: 'Brake pads & rotors - front', serviceDate: '2026-03-08', cost: 310, source: 'manual' },
-    { userId: user.id, vehicleId: vehicle.id, description: 'Oil Change & Filter', serviceDate: '2025-03-22', cost: 62, source: 'manual' },
-    { userId: user.id, vehicleId: vehicle.id, description: 'Brake Pads (Front)', serviceDate: '2024-11-02', cost: 285, source: 'manual' },
-    { userId: user.id, vehicleId: vehicle.id, description: 'Tire Rotation', serviceDate: '2024-06-19', cost: 40, source: 'manual' },
+    { userId: user.id, vehicleId: vehicle.id, description: 'Battery replacement', serviceDate: '2026-06-14', cost: 175, source: 'repair_cost_checker', mileageAtService: 68000 },
+    { userId: user.id, vehicleId: vehicle.id, description: 'Brake pads & rotors - front', serviceDate: '2026-03-08', cost: 310, source: 'manual', mileageAtService: 66200 },
+    // Linked, so they drive the due calculation above.
+    { userId: user.id, vehicleId: vehicle.id, description: 'Oil Change & Filter', serviceDate: '2026-02-14', cost: 62, source: 'manual', mileageAtService: 63900, maintenanceItemId: oil.id },
+    { userId: user.id, vehicleId: vehicle.id, description: 'Cabin air filter', serviceDate: '2025-08-30', cost: 35, source: 'manual', mileageAtService: 60000, maintenanceItemId: cabinFilter.id },
+    { userId: user.id, vehicleId: vehicle.id, description: 'Brake Pads (Front)', serviceDate: '2024-11-02', cost: 285, source: 'manual', mileageAtService: 59500 },
+    { userId: user.id, vehicleId: vehicle.id, description: 'Tire Rotation', serviceDate: '2024-06-19', cost: 40, source: 'manual', mileageAtService: 58000, maintenanceItemId: tyres.id },
   ]);
+
+  // Referenced so the unused-binding check does not flag a deliberately unlinked job.
+  void brakeFluid;
 
   await seedAssessments(db, user.id, vehicle.id, repairIdBySlug);
   await seedChat(db, user.id);
@@ -363,11 +383,11 @@ async function seedSecondUser(db: Database, repairIdBySlug: Map<string, string>)
   );
 
   await db.insert(t.maintenanceItems).values([
-    { vehicleId: vehicle.id, label: 'Cabin Air Filter - Due in 800 mi', status: 'upcoming', position: 0 },
+    { vehicleId: vehicle.id, label: 'Cabin air filter', intervalMiles: 15000, position: 0 },
   ]);
 
   await db.insert(t.serviceRecords).values([
-    { userId: user.id, vehicleId: vehicle.id, description: 'Dana private oil change', serviceDate: '2026-05-02', cost: 74, source: 'manual' },
+    { userId: user.id, vehicleId: vehicle.id, description: 'Dana private oil change', serviceDate: '2026-05-02', cost: 74, source: 'manual', mileageAtService: 21000 },
   ]);
 
   await db.insert(t.chatMessages).values([

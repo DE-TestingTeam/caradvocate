@@ -2,6 +2,8 @@ import { AlertTriangle, ShieldCheck } from 'lucide-react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Badge } from '@/components/ui/badge';
 import { formatLongDate, formatRecallComponent, formatNhtsaProse } from '@/lib/format';
+import { nhtsaVinRecallUrl } from '@/lib/nhtsa';
+import { cn } from '@/lib/utils';
 import type { Recall, RecallReport } from '@caradvocate/shared';
 
 /**
@@ -12,7 +14,16 @@ import type { Recall, RecallReport } from '@caradvocate/shared';
  * the consequence is shown first on expand: the reason to act is more useful than
  * the mechanism.
  */
-export function RecallsList({ report }: { report: RecallReport }) {
+export function RecallsList({
+  report,
+  vin,
+  onStatusChange,
+}: {
+  report: RecallReport;
+  /** Enables the per-car VIN lookup link. Absent when the owner skipped the VIN. */
+  vin?: string;
+  onStatusChange: (campaignNumber: string, repaired: boolean | undefined) => void;
+}) {
   if (report.recalls.length === 0) {
     // "Nothing found" and "we could not look" are different claims, and only one
     // of them is reassuring. Never present the second as the first.
@@ -31,17 +42,29 @@ export function RecallsList({ report }: { report: RecallReport }) {
   return (
     <ul className="space-y-2">
       {report.recalls.map((recall) => (
-        <li key={recall.id} className="rounded-lg border p-3">
+        // A recall the owner has had done stays listed but recedes: the record is
+        // worth keeping, and they may be misremembering.
+        <li key={recall.id} className={cn('rounded-lg border p-3', recall.repaired && 'opacity-60')}>
           <div className="flex items-start justify-between gap-3">
             <span className="flex min-w-0 items-center gap-2">
-              {/* warning-strong, not warning: the fill amber measures 2.14:1 on
-                  white and all but disappears at this size. */}
-              <AlertTriangle
-                className={`h-4 w-4 shrink-0 ${recall.parkIt ? 'text-destructive' : 'text-warning-strong'}`}
-              />
+              {recall.repaired ? (
+                <ShieldCheck className="h-4 w-4 shrink-0 text-muted-foreground" />
+              ) : (
+                /* warning-strong, not warning: the fill amber measures 2.14:1 on
+                   white and all but disappears at this size. */
+                <AlertTriangle
+                  className={`h-4 w-4 shrink-0 ${recall.parkIt ? 'text-destructive' : 'text-warning-strong'}`}
+                />
+              )}
               <span className="min-w-0 font-medium">{formatRecallComponent(recall.component)}</span>
             </span>
-            <UrgencyBadge recall={recall} />
+            {recall.repaired ? (
+              <Badge variant="outline" className="shrink-0">
+                Done
+              </Badge>
+            ) : (
+              <UrgencyBadge recall={recall} />
+            )}
           </div>
 
           {/* The risk is never collapsed. It is the reason to act, and someone
@@ -65,23 +88,88 @@ export function RecallsList({ report }: { report: RecallReport }) {
               </AccordionItem>
             </Accordion>
           )}
+
+          <RepairStatus recall={recall} onChange={onStatusChange} />
         </li>
       ))}
 
       {/*
         NHTSA's feed is keyed by year/make/model, so it reports campaigns affecting
-        this car -- not whether this particular one was ever repaired. Saying
-        "open recall" would claim more than we know, and a recall from years ago may
-        already have been done. The campaign number above is what settles it.
+        this car -- not whether this particular one was ever repaired. The owner does
+        know, which is what the control above is for, and their dealer can confirm it
+        from the VIN.
 
         Recalls do not expire, so an old campaign is listed exactly like a new one.
       */}
       <li className="pt-1 text-xs text-muted-foreground">
-        These are recalls issued for your year, make and model. A recall never expires, so older ones still count — but
-        NHTSA cannot tell us whether yours was already repaired. Quote the campaign number to a dealer to check; the
-        work is free either way.
+        These are recalls issued for your year, make and model. A recall never expires, so older ones still count. NHTSA
+        cannot tell us whether yours was already repaired — mark them above, or{' '}
+        {vin ? (
+          <a
+            href={nhtsaVinRecallUrl(vin)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline underline-offset-2 hover:text-foreground"
+          >
+            check your VIN with NHTSA
+          </a>
+        ) : (
+          'quote the campaign number to a dealer'
+        )}
+        . The work is free either way.
       </li>
     </ul>
+  );
+}
+
+/**
+ * The owner's answer to "has this been done?".
+ *
+ * Three states, not two: unknown is the default and is not the same as outstanding.
+ * Both answers are reversible, because someone who mis-clicks on a safety recall
+ * must not be stuck with a warning hidden behind an opacity change.
+ */
+function RepairStatus({
+  recall,
+  onChange,
+}: {
+  recall: Recall;
+  onChange: (campaignNumber: string, repaired: boolean | undefined) => void;
+}) {
+  if (recall.repaired === undefined) {
+    return (
+      <div className="mt-2 flex items-center gap-2 border-t pt-2 text-xs">
+        <span className="text-muted-foreground">Had this done?</span>
+        <button
+          type="button"
+          onClick={() => onChange(recall.campaignNumber, true)}
+          className="underline underline-offset-2 hover:text-foreground"
+        >
+          Yes
+        </button>
+        <span className="text-muted-foreground">·</span>
+        <button
+          type="button"
+          onClick={() => onChange(recall.campaignNumber, false)}
+          className="underline underline-offset-2 hover:text-foreground"
+        >
+          Not yet
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-2 flex items-center gap-2 border-t pt-2 text-xs text-muted-foreground">
+      <span>{recall.repaired ? 'You marked this as done.' : 'You marked this as still outstanding.'}</span>
+      <button
+        type="button"
+        onClick={() => onChange(recall.campaignNumber, undefined)}
+        className="underline underline-offset-2 hover:text-foreground"
+      >
+        Undo
+      </button>
+    </div>
   );
 }
 

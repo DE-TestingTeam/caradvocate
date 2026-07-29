@@ -13,47 +13,127 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/toast';
-import { addServiceRecord } from '@/lib/api';
+import { addServiceRecord, deleteServiceRecord, updateServiceRecord } from '@/lib/api';
 import { todayIso } from '@/lib/format';
 import { invalidateAll } from '@/lib/useApi';
+import type { MaintenanceItem, ServiceRecord } from '@caradvocate/shared';
 
-/** NOTE: no wireframe for this dialog -- fields are the minimum a ServiceRecord needs. */
-export function LogServiceDialog() {
-  const [open, setOpen] = React.useState(false);
+/**
+ * Logs a service, or corrects one.
+ *
+ * NOTE: no wireframe for this dialog. Two fields go beyond the obvious, and both
+ * exist so maintenance can work at all:
+ *
+ *   - **Mileage.** Without the odometer at the time, no interval can be measured. It
+ *     stays optional because someone entering an old receipt may genuinely not know,
+ *     but the hint says why it matters rather than leaving them to guess.
+ *   - **Counts as.** Links the record to an upkeep job explicitly. Matching on the
+ *     description instead would be inference that is wrong just often enough to tell
+ *     someone their brakes are fine when they are not.
+ */
+export function LogServiceDialog({
+  jobs,
+  record,
+  open: controlledOpen,
+  onOpenChange,
+}: {
+  /** The car's upkeep jobs, offered as "counts as" options. */
+  jobs: MaintenanceItem[];
+  /** Present when correcting an existing record rather than adding one. */
+  record?: ServiceRecord;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}) {
+  const [uncontrolledOpen, setUncontrolledOpen] = React.useState(false);
+  const isEditing = record !== undefined;
+  const open = controlledOpen ?? uncontrolledOpen;
+  const setOpen = onOpenChange ?? setUncontrolledOpen;
+
+  /**
+   * Whether this instance owns its own trigger button.
+   *
+   * Keyed on being controlled rather than on `record` being present: the editing
+   * instance is mounted with `record` still undefined until a row is clicked, so
+   * testing the record rendered a second "Log a service" button next to the first.
+   */
+  const isControlled = controlledOpen !== undefined;
+
   const [description, setDescription] = React.useState('');
   const [date, setDate] = React.useState(todayIso());
   const [cost, setCost] = React.useState('');
+  const [mileage, setMileage] = React.useState('');
+  const [jobId, setJobId] = React.useState('');
   const [saving, setSaving] = React.useState(false);
   const toast = useToast();
 
-  const valid = description.trim().length > 0 && date.length > 0 && Number(cost) >= 0 && cost !== '';
+  // Reset from the record each time it opens, so reopening never shows stale input.
+  React.useEffect(() => {
+    if (!open) return;
+    setDescription(record?.description ?? '');
+    setDate(record?.date ?? todayIso());
+    setCost(record ? String(record.cost) : '');
+    setMileage(record?.mileageAtService ? String(record.mileageAtService) : '');
+    setJobId(record?.maintenanceItemId ?? '');
+  }, [open, record]);
+
+  const valid = description.trim().length > 0 && date.length > 0 && cost !== '' && Number(cost) >= 0 && !saving;
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     if (!valid) return;
 
+    const body = {
+      description: description.trim(),
+      date,
+      cost: Number(cost),
+      mileageAtService: mileage.trim() === '' ? undefined : Number(mileage),
+      maintenanceItemId: jobId === '' ? undefined : jobId,
+    };
+
     setSaving(true);
-    await addServiceRecord({ description: description.trim(), date, cost: Number(cost) });
-    invalidateAll();
-    setSaving(false);
-    setOpen(false);
-    setDescription('');
-    setDate(todayIso());
-    setCost('');
-    toast('Service logged to your history.');
+    try {
+      if (record) await updateServiceRecord(record.id, body);
+      else await addServiceRecord(body);
+      invalidateAll();
+      setOpen(false);
+      toast(record ? 'Record updated.' : 'Service logged to your history.');
+    } catch (cause) {
+      toast(cause instanceof Error ? cause.message : 'Could not save that.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!record) return;
+    setSaving(true);
+    try {
+      await deleteServiceRecord(record.id);
+      invalidateAll();
+      setOpen(false);
+      toast('Record deleted.');
+    } catch (cause) {
+      toast(cause instanceof Error ? cause.message : 'Could not delete that.');
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant="outline" className="w-full sm:w-auto">
-          <Plus className="h-4 w-4" />
-          Log a service
-        </Button>
-      </DialogTrigger>
+      {/* A controlled instance is opened by its parent -- a history row, or the
+          maintenance section -- so it must not render a trigger of its own. */}
+      {!isControlled && (
+        <DialogTrigger asChild>
+          <Button variant="outline" className="w-full sm:w-auto">
+            <Plus className="h-4 w-4" />
+            Log a service
+          </Button>
+        </DialogTrigger>
+      )}
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Log a service</DialogTitle>
+          <DialogTitle>{isEditing ? 'Edit service record' : 'Log a service'}</DialogTitle>
           <DialogDescription>Add a repair or maintenance record to your service history.</DialogDescription>
         </DialogHeader>
 
@@ -87,13 +167,58 @@ export function LogServiceDialog() {
               />
             </div>
           </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={!valid || saving}>
-              {saving ? 'Saving…' : 'Save record'}
-            </Button>
+
+          <div className="space-y-2">
+            <Label htmlFor="svc-mileage">Mileage (optional)</Label>
+            <Input
+              id="svc-mileage"
+              type="number"
+              min={0}
+              inputMode="numeric"
+              value={mileage}
+              onChange={(e) => setMileage(e.target.value)}
+              placeholder="68400"
+            />
+            <p className="text-xs text-muted-foreground">
+              The odometer when the work was done. Needed to work out when this is next due.
+            </p>
+          </div>
+
+          {jobs.length > 0 && (
+            <div className="space-y-2">
+              <Label htmlFor="svc-job">Counts as (optional)</Label>
+              <select
+                id="svc-job"
+                value={jobId}
+                onChange={(e) => setJobId(e.target.value)}
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              >
+                <option value="">Not one of my upkeep jobs</option>
+                {jobs.map((job) => (
+                  <option key={job.id} value={job.id}>
+                    {job.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <DialogFooter className="sm:justify-between">
+            {isEditing ? (
+              <Button type="button" variant="outline" disabled={saving} onClick={handleDelete}>
+                Delete
+              </Button>
+            ) : (
+              <span />
+            )}
+            <span className="flex gap-2">
+              <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={!valid}>
+                {saving ? 'Saving…' : 'Save record'}
+              </Button>
+            </span>
           </DialogFooter>
         </form>
       </DialogContent>

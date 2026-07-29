@@ -14,8 +14,11 @@ import type {
   KnownIssueReport,
   MaintenanceItem,
   NewAssessmentInput,
+  NewMaintenanceItemInput,
   NewServiceRecordInput,
   NewVehicleInput,
+  UpdateMaintenanceItemInput,
+  UpdateServiceRecordInput,
   RecallReport,
   RepairCatalogItem,
   ServiceRecord,
@@ -48,8 +51,25 @@ export function decodeVin(vin: string): Promise<DecodedVin> {
   return http.get<DecodedVin>(`/vehicle/decode/${encodeURIComponent(vin)}`);
 }
 
+/**
+ * Upkeep jobs with their due status already worked out. The status is computed
+ * server-side from the interval, the linked service history and the odometer, so the
+ * client never does the arithmetic and cannot disagree with it.
+ */
 export function getMaintenance(): Promise<MaintenanceItem[]> {
   return http.get<MaintenanceItem[]>('/vehicle/maintenance');
+}
+
+export function addMaintenanceItem(input: NewMaintenanceItemInput): Promise<MaintenanceItem> {
+  return http.post<MaintenanceItem>('/vehicle/maintenance', input);
+}
+
+export function updateMaintenanceItem(id: string, patch: UpdateMaintenanceItemInput): Promise<MaintenanceItem> {
+  return http.patch<MaintenanceItem>(`/vehicle/maintenance/${encodeURIComponent(id)}`, patch);
+}
+
+export function deleteMaintenanceItem(id: string): Promise<void> {
+  return http.delete<void>(`/vehicle/maintenance/${encodeURIComponent(id)}`);
 }
 
 /**
@@ -68,6 +88,19 @@ export function getRecalls(): Promise<RecallReport> {
   return http.get<RecallReport>('/vehicle/recalls');
 }
 
+/**
+ * Records what the owner says about one recall on their car. NHTSA cannot tell us
+ * whether the work was done, so this is the only source for it.
+ */
+export function setRecallRepaired(campaignNumber: string, repaired: boolean): Promise<void> {
+  return http.put<void>(`/vehicle/recalls/${encodeURIComponent(campaignNumber)}`, { repaired });
+}
+
+/** Returns a recall to "unknown", for when the owner is no longer sure. */
+export function clearRecallStatus(campaignNumber: string): Promise<void> {
+  return http.delete<void>(`/vehicle/recalls/${encodeURIComponent(campaignNumber)}`);
+}
+
 /* -------------------------------------------------------- service history */
 
 export function getServiceHistory(): Promise<ServiceRecord[]> {
@@ -76,6 +109,18 @@ export function getServiceHistory(): Promise<ServiceRecord[]> {
 
 export function addServiceRecord(input: NewServiceRecordInput): Promise<ServiceRecord> {
   return http.post<ServiceRecord>('/service-records', input);
+}
+
+/**
+ * Corrects a record. Worth having beyond tidiness: these rows drive the maintenance
+ * calculation, so a mistyped odometer makes the app claim a job is due when it is not.
+ */
+export function updateServiceRecord(id: string, patch: UpdateServiceRecordInput): Promise<ServiceRecord> {
+  return http.patch<ServiceRecord>(`/service-records/${encodeURIComponent(id)}`, patch);
+}
+
+export function deleteServiceRecord(id: string): Promise<void> {
+  return http.delete<void>(`/service-records/${encodeURIComponent(id)}`);
 }
 
 /* ------------------------------------------------------------ assessments */

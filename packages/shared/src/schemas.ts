@@ -19,11 +19,53 @@ export const isoDateSchema = z
 /** Whole dollars. The product has no use for cents and Postgres stores integers. */
 export const moneySchema = z.number().int('Amounts are whole dollars').min(0).max(1_000_000);
 
+/** An odometer reading. Generous upper bound; a negative one is a typo. */
+export const mileageSchema = z.number().int().min(0).max(2_000_000);
+
 export const newServiceRecordSchema = z.object({
   description: z.string().trim().min(1, 'Description is required').max(200),
   date: isoDateSchema,
   cost: moneySchema,
+  /** Optional, but without it this service cannot measure any interval. */
+  mileageAtService: mileageSchema.optional(),
+  /** Set when the owner says this counts as one of their upkeep jobs. */
+  maintenanceItemId: z.string().uuid().optional(),
 });
+
+/**
+ * Every field optional, but at least one required -- an empty PATCH is a mistake.
+ *
+ * The clearable fields accept `null` as well as being omissible, and the difference
+ * matters: omitted means "leave it alone", null means "remove it". Without null a
+ * wrongly-entered odometer reading could only ever be replaced, never withdrawn.
+ */
+export const updateServiceRecordSchema = newServiceRecordSchema
+  .partial()
+  .extend({
+    mileageAtService: mileageSchema.nullable().optional(),
+    maintenanceItemId: z.string().uuid().nullable().optional(),
+  })
+  .refine((body) => Object.keys(body).length > 0, 'Provide at least one field to update');
+
+/**
+ * An upkeep job. Intervals are optional because an owner may want the job listed
+ * before they know how often it should happen -- it then reads as "unknown" rather
+ * than being silently assigned a guess.
+ */
+export const newMaintenanceItemSchema = z.object({
+  label: z.string().trim().min(1, 'Give the job a name').max(120),
+  intervalMiles: z.number().int().positive().max(200_000).optional(),
+  intervalMonths: z.number().int().positive().max(240).optional(),
+});
+
+/** Intervals accept `null` so an owner can withdraw a wrong one, not only replace it. */
+export const updateMaintenanceItemSchema = newMaintenanceItemSchema
+  .partial()
+  .extend({
+    intervalMiles: z.number().int().positive().max(200_000).nullable().optional(),
+    intervalMonths: z.number().int().positive().max(240).nullable().optional(),
+  })
+  .refine((body) => Object.keys(body).length > 0, 'Provide at least one field to update');
 
 export const newAssessmentSchema = z.object({
   repairId: z.string().uuid('Pick a repair from the catalog'),
@@ -34,6 +76,21 @@ export const newAssessmentSchema = z.object({
 
 export const completeAssessmentSchema = z.object({
   cost: moneySchema,
+});
+
+/**
+ * An NHTSA campaign number, e.g. "20V314000" -- two digits, a letter, then six.
+ * Validated so a junk path segment is a 422 rather than a row keyed on nonsense.
+ */
+export const campaignNumberSchema = z
+  .string()
+  .trim()
+  .toUpperCase()
+  .regex(/^[0-9]{2}[A-Z][0-9]{3,6}$/, 'That does not look like an NHTSA campaign number');
+
+/** What an owner tells us about a recall on their own car. */
+export const recallStatusSchema = z.object({
+  repaired: z.boolean(),
 });
 
 /** A VIN is 17 characters and never contains I, O or Q, to avoid digit confusion. */
@@ -89,3 +146,7 @@ export type CompleteAssessmentInput = z.infer<typeof completeAssessmentSchema>;
 export type UpdateAccountInput = z.infer<typeof updateAccountSchema>;
 export type UpdateVehicleInput = z.infer<typeof updateVehicleSchema>;
 export type SendChatMessageInput = z.infer<typeof sendChatMessageSchema>;
+export type RecallStatusInput = z.infer<typeof recallStatusSchema>;
+export type UpdateServiceRecordInput = z.infer<typeof updateServiceRecordSchema>;
+export type NewMaintenanceItemInput = z.infer<typeof newMaintenanceItemSchema>;
+export type UpdateMaintenanceItemInput = z.infer<typeof updateMaintenanceItemSchema>;

@@ -43,6 +43,34 @@
       "when": 1785348104282,
       "tag": "0005_cuddly_banshee",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1785353119806,
+      "tag": "0006_dusty_terrax",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1785353567190,
+      "tag": "0007_lonely_toad_men",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1785355574228,
+      "tag": "0008_cooing_wrecking_crew",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1785355617462,
+      "tag": "0009_gray_luke_cage",
+      "breakpoints": true
     }
   ]
 }

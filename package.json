@@ -20,6 +20,7 @@
     "test:e2e": "NODE_ENV=test tsx scripts/e2e.mts",
     "build:shared": "npm run build --workspace=@caradvocate/shared",
     "postinstall": "npm run build:shared",
-    "dev:shared": "npm run dev --workspace=@caradvocate/shared"
+    "dev:shared": "npm run dev --workspace=@caradvocate/shared",
+    "ingest:mileage": "tsx --env-file-if-exists=.env scripts/ingestComplaintMileage.mts"
   }
 }

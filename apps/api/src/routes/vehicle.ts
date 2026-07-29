@@ -1,17 +1,32 @@
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, isNotNull, max, sql } from 'drizzle-orm';
+import { z } from 'zod';
 import { Router } from 'express';
 import {
+  campaignNumberSchema,
+  newMaintenanceItemSchema,
   newVehicleSchema,
+  recallStatusSchema,
+  updateMaintenanceItemSchema,
   updateVehicleSchema,
   vinSchema,
   type KnownIssueReport,
   type RecallReport,
 } from '@caradvocate/shared';
-import { maintenanceItems, modelKnownIssues, vehicleValuePoints, vehicles } from '../db/schema.js';
-import { toKnownIssue, toKnownIssueFromReports, toMaintenanceItem, toRecall, toVehicle } from '../mappers.js';
+import {
+  maintenanceItems,
+  modelKnownIssues,
+  modelRecalls,
+  serviceRecords,
+  vehicleRecallStatus,
+  vehicleValuePoints,
+  vehicles,
+} from '../db/schema.js';
+import { toKnownIssue, toKnownIssueFromReports, toRecall, toVehicle } from '../mappers.js';
 import { validateBody } from '../middleware/validate.js';
 import { userIdOf } from '../middleware/currentUser.js';
 import { getOwnerReports } from '../services/complaintSync.js';
+import { byUrgency, toMaintenanceItem } from '../services/maintenanceDue.js';
+import { modelMatches } from '../services/modelFeed.js';
 import { getModelRecalls } from '../services/recallSync.js';
 import { decodeVin } from '../services/vinDecode.js';
 import { HttpError } from '../lib/httpError.js';
@@ -102,16 +117,130 @@ vehicleRouter.get('/decode/:vin', async (req, res) => {
   res.json(await decodeVin(parsed.data));
 });
 
+/**
+ * Upkeep jobs with their due status worked out.
+ *
+ * The status is computed, never stored -- see services/maintenanceDue.ts. That needs
+ * two things beyond the job itself: today's odometer, and the last service logged
+ * against each job, which is one grouped query rather than one per item.
+ */
 vehicleRouter.get('/maintenance', async (req, res) => {
   const vehicle = await requireOwnVehicle(req);
-  const rows = await req.db
-    .select()
-    .from(maintenanceItems)
-    .where(eq(maintenanceItems.vehicleId, vehicle.id))
-    .orderBy(asc(maintenanceItems.position));
 
-  res.json(rows.map(toMaintenanceItem));
+  const [rows, lastServices] = await Promise.all([
+    req.db
+      .select()
+      .from(maintenanceItems)
+      .where(eq(maintenanceItems.vehicleId, vehicle.id))
+      .orderBy(asc(maintenanceItems.position)),
+    req.db
+      .select({
+        maintenanceItemId: serviceRecords.maintenanceItemId,
+        date: max(serviceRecords.serviceDate),
+        mileage: max(serviceRecords.mileageAtService),
+      })
+      .from(serviceRecords)
+      .where(and(eq(serviceRecords.vehicleId, vehicle.id), isNotNull(serviceRecords.maintenanceItemId)))
+      .groupBy(serviceRecords.maintenanceItemId),
+  ]);
+
+  const lastByItem = new Map(
+    lastServices
+      .filter((row) => row.maintenanceItemId && row.date)
+      .map((row) => [row.maintenanceItemId as string, { date: row.date as string, mileage: row.mileage }]),
+  );
+
+  const context = { currentMileage: vehicle.mileage, today: new Date() };
+  const items = rows.map((row) => toMaintenanceItem(row, lastByItem.get(row.id), context));
+  items.sort(byUrgency);
+
+  res.json(items);
 });
+
+vehicleRouter.post('/maintenance', validateBody(newMaintenanceItemSchema), async (req, res) => {
+  const vehicle = await requireOwnVehicle(req);
+
+  // Appended rather than inserted: `position` is the owner's own ordering, and the
+  // response is sorted by urgency anyway.
+  const [{ next } = { next: 0 }] = await req.db
+    .select({ next: sql<number>`coalesce(max(${maintenanceItems.position}), -1) + 1` })
+    .from(maintenanceItems)
+    .where(eq(maintenanceItems.vehicleId, vehicle.id));
+
+  const [row] = await req.db
+    .insert(maintenanceItems)
+    .values({
+      vehicleId: vehicle.id,
+      label: req.body.label,
+      intervalMiles: req.body.intervalMiles ?? null,
+      intervalMonths: req.body.intervalMonths ?? null,
+      position: Number(next),
+    })
+    .returning();
+
+  const context = { currentMileage: vehicle.mileage, today: new Date() };
+  res.status(201).json(toMaintenanceItem(row, undefined, context));
+});
+
+vehicleRouter.patch('/maintenance/:id', validateBody(updateMaintenanceItemSchema), async (req, res) => {
+  const vehicle = await requireOwnVehicle(req);
+  const id = await requireOwnMaintenanceItem(req, vehicle.id);
+
+  // Explicit nulls so clearing an interval is possible; `undefined` would be
+  // dropped by Drizzle and the old value would silently survive.
+  const patch: Record<string, unknown> = {};
+  if (req.body.label !== undefined) patch.label = req.body.label;
+  if ('intervalMiles' in req.body) patch.intervalMiles = req.body.intervalMiles ?? null;
+  if ('intervalMonths' in req.body) patch.intervalMonths = req.body.intervalMonths ?? null;
+
+  const [row] = await req.db
+    .update(maintenanceItems)
+    .set(patch)
+    .where(eq(maintenanceItems.id, id))
+    .returning();
+
+  const [last] = await req.db
+    .select({ date: max(serviceRecords.serviceDate), mileage: max(serviceRecords.mileageAtService) })
+    .from(serviceRecords)
+    .where(eq(serviceRecords.maintenanceItemId, id));
+
+  const context = { currentMileage: vehicle.mileage, today: new Date() };
+  res.json(toMaintenanceItem(row, last?.date ? { date: last.date, mileage: last.mileage } : undefined, context));
+});
+
+vehicleRouter.delete('/maintenance/:id', async (req, res) => {
+  const vehicle = await requireOwnVehicle(req);
+  const id = await requireOwnMaintenanceItem(req, vehicle.id);
+
+  // Service records referencing it survive with a null link: the work still happened.
+  await req.db.delete(maintenanceItems).where(eq(maintenanceItems.id, id));
+  res.status(204).end();
+});
+
+/**
+ * Narrows a path id to an item on the caller's own car.
+ *
+ * The id comes from the client, so the vehicle filter is what stops one account
+ * editing another's schedule -- the same reasoning as requireOwnVehicle.
+ */
+async function requireOwnMaintenanceItem(
+  req: Parameters<typeof requireOwnVehicle>[0],
+  vehicleId: string,
+): Promise<string> {
+  const id = stringParam(req, 'id');
+  if (!z.string().uuid().safeParse(id).success) {
+    throw HttpError.notFound('No such maintenance item');
+  }
+
+  const [row] = await req.db
+    .select({ id: maintenanceItems.id })
+    .from(maintenanceItems)
+    .where(and(eq(maintenanceItems.id, id), eq(maintenanceItems.vehicleId, vehicleId)))
+    .limit(1);
+
+  if (!row) throw HttpError.notFound('No such maintenance item');
+  return row.id;
+}
 
 /**
  * Open safety recalls for the caller's model, mirrored from NHTSA.
@@ -125,14 +254,84 @@ vehicleRouter.get('/maintenance', async (req, res) => {
  */
 vehicleRouter.get('/recalls', async (req, res) => {
   const vehicle = await requireOwnVehicle(req);
-  const { recalls, synced } = await getModelRecalls(req.db, {
-    year: vehicle.year,
-    make: vehicle.make,
-    model: vehicle.model,
-  });
+  const [{ recalls, synced }, owned] = await Promise.all([
+    getModelRecalls(req.db, { year: vehicle.year, make: vehicle.make, model: vehicle.model }),
+    req.db.select().from(vehicleRecallStatus).where(eq(vehicleRecallStatus.vehicleId, vehicle.id)),
+  ]);
 
-  res.json({ recalls: recalls.map(toRecall), checked: synced } satisfies RecallReport);
+  const repairedBy = new Map(owned.map((row) => [row.campaignNumber, row.repaired]));
+  const merged = recalls.map((row) => toRecall(row, repairedBy.get(row.campaignNumber)));
+
+  // Anything the owner has confirmed as done drops to the bottom. It stays listed
+  // -- the record matters, and they may have been mistaken -- but it should not
+  // compete with outstanding work for attention.
+  merged.sort((a, b) => Number(a.repaired === true) - Number(b.repaired === true));
+
+  res.json({ recalls: merged, checked: synced } satisfies RecallReport);
 });
+
+/**
+ * Records what the owner says about one recall on their car.
+ *
+ * The campaign has to actually apply to this vehicle's model, so a mistyped or
+ * invented number is a 404 rather than a stored row about a car this is not.
+ */
+vehicleRouter.put('/recalls/:campaign', validateBody(recallStatusSchema), async (req, res) => {
+  const vehicle = await requireOwnVehicle(req);
+  const campaignNumber = await requireCampaignForVehicle(req, vehicle);
+
+  await req.db
+    .insert(vehicleRecallStatus)
+    .values({ vehicleId: vehicle.id, campaignNumber, repaired: req.body.repaired })
+    .onConflictDoUpdate({
+      target: [vehicleRecallStatus.vehicleId, vehicleRecallStatus.campaignNumber],
+      set: { repaired: req.body.repaired, notedAt: new Date() },
+    });
+
+  res.status(204).end();
+});
+
+/** Clears the owner's answer, returning the recall to an honest "unknown". */
+vehicleRouter.delete('/recalls/:campaign', async (req, res) => {
+  const vehicle = await requireOwnVehicle(req);
+  const campaignNumber = await requireCampaignForVehicle(req, vehicle);
+
+  await req.db
+    .delete(vehicleRecallStatus)
+    .where(
+      and(eq(vehicleRecallStatus.vehicleId, vehicle.id), eq(vehicleRecallStatus.campaignNumber, campaignNumber)),
+    );
+
+  res.status(204).end();
+});
+
+/**
+ * Validates the campaign in the path and confirms it is one of this model's.
+ *
+ * Without the second half an owner could record a status against any campaign in
+ * NHTSA's catalogue, and the recalls list would carry answers to questions this car
+ * was never asked.
+ */
+async function requireCampaignForVehicle(
+  req: Parameters<typeof requireOwnVehicle>[0],
+  vehicle: { year: number; make: string; model: string },
+): Promise<string> {
+  const parsed = campaignNumberSchema.safeParse(stringParam(req, 'campaign'));
+  if (!parsed.success) {
+    throw new HttpError('validation_failed', 'That does not look like an NHTSA campaign number', [
+      { path: 'campaign', message: parsed.error.issues[0]?.message ?? 'Invalid campaign number' },
+    ]);
+  }
+
+  const [match] = await req.db
+    .select({ id: modelRecalls.id })
+    .from(modelRecalls)
+    .where(and(modelMatches(modelRecalls, vehicle), eq(modelRecalls.campaignNumber, parsed.data)))
+    .limit(1);
+
+  if (!match) throw HttpError.notFound('That recall does not apply to this vehicle');
+  return parsed.data;
+}
 
 /** Beyond this the list stops informing and starts overwhelming. */
 const MAX_REPORTED_ISSUES = 8;

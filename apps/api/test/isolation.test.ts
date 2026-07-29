@@ -27,7 +27,7 @@ export async function run(): Promise<void> {
 
   const alexHistory = await request('GET', '/api/service-records');
   const danaHistory = await request('GET', '/api/service-records', { as: DANA });
-  check('Alex sees 5 service records', alexHistory.body.length === 5, `got ${alexHistory.body.length}`);
+  check('Alex sees 6 service records', alexHistory.body.length === 6, `got ${alexHistory.body.length}`);
   check('Dana sees only her 1 record', danaHistory.body.length === 1, `got ${danaHistory.body.length}`);
   check(
     "Dana's record never appears in Alex's history",
@@ -106,7 +106,7 @@ export async function run(): Promise<void> {
     "Dana's new record does not appear for Alex",
     !alexHistoryAfter.body.some((r: any) => r.description === 'Dana new brakes'),
   );
-  check("Alex's history is unchanged in length", alexHistoryAfter.body.length === 5);
+  check("Alex's history is unchanged in length", alexHistoryAfter.body.length === 6);
 
   const danaCreated = await request('POST', '/api/assessments', {
     as: DANA,

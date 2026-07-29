@@ -9,9 +9,9 @@
  * corrupt every date that is not impossible to misread, and nothing would fail
  * loudly. See services/complaints.ts.
  */
-import { asc } from 'drizzle-orm';
+import { asc, eq } from 'drizzle-orm';
 import * as t from '../src/db/schema.js';
-import { aggregateComplaints } from '../src/services/complaints.js';
+import { aggregateComplaints, canonicalComponent } from '../src/services/complaints.js';
 import { getOwnerReports, setComplaintFetcherForTesting } from '../src/services/complaintSync.js';
 import { parseRecallsResponse } from '../src/services/recalls.js';
 import type { ComponentReports } from '../src/services/complaints.js';
@@ -175,6 +175,20 @@ export async function run(): Promise<void> {
     results: [{ components: 'ENGINE', summary: 'Engine  stalled   without warning while merging onto a motorway.' }],
   });
   check('double spaces in an account are collapsed', spaced[0]?.quotes[0]?.text.includes('Engine stalled without'));
+
+  /* --------------- the bulk file and the API agree on component names --------- */
+
+  // The bulk file's COMPDESC is finer-grained and uses both separators inside one
+  // component's name, where the API uses a comma between several. Both must reduce
+  // to the same key or the mileage ingest silently matches nothing.
+  check('a colon tail is dropped', canonicalComponent('LATCHES/LOCKS/LINKAGES:HOOD:LATCH') === 'LATCHES/LOCKS/LINKAGES');
+  check('a comma tail is dropped', canonicalComponent('SERVICE BRAKES, HYDRAULIC') === 'SERVICE BRAKES');
+  check('both at once', canonicalComponent('VISIBILITY:POWER WINDOW DEVICES AND CONTROLS') === 'VISIBILITY');
+  check('an already-plain label is unchanged', canonicalComponent('ENGINE') === 'ENGINE');
+  check('it is case-insensitive', canonicalComponent('service brakes') === 'SERVICE BRAKES');
+  check('the canonical map still applies', canonicalComponent('FUEL/PROPULSION SYSTEM') === 'FUEL SYSTEM');
+  check('the uncategorised bucket is rejected', canonicalComponent('UNKNOWN OR OTHER') === undefined);
+  check('an empty label is rejected', canonicalComponent('') === undefined);
 
   const junk = aggregateComplaints({ results: [{ components: 'UNKNOWN OR OTHER' }] });
   check("NHTSA's uncategorised bucket is dropped", junk.length === 0);
@@ -342,6 +356,40 @@ export async function run(): Promise<void> {
       .from(t.modelOwnerReports)
       .where(modelMatches(t.modelOwnerReports, { year: 2019, make: 'honda', model: 'civic' }));
     check('a differently-cased lookup finds the mirror', byLowercase.length === 1, `got ${byLowercase.length}`);
+
+    /* --------------------------------------------- mileage at failure on the wire */
+
+    section('complaints: mileage at failure');
+
+    // Written by scripts/ingestComplaintMileage.mts, which the suite does not run --
+    // it needs a 351MB download. What matters here is that the columns reach the
+    // client correctly and that a partial row is treated as absent.
+    const [target] = byLowercase;
+    await db
+      .update(t.modelOwnerReports)
+      .set({ mileageSampleCount: 6, mileageLowMi: 40000, mileageMedianMi: 49900, mileageHighMi: 92000 })
+      .where(eq(t.modelOwnerReports.id, target.id));
+
+    const withMileage = await request('GET', '/api/vehicle/known-issues');
+    const steeringIssue = withMileage.body.issues.find((i: any) => i.source === 'owner_reports');
+    check('the mileage range reaches the client', steeringIssue?.mileage?.lowMi === 40000);
+    check('the median comes through', steeringIssue?.mileage?.medianMi === 49900);
+    check('the upper bound comes through', steeringIssue?.mileage?.highMi === 92000);
+    // Carried separately from reportCount: the range rests on the subset of
+    // complaints that recorded an odometer reading.
+    check('the sample count is carried, not conflated with the report count', steeringIssue?.mileage?.sampleCount === 6);
+    check('and it is smaller than the report count here', steeringIssue.mileage.sampleCount < steeringIssue.reportCount);
+
+    // A half-written row would otherwise render as a range from undefined.
+    await db
+      .update(t.modelOwnerReports)
+      .set({ mileageMedianMi: null })
+      .where(eq(t.modelOwnerReports.id, target.id));
+    const partial = await request('GET', '/api/vehicle/known-issues');
+    check(
+      'a partially-populated row is treated as no mileage at all',
+      partial.body.issues.find((i: any) => i.source === 'owner_reports')?.mileage === undefined,
+    );
   } finally {
     goOffline();
     await close();

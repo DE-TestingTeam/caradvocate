@@ -35,8 +35,28 @@ const NON_COMPONENT = 'UNKNOWN OR OTHER';
 const CANONICAL_COMPONENT = new Map([
   ['GASOLINE', 'FUEL SYSTEM'],
   ['FUEL/PROPULSION SYSTEM', 'FUEL SYSTEM'],
-  ['FUEL SYSTEM, GASOLINE', 'FUEL SYSTEM'],
 ]);
+
+/**
+ * Reduces one component label to the form the aggregates are keyed on.
+ *
+ * Shared with the bulk-file ingest, which needs the same answer from a differently
+ * shaped input. The bulk file's COMPDESC is finer-grained and uses both separators
+ * *within* one component's name -- "LATCHES/LOCKS/LINKAGES:HOOD:LATCH",
+ * "SERVICE BRAKES, HYDRAULIC" -- where the JSON API uses a comma to separate
+ * several components. So the colon and comma tails are dropped here, and the API
+ * path splits on commas before calling this.
+ *
+ * Verified on a 2011 Pathfinder: reducing the bulk file this way reproduces the
+ * API's component groups and counts exactly.
+ *
+ * Returns undefined for NHTSA's uncategorised bucket, which tells an owner nothing.
+ */
+export function canonicalComponent(raw: string): string | undefined {
+  const head = raw.split(':')[0]?.split(',')[0]?.trim().toUpperCase();
+  if (!head || head === NON_COMPONENT) return undefined;
+  return CANONICAL_COMPONENT.get(head) ?? head;
+}
 
 /** How many owner descriptions to keep per component. */
 const QUOTES_PER_COMPONENT = 3;
@@ -225,11 +245,12 @@ function componentsOf(row: Record<string, unknown>): string[] {
   const raw = row.components;
   if (typeof raw !== 'string') return [];
 
+  // Comma is a separator here, unlike in the bulk file where it can be part of one
+  // component's name -- hence the split before canonicalising rather than inside it.
   const canonical = raw
     .split(',')
-    .map((part) => part.trim().toUpperCase())
-    .filter((part) => part && part !== NON_COMPONENT)
-    .map((part) => CANONICAL_COMPONENT.get(part) ?? part);
+    .map((part) => canonicalComponent(part))
+    .filter((part): part is string => Boolean(part));
 
   return [...new Set(canonical)];
 }

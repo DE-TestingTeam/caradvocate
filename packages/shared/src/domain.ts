@@ -8,7 +8,20 @@
 
 export type Severity = 'low' | 'medium' | 'high';
 
-export type MaintenanceStatus = 'open_recall' | 'overdue' | 'upcoming';
+/**
+ * Whether an upkeep job is due.
+ *
+ * Computed from the interval, the last time it was done and today's odometer -- not
+ * stored, because nothing would keep a stored value true.
+ *
+ * `unknown` is a first-class answer and the default: with no interval set, or no
+ * service ever logged against the job, there is genuinely nothing to say. Reporting
+ * `ok` in that case would be an all-clear we cannot support -- the same mistake as
+ * calling an unchecked recall list clean.
+ *
+ * `open_recall` is gone: recalls have their own section, sourced from NHTSA.
+ */
+export type MaintenanceStatus = 'overdue' | 'due_soon' | 'ok' | 'unknown';
 
 /**
  * The wireframes only ever show FAIR and OVERPRICED, so those are the only two
@@ -59,6 +72,25 @@ export interface MaintenanceItem {
   id: string;
   label: string;
   status: MaintenanceStatus;
+  /** How often it is due. Owner-supplied; either, both or neither. */
+  intervalMiles?: number;
+  intervalMonths?: number;
+  /** The most recent service logged against this job, if any. */
+  lastServicedOn?: string;
+  lastServicedMileage?: number;
+  /**
+   * When it next falls due. Present only when there is an interval *and* a last
+   * service to measure from -- otherwise the app would be inventing a baseline.
+   */
+  dueAtMileage?: number;
+  dueOn?: string;
+  /**
+   * Miles left before it is due; negative when overdue. Supplied so the UI does not
+   * repeat the subtraction and risk disagreeing with the status.
+   */
+  milesRemaining?: number;
+  /** Why the status is `unknown`, so the UI can say what is missing. */
+  unknownReason?: 'no_interval' | 'never_serviced';
 }
 
 /**
@@ -82,6 +114,12 @@ export interface Recall {
   parkOutside: boolean;
   /** ISO yyyy-mm-dd. Absent when NHTSA reported no usable date. */
   reportedOn?: string;
+  /**
+   * What the owner says about their own car: `true` repaired, `false` still
+   * outstanding, absent when nobody has said. NHTSA cannot answer this -- its feed
+   * is per-model -- so an absent value means unknown, not "not done".
+   */
+  repaired?: boolean;
 }
 
 /**
@@ -124,6 +162,30 @@ export interface KnownIssue {
   deathCount?: number;
   /** ISO yyyy-mm-dd of the most recent reported incident. */
   latestIncidentOn?: string;
+  /**
+   * When this system tends to fail, from odometer readings on the complaints.
+   *
+   * Absent until the bulk ingest has run for this model, and withheld when too few
+   * complaints reported mileage to say anything -- see MileageAtFailure.
+   */
+  mileage?: MileageAtFailure;
+}
+
+/**
+ * The mileage range a component gets reported at.
+ *
+ * `lowMi` and `highMi` are the 25th and 75th percentiles rather than the extremes,
+ * so one complaint at 600 miles does not stretch the range past usefulness.
+ *
+ * `sampleCount` is carried deliberately and is smaller than the group's
+ * `reportCount`: only about two thirds of complaints include an odometer reading. A
+ * range built from four readings and one built from forty should not look alike.
+ */
+export interface MileageAtFailure {
+  lowMi: number;
+  medianMi: number;
+  highMi: number;
+  sampleCount: number;
 }
 
 /**
@@ -144,6 +206,10 @@ export interface ServiceRecord {
   date: string;
   cost: number;
   source: ServiceRecordSource;
+  /** Odometer when the work was done. Absent on older records and when unknown. */
+  mileageAtService?: number;
+  /** The upkeep job this counts as, when the owner said it counts as one. */
+  maintenanceItemId?: string;
 }
 
 export interface PartBenchmark {

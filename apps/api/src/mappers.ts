@@ -11,7 +11,7 @@ import type {
   Assessment,
   ChatMessage,
   KnownIssue,
-  MaintenanceItem,
+  MileageAtFailure,
   Recall,
   RepairCatalogItem,
   ServiceRecord,
@@ -42,9 +42,6 @@ export function toVehicle(
   };
 }
 
-export function toMaintenanceItem(row: Row<typeof t.maintenanceItems>): MaintenanceItem {
-  return { id: row.id, label: row.label, status: row.status };
-}
 
 export function toKnownIssue(row: Row<typeof t.modelKnownIssues>): KnownIssue {
   return { id: row.id, label: row.label, severity: row.severity, source: 'curated' };
@@ -76,6 +73,24 @@ export function toKnownIssueFromReports(row: Row<typeof t.modelOwnerReports>): K
     injuryCount: row.injuryCount,
     deathCount: row.deathCount,
     latestIncidentOn: row.latestIncidentOn ?? undefined,
+    mileage: toMileageAtFailure(row),
+  };
+}
+
+/**
+ * Present only when the ingest has run for this model and found enough odometer
+ * readings. All four columns are written together, so one null means no mileage.
+ */
+function toMileageAtFailure(row: Row<typeof t.modelOwnerReports>): MileageAtFailure | undefined {
+  const { mileageSampleCount, mileageLowMi, mileageMedianMi, mileageHighMi } = row;
+  if (mileageSampleCount == null || mileageLowMi == null || mileageMedianMi == null || mileageHighMi == null) {
+    return undefined;
+  }
+  return {
+    lowMi: mileageLowMi,
+    medianMi: mileageMedianMi,
+    highMi: mileageHighMi,
+    sampleCount: mileageSampleCount,
   };
 }
 
@@ -84,8 +99,9 @@ export function toKnownIssueFromReports(row: Row<typeof t.modelOwnerReports>): K
  * "stop driving" and "park outside" are escalations it publishes explicitly; every
  * other recall is a safety defect too, so none of them map to `low`.
  */
-export function toRecall(row: Row<typeof t.modelRecalls>): Recall {
+export function toRecall(row: Row<typeof t.modelRecalls>, repaired?: boolean): Recall {
   return {
+    ...(repaired === undefined ? {} : { repaired }),
     id: row.id,
     campaignNumber: row.campaignNumber,
     component: row.component,
@@ -106,6 +122,8 @@ export function toServiceRecord(row: Row<typeof t.serviceRecords>): ServiceRecor
     date: row.serviceDate,
     cost: row.cost,
     source: row.source,
+    mileageAtService: row.mileageAtService ?? undefined,
+    maintenanceItemId: row.maintenanceItemId ?? undefined,
   };
 }
 

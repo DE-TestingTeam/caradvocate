@@ -187,6 +187,55 @@ The parser stays defensive regardless — any unexpected shape, timeout or error
 falls back to manual entry, so an upstream change degrades the accelerator rather
 than blocking onboarding.
 
+## Scheduled maintenance
+
+Whether an upkeep job is due is **arithmetic, not data**: the interval, the last time
+it was done, and today's odometer. `apps/api/src/services/maintenanceDue.ts` does it
+on read and nothing is stored — the previous version of this table held a `status`
+column, which meant nothing kept it true and the seed had to bake the answer into the
+label (`'Oil Change - Due in 1,200 mi'`).
+
+Two rules carry most of the weight, and both are asserted in
+`apps/api/test/maintenance.test.ts`:
+
+- **No interval, or nothing ever logged, is `unknown` — never `ok`.** There is no
+  baseline to measure from, and a false all-clear about brakes is the worst thing this
+  screen could say. The UI states *which* of the two is missing, since "unknown" alone
+  reads like a bug.
+- **With both a mileage and a time interval, whichever falls first wins.** That is how
+  manufacturers write schedules ("every 10,000 miles or 12 months"); taking the later
+  of the two would tell someone they are fine when they are a year overdue.
+
+Each row shows its working — "4,400 mi past due · due at 64,000 · last done at
+58,000" — because an owner told "overdue" with no reason has to trust us, and one
+shown the subtraction can check it.
+
+### Intervals are owner-supplied, and that is not a stopgap
+
+The manufacturer's official schedule is licensed data. Rather than invent generic
+intervals and present them as *this* car's schedule, the owner sets them.
+
+If those schedules are ever bought, they fill in `interval_miles` and
+`interval_months` on the same table and **nothing else changes** — same computation,
+same UI, same contract. So this is also the cheap way to find out whether anyone uses
+maintenance tracking before paying for the lists.
+
+### Service records feed it
+
+A record carries `mileage_at_service` and an optional `maintenance_item_id`. Both
+exist so the calculation can work:
+
+- **Without the odometer, no interval can be measured.** It stays optional — someone
+  entering an old receipt may not know it — but the form says why it matters.
+- **The link is explicit, never inferred.** Matching "oil and filter" to the oil-change
+  job by description is the kind of guess that is wrong just often enough to tell
+  someone their brakes are fine when they are not.
+
+Deleting a job nulls the link rather than cascading: the work still happened.
+
+Records can now be edited and deleted, which matters more than tidiness — a mistyped
+odometer does not merely look wrong, it makes the app claim a job is due when it is not.
+
 ### Newly added cars have no valuation, on purpose
 
 A car you just added has no valuation and no maintenance schedule, because neither
@@ -227,11 +276,27 @@ Three decisions in there are worth knowing about:
   would push the longest-neglected item to the bottom. Undated campaigns sort last
   rather than masquerading as the oldest.
 
-One limit worth being explicit about: NHTSA's feed is keyed by year/make/model, so
-it reports campaigns affecting *this model* — not whether *this particular car* was
-ever repaired. The UI says so, and the badge reads "Recall" rather than "Open
-recall", because claiming the latter would assert something we cannot know. A
-VIN-level answer needs the manufacturer, not NHTSA.
+### Whether *your* car was repaired
+
+NHTSA's feed is keyed by year/make/model, so it reports campaigns affecting *this
+model* — not whether *this particular car* was ever fixed. There is no free way to
+close that gap: NHTSA has no VIN-level recall API, and the per-VIN answer is sold
+by manufacturers and resellers.
+
+So the owner is asked. `vehicle_recall_status` records their answer per campaign,
+and it is deliberately **three-state**: no row means unknown, which is not the same
+as the owner saying it is outstanding. Both answers are reversible, because someone
+who mis-taps on a safety recall must not be stuck with a warning greyed out.
+
+Confirmed-done recalls stay in the list but sort to the bottom and recede — the
+record is worth keeping and the owner may be misremembering. The badge reads
+"Recall" rather than "Open recall" for the same reason. Where a VIN is on file the
+list also links to NHTSA's VIN lookup, which queries the manufacturer behind the
+scenes and *can* answer per-car.
+
+A status is only accepted for a campaign that actually applies to the vehicle's
+model; anything else is a 404, so the list cannot accumulate answers to questions
+the car was never asked.
 
 Two details of that API are easy to get wrong, and both are silent failures. Dates
 are **DD/MM/YYYY** (`28/05/2020` is 28 May), and the flag is spelled `parkOutSide`
@@ -303,6 +368,42 @@ count of **125 distinct complaints** — 63 filed under the old taxonomy, 62 und
 the new, with no overlap. The map is deliberately minimal and unknown labels pass
 through untouched.
 
+### Mileage at failure
+
+The JSON complaints API omits the odometer reading. NHTSA's bulk flat file has it,
+and it is the one free number that is about *your* car rather than the model: "40,000–92,000 mi
+in 6 of them" beside an engine complaint answers the question owners actually ask.
+
+```bash
+npm run ingest:mileage                 # downloads the current bulk file
+npm run ingest:mileage -- ./cmpl.zip   # or reuse one already on disk
+```
+
+`scripts/ingestComplaintMileage.mts` streams the file through `unzip -p` — it is
+~351MB zipped and gigabytes unzipped, so it is never written to disk — and keeps
+only rows for models someone actually owns. Requires `unzip` on PATH.
+
+Three honesty constraints are built in:
+
+- **The range is the 25th–75th percentile**, not the extremes, so one complaint at
+  600 miles does not stretch it past usefulness. Percentiles are nearest-rank, not
+  interpolated: with six readings, interpolation invents precision.
+- **`mileageSampleCount` is stored and shown** ("in 6 of them"). Only about two
+  thirds of complaints report mileage, and a range from four readings should not look
+  like one from forty.
+- **Groups with fewer than four readings are skipped entirely**, and the script says
+  how many it skipped rather than quietly covering less than it appears to.
+
+Because the bulk file's `COMPDESC` is finer-grained than the API's `components`
+("SERVICE BRAKES, HYDRAULIC" vs "SERVICE BRAKES"), both go through
+`canonicalComponent`. Note the two feeds use commas differently — a separator
+between components in the API, part of a single name in the bulk file — so the API
+path splits before canonicalising. Verified on a 2011 Pathfinder, where reducing the
+bulk file reproduces the API's groups and counts exactly.
+
+The ingest only enriches component groups the API feed has already produced. If it
+reports "no aggregate row", load the car in the app once so complaints sync first.
+
 ### Shared feed machinery
 
 Recalls and complaints are both model-keyed NHTSA feeds with identical freshness
@@ -335,8 +436,8 @@ drop-in.
 
 ```bash
 npm test           # typecheck + API suite + end-to-end
-npm run test:api   # 315 checks, no database required
-npm run test:e2e   # 69 checks, full stack
+npm run test:api   # 395 checks, no database required
+npm run test:e2e   # 77 checks, full stack
 ```
 
 Neither suite touches Supabase, or needs any database running. Both use

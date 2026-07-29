@@ -238,7 +238,19 @@ const check = (name: string, pass: boolean, detail = '') => checks.push({ name, 
   check('My Car renders the market value', body.includes('$14,200'));
   check('My Car masks the VIN from the real column', body.includes('2HGFC2F53KH••••••'));
   check('My Car renders the trade-in range', body.includes('Trade in range $12,100–$14,600'));
-  check('maintenance comes through with its recall badge', body.includes('Fuel Pump Control Unit') && body.includes('Open recall'));
+  // Scheduled maintenance is computed from intervals + logged services + the odometer.
+  check('an overdue upkeep job is surfaced', body.includes('Tyre rotation') && body.includes('Overdue'));
+  check('the working is shown, not just a verdict', body.includes('past due') && body.includes('due at 64,000'));
+  check('a job with no interval says what is missing', body.includes('Set how often this is due'));
+  check('a never-serviced job says what is missing', body.includes('Log this service once'));
+  check('service history shows the odometer that makes it count', body.includes('at 63,900 mi'));
+
+  // Three LogServiceDialog instances are mounted (one to add, one to edit, one per
+  // section) and only the uncontrolled one may own a trigger.
+  const logButtons = [...dom.window.document.querySelectorAll('button')].filter(
+    (b) => b.textContent?.trim() === 'Log a service',
+  );
+  check('exactly one "Log a service" button is rendered', logButtons.length === 1, `found ${logButtons.length}`);
   check('curated known issues come through', body.includes('Transmission hesitation under load'));
 
   // Owner complaints, aggregated by component and labelled with their counts.
@@ -260,6 +272,17 @@ const check = (name: string, pass: boolean, detail = '') => checks.push({ name, 
     nhtsaLink?.getAttribute('href') ?? 'no link found',
   );
   check('and opens in a new tab without leaking the referrer', nhtsaLink?.getAttribute('rel')?.includes('noopener') === true);
+
+  // Recalls are per-model; only the owner knows whether their own car was done.
+  check('the owner is asked whether each recall was done', body.includes('Had this done?'));
+  check('both answers are offered, since "not yet" is not the same as unknown', body.includes('Yes') && body.includes('Not yet'));
+
+  const vinLink = dom.window.document.querySelector('a[href*="nhtsa.gov/recalls?vin="]');
+  check(
+    'the VIN lookup links to the one place that can answer per-car',
+    vinLink?.getAttribute('href') === 'https://www.nhtsa.gov/recalls?vin=2HGFC2F53KH124821',
+    vinLink?.getAttribute('href') ?? 'no VIN link found',
+  );
 
   // Recalls: fetched, mirrored, mapped and rendered.
   check('a recall component is cased for reading, not shouted', body.includes('Air Bags · Frontal · Driver Side · Inflator Module'));
@@ -451,7 +474,10 @@ const check = (name: string, pass: boolean, detail = '') => checks.push({ name, 
 
   // The honest empty states, rather than invented numbers.
   check('no market value is invented for a new car', afterAdd.includes('Not available yet'));
-  check('an empty maintenance list says so', afterAdd.includes('No scheduled maintenance on file'));
+  // A new car has no upkeep jobs, and the empty state explains what to do about it
+  // rather than blaming a missing data source the owner cannot supply.
+  check('an empty maintenance list says so', afterAdd.includes('No upkeep jobs yet'));
+  check('and invites the owner to set the intervals', afterAdd.includes('how often each is due'));
   check('an empty service history says so', afterAdd.includes('No service logged yet'));
 
   const persisted = await fetch(`${ORIGIN}/api/vehicle`).then((r) => r.json());
