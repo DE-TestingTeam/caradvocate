@@ -10,6 +10,14 @@ const statusMeta: Record<MaintenanceStatus, { label: string; variant: 'default' 
 };
 
 export function MaintenanceList({ items }: { items: MaintenanceItem[] }) {
+  if (items.length === 0) {
+    return (
+      <p className="py-2 text-sm text-muted-foreground">
+        No recalls or scheduled maintenance on file. This fills in once a recall feed is connected.
+      </p>
+    );
+  }
+
   return (
     <ul className="space-y-2">
       {items.map((item) => {

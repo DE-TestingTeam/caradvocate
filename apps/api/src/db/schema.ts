@@ -22,7 +22,7 @@
  * MONEY is stored as integer whole dollars. The product never shows cents.
  * HOURS are numeric(4,2) because labor times are quoted in tenths of an hour.
  */
-import { relations } from 'drizzle-orm';
+import { relations, sql } from 'drizzle-orm';
 import {
   index,
   integer,
@@ -52,6 +52,13 @@ export const users = pgTable(
   'users',
   {
     id: uuid('id').primaryKey().defaultRandom(),
+    /**
+     * The `sub` claim from the Supabase Auth JWT, linking this profile to the
+     * identity Supabase owns. Nullable because seeded and dev-stub users have no
+     * Supabase identity, and because we never want an auth outage to make
+     * existing rows unreadable.
+     */
+    supabaseUserId: uuid('supabase_user_id'),
     email: text('email').notNull(),
     name: text('name').notNull(),
     phone: text('phone').notNull().default(''),
@@ -62,6 +69,10 @@ export const users = pgTable(
   },
   (table) => ({
     emailUnique: uniqueIndex('users_email_unique').on(table.email),
+    // One profile per Supabase identity. Partial so the many null rows do not collide.
+    supabaseUserUnique: uniqueIndex('users_supabase_user_id_unique')
+      .on(table.supabaseUserId)
+      .where(sql`${table.supabaseUserId} is not null`),
   }),
 );
 
@@ -95,17 +106,21 @@ export const vehicles = pgTable(
     make: text('make').notNull(),
     model: text('model').notNull(),
     trim: text('trim'),
-    vin: text('vin').notNull(),
+    // Nullable: onboarding lets an owner skip the VIN, and plenty cannot find it
+    // on the spot. Absent is recorded as absent rather than as a sentinel string.
+    vin: text('vin'),
     mileage: integer('mileage').notNull(),
-    estMarketValue: integer('est_market_value').notNull(),
-    tradeInLow: integer('trade_in_low').notNull(),
-    tradeInHigh: integer('trade_in_high').notNull(),
+    // Nullable: populated by a valuation source, absent for a freshly added car.
+    estMarketValue: integer('est_market_value'),
+    tradeInLow: integer('trade_in_low'),
+    tradeInHigh: integer('trade_in_high'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
     byUser: index('vehicles_user_idx').on(table.userId),
     // A VIN is globally unique in reality, but scoping to the user avoids
-    // leaking whether another account already registered the same car.
+    // leaking whether another account already registered the same car. Postgres
+    // treats NULLs as distinct here, so skipping the VIN never trips the index.
     vinPerUser: uniqueIndex('vehicles_user_vin_unique').on(table.userId, table.vin),
   }),
 );

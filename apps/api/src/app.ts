@@ -1,7 +1,9 @@
 import express, { type Express } from 'express';
 import { attachDb } from './middleware/attachDb.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
-import { devUserResolver, requireUser, type UserResolver } from './middleware/currentUser.js';
+import { requireUser, type UserResolver } from './middleware/currentUser.js';
+import { defaultResolver } from './auth/resolvers.js';
+import { publicAuthConfig } from './auth/config.js';
 import { accountRouter } from './routes/account.js';
 import { assessmentsRouter } from './routes/assessments.js';
 import { chatRouter } from './routes/chat.js';
@@ -33,9 +35,18 @@ export function createApp(db: Database, options: AppOptions = {}): Express {
     res.json({ ok: true });
   });
 
+  /**
+   * Tells the browser how to sign in -- or that it need not, in dev mode. Both
+   * values are public by design. Unauthenticated on purpose: the client has to
+   * read it before it can authenticate.
+   */
+  app.get('/api/auth/config', (_req, res) => {
+    res.json(publicAuthConfig());
+  });
+
   // Everything below this line requires an authenticated user. Mounting the
   // middleware once here means a new router cannot forget it.
-  app.use('/api', requireUser(options.resolveUser ?? devUserResolver));
+  app.use('/api', requireUser(options.resolveUser ?? defaultResolver()));
 
   app.use('/api/vehicle', vehicleRouter);
   app.use('/api/service-records', serviceRecordsRouter);

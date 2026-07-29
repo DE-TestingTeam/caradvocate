@@ -24,15 +24,31 @@ export class ApiError extends Error {
 
 const BASE = '/api';
 
+/**
+ * Supplies the current access token. Set by AuthProvider so this module has no
+ * dependency on React or on Supabase -- in dev mode it simply returns undefined
+ * and requests go out unauthenticated, which is what the API expects.
+ */
+let accessTokenGetter: () => string | undefined = () => undefined;
+
+export function setAccessTokenGetter(getter: () => string | undefined): void {
+  accessTokenGetter = getter;
+}
+
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   let response: Response;
+
+  const headers: Record<string, string> = {};
+  if (body !== undefined) headers['Content-Type'] = 'application/json';
+
+  const token = accessTokenGetter();
+  if (token) headers.Authorization = `Bearer ${token}`;
 
   try {
     response = await fetch(`${BASE}${path}`, {
       method,
-      headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+      headers,
       body: body === undefined ? undefined : JSON.stringify(body),
-      // Sends the session cookie once real auth is in place.
       credentials: 'same-origin',
     });
   } catch (cause) {

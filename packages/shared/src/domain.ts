@@ -27,13 +27,32 @@ export interface Vehicle {
   make: string;
   model: string;
   trim?: string;
-  vin: string;
+  /** Absent when the owner skipped it during onboarding. */
+  vin?: string;
   mileage: number;
-  estMarketValue: number;
-  tradeInLow: number;
-  tradeInHigh: number;
-  /** Ordered oldest -> newest. Drives both the sparkline and the 6-month chart. */
+  /**
+   * Valuation is absent until a data source (Kelley Blue Book or equivalent) has
+   * priced the vehicle. A car the user just added has none, and inventing a
+   * number would undermine the one thing this product is for.
+   */
+  estMarketValue?: number;
+  tradeInLow?: number;
+  tradeInHigh?: number;
+  /** Ordered oldest -> newest. Empty until valuation history exists. */
   valueTrend: { month: string; value: number }[];
+}
+
+/**
+ * What a VIN lookup yields during onboarding. Every field but the VIN itself is
+ * optional: the decoder reports only what it could determine, and the form falls
+ * back to manual entry for the rest.
+ */
+export interface DecodedVin {
+  vin: string;
+  year?: number;
+  make?: string;
+  model?: string;
+  trim?: string;
 }
 
 export interface MaintenanceItem {

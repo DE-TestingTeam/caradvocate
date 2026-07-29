@@ -15,7 +15,7 @@ import { execFileSync } from 'node:child_process';
 import { JSDOM, VirtualConsole } from 'jsdom';
 import { eq } from 'drizzle-orm';
 import { createApp } from '../apps/api/src/app.js';
-import { users } from '../apps/api/src/db/schema.js';
+import { assessments, serviceRecords, users, vehicles } from '../apps/api/src/db/schema.js';
 import { createTestDb } from '../apps/api/test/harness.js';
 import { HttpError } from '../apps/api/src/lib/httpError.js';
 import type { Database } from '../apps/api/src/db/index.js';
@@ -311,7 +311,57 @@ const check = (name: string, pass: boolean, detail = '') => checks.push({ name, 
   dom.window.close();
 }
 
-/* ========== 5. the frontend renders a server error instead of hanging ======== */
+/* ============ 5. a vehicle-less user is walked through onboarding =========== */
+
+{
+  // Strip the seeded car so the app behaves like a brand-new account. This is the
+  // path every real signup takes, and nothing before now exercised it.
+  const [alex] = await db.select().from(users).where(eq(users.email, 'alex.rivera@email.com'));
+  await db.delete(assessments).where(eq(assessments.userId, alex.id));
+  await db.delete(serviceRecords).where(eq(serviceRecords.userId, alex.id));
+  await db.delete(vehicles).where(eq(vehicles.userId, alex.id));
+
+  const dom = await open('/my-car');
+  await settle(dom, 1200);
+
+  check(
+    'a user with no car is redirected from My Car to onboarding',
+    dom.window.location.pathname === '/onboarding',
+    `landed on ${dom.window.location.pathname}`,
+  );
+  check('the onboarding screen explains itself', text(dom).includes('Add your car'));
+
+  // Fill the manual path -- the one that does not depend on an external service.
+  setInput(dom, dom.window.document.querySelector('#year')!, '2021');
+  setInput(dom, dom.window.document.querySelector('#mileage')!, '24500');
+  setInput(dom, dom.window.document.querySelector('#make')!, 'Subaru');
+  setInput(dom, dom.window.document.querySelector('#model')!, 'Outback');
+  await settle(dom, 300);
+
+  const addButton = findByText(dom, 'button', 'Add vehicle') as HTMLButtonElement;
+  check('the add button enables once the required fields are filled', addButton.disabled === false);
+
+  click(dom, addButton);
+  await settle(dom, 2500);
+
+  const afterAdd = text(dom);
+  check('adding the car lands on My Car', dom.window.location.pathname === '/my-car', `on ${dom.window.location.pathname}`);
+  check('My Car shows the car that was just added', afterAdd.includes('2021 Subaru Outback'));
+  check('mileage is rendered from the database', afterAdd.includes('24,500 mi'));
+
+  // The honest empty states, rather than invented numbers.
+  check('no market value is invented for a new car', afterAdd.includes('Not available yet'));
+  check('an empty maintenance list says so', afterAdd.includes('No recalls or scheduled maintenance on file'));
+  check('an empty service history says so', afterAdd.includes('No service logged yet'));
+
+  const persisted = await fetch(`${ORIGIN}/api/vehicle`).then((r) => r.json());
+  check('the vehicle really exists server-side', persisted.make === 'Subaru' && persisted.mileage === 24500);
+  check('the server returns no valuation for it', persisted.estMarketValue === undefined);
+
+  dom.window.close();
+}
+
+/* ========== 6. the frontend renders a server error instead of hanging ======== */
 
 {
   // Point the app at a user the database does not have, so every call 401s.

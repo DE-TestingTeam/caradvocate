@@ -2,6 +2,8 @@ import * as React from 'react';
 import { NavLink } from 'react-router-dom';
 import { Menu } from 'lucide-react';
 import { Sheet, SheetClose, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
+import { Button } from '@/components/ui/button';
+import { useAuth } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 
 /**
@@ -17,6 +19,7 @@ export const navItems = [
 
 export function NavSheet() {
   const [open, setOpen] = React.useState(false);
+  const { canSignOut, signOut } = useAuth();
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
@@ -45,6 +48,13 @@ export function NavSheet() {
             </SheetClose>
           ))}
         </nav>
+
+        {/* Dev mode has no session to end, so there is nothing to sign out of. */}
+        {canSignOut && (
+          <Button variant="outline" className="mt-auto" onClick={() => signOut()}>
+            Sign out
+          </Button>
+        )}
       </SheetContent>
     </Sheet>
   );

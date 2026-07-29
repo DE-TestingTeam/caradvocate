@@ -8,44 +8,36 @@ import { ValueCard } from '@/components/my-car/ValueCard';
 import { ViewerPlaceholder } from '@/components/my-car/ViewerPlaceholder';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
-import { getKnownIssues, getMaintenance, getServiceHistory, getVehicle } from '@/lib/api';
+import { useVehicle } from '@/components/layout/RequireVehicle';
+import { getKnownIssues, getMaintenance, getServiceHistory } from '@/lib/api';
 import { formatMileage, maskVin, vehicleName } from '@/lib/format';
 import { useApi } from '@/lib/useApi';
 
 export function MyCarPage() {
-  const vehicle = useApi(getVehicle);
+  // Resolved by RequireVehicle, so there is no loading or error state to handle.
+  const vehicle = useVehicle();
   const maintenance = useApi(getMaintenance);
   const issues = useApi(getKnownIssues);
   const history = useApi(getServiceHistory);
-
-  // The vehicle drives the whole screen, so its failure replaces the page.
-  if (vehicle.error) {
-    return <ErrorState message={vehicle.error.message} />;
-  }
 
   return (
     <div className="space-y-8">
       <section className="space-y-4">
         <ViewerPlaceholder />
 
-        {vehicle.data ? (
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">{vehicleName(vehicle.data)}</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {formatMileage(vehicle.data.mileage)} · VIN: {maskVin(vehicle.data.vin)}
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            <Skeleton className="h-9 w-56" />
-            <Skeleton className="h-5 w-72" />
-          </div>
-        )}
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">{vehicleName(vehicle)}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {formatMileage(vehicle.mileage)}
+            {/* No VIN is a normal state for a car added without one. */}
+            {vehicle.vin && ` · VIN: ${maskVin(vehicle.vin)}`}
+          </p>
+        </div>
       </section>
 
       <Separator />
 
-      {vehicle.data ? <ValueCard vehicle={vehicle.data} /> : <Skeleton className="h-72 w-full rounded-lg" />}
+      <ValueCard vehicle={vehicle} />
 
       <CollapsibleSection title="Recalls & Maintenance">
         {maintenance.error ? (

@@ -30,11 +30,11 @@ export function toVehicle(
     make: row.make,
     model: row.model,
     trim: row.trim ?? undefined,
-    vin: row.vin,
+    vin: row.vin ?? undefined,
     mileage: row.mileage,
-    estMarketValue: row.estMarketValue,
-    tradeInLow: row.tradeInLow,
-    tradeInHigh: row.tradeInHigh,
+    estMarketValue: row.estMarketValue ?? undefined,
+    tradeInLow: row.tradeInLow ?? undefined,
+    tradeInHigh: row.tradeInHigh ?? undefined,
     valueTrend: [...valuePoints]
       .sort((a, b) => a.position - b.position)
       .map((point) => ({ month: point.monthLabel, value: point.value })),

@@ -22,6 +22,7 @@ export function EditVehicleDialog({ vehicle }: { vehicle: Vehicle }) {
   const [model, setModel] = React.useState(vehicle.model);
   const [trim, setTrim] = React.useState(vehicle.trim ?? '');
   const [mileage, setMileage] = React.useState(String(vehicle.mileage));
+  const [vin, setVin] = React.useState('');
   const toast = useToast();
 
   React.useEffect(() => {
@@ -29,15 +30,27 @@ export function EditVehicleDialog({ vehicle }: { vehicle: Vehicle }) {
       setModel(vehicle.model);
       setTrim(vehicle.trim ?? '');
       setMileage(String(vehicle.mileage));
+      setVin('');
     }
   }, [open, vehicle]);
 
+  /**
+   * Only offered when the car has none: a VIN identifies the vehicle, so filling
+   * a gap is useful but editing an established one is not.
+   */
+  const canAddVin = !vehicle.vin;
+  // The API requires exactly 17 characters, so block a partial entry here rather
+  // than letting it come back as a 422.
+  const vinIncomplete = canAddVin && vin.trim().length > 0 && vin.trim().length !== 17;
+
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
+    const addedVin = canAddVin ? vin.trim().toUpperCase() : '';
     await updateVehicle({
       model: model.trim(),
       trim: trim.trim() || undefined,
       mileage: Number(mileage),
+      ...(addedVin ? { vin: addedVin } : {}),
     });
     invalidateAll();
     setOpen(false);
@@ -76,11 +89,26 @@ export function EditVehicleDialog({ vehicle }: { vehicle: Vehicle }) {
               onChange={(e) => setMileage(e.target.value)}
             />
           </div>
+          {canAddVin && (
+            <div className="space-y-2">
+              <Label htmlFor="vehicle-vin">VIN (optional)</Label>
+              <Input
+                id="vehicle-vin"
+                value={vin}
+                onChange={(e) => setVin(e.target.value.toUpperCase())}
+                placeholder="Add it now if you have it"
+                maxLength={17}
+                className="font-mono"
+                autoComplete="off"
+              />
+              {vinIncomplete && <p className="text-sm text-muted-foreground">A VIN is exactly 17 characters.</p>}
+            </div>
+          )}
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={!model.trim() || Number(mileage) < 0}>
+            <Button type="submit" disabled={!model.trim() || Number(mileage) < 0 || vinIncomplete}>
               Save changes
             </Button>
           </DialogFooter>

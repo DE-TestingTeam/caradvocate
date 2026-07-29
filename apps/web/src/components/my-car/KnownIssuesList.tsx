@@ -9,6 +9,14 @@ const severityVariant: Record<Severity, 'default' | 'secondary' | 'outline'> = {
 };
 
 export function KnownIssuesList({ issues }: { issues: KnownIssue[] }) {
+  if (issues.length === 0) {
+    return (
+      <p className="py-2 text-sm text-muted-foreground">
+        Nothing on file for this model yet.
+      </p>
+    );
+  }
+
   return (
     <ul className="space-y-2">
       {issues.map((issue) => (

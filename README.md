@@ -1,7 +1,7 @@
 # CarAdvocate
 
 Consumer app that tells car owners whether a repair is necessary and whether a
-shop's quote is fair. Built from the wireframes in the parent folder.
+shop's quote is fair.
 
 ```
 apps/web        React 18 + Vite + Tailwind + shadcn/ui
@@ -95,55 +95,98 @@ compiled before the apps run. `npm install` does that automatically via
 If you are editing `packages/shared` and want changes to propagate without
 restarting, run `npm run dev:shared` in another terminal to watch it.
 
-## Authentication is stubbed — read this before deploying
+## Authentication
 
-There is no login. Every request is attributed to `DEV_USER_EMAIL`, resolved in
-**`apps/api/src/middleware/currentUser.ts`**. That file is the only place that
-decides who is calling, and it throws on startup if `NODE_ENV=production`, so it
-cannot ship by accident.
+Sign-in is handled by **Supabase Auth**. Our API verifies the access token on
+every request and never sees a password.
 
-What is already done, and is the expensive part:
+Configure it with two variables:
 
-- Every user-owned table carries `user_id` from the first migration.
-- Every query filters on `req.user.id`. Cross-tenant access returns 404, never a
-  row — asserted by 34 tests in `apps/api/test/isolation.test.ts`.
-- `createApp(db, { resolveUser })` takes the resolver as an argument, which is
-  where real session verification plugs in.
+```
+SUPABASE_URL=https://PROJECTREF.supabase.co
+SUPABASE_ANON_KEY=eyJhbGciOi...
+```
 
-What is left:
+Both come from **Project Settings → API**. The anon key is public by design and
+is served to the browser via `GET /api/auth/config` — the client asks the server
+what mode it is in, so the two can never disagree. **Never put the
+`service_role` key in `.env`.**
 
-1. A `sessions` table (or JWTs, if you prefer stateless).
-2. Credentials — password hashes with argon2/bcrypt, or an OAuth provider.
-3. `POST /api/auth/login`, `/logout`, `/refresh`, and a signup flow that creates
-   the user, their vehicle, and their default subscription features together.
-4. Replace the body of `resolveUser` with: read the signed httpOnly cookie,
-   verify signature and expiry, check revocation, load the user, throw
-   `HttpError.unauthenticated()` on any failure.
-5. CSRF protection on cookie-authenticated mutations, and rate limiting on login.
+Older projects that sign with a shared secret instead of publishing a JWKS can
+set `SUPABASE_JWT_SECRET` instead.
 
-Nothing in step 4 touches route code. That was the point of doing the ownership
-model first.
+### The dev bypass
 
-### Supabase Auth is the shortest path here
+With none of those set, the API skips sign-in and treats every request as
+`DEV_USER_EMAIL`, and the web app shows no login screen. That is what keeps
+`npm run dev` working with zero configuration.
 
-Since you are already on Supabase, its Auth product removes most of steps 1–3:
-it owns the users table, password hashing, email verification, OAuth providers
-and password reset. What you would do:
+It cannot reach production: the API refuses to start when `NODE_ENV=production`
+with no Supabase Auth configured.
 
-1. Let Supabase Auth own identity. It creates rows in its own `auth.users`
-   schema; our `public.users` row becomes a profile keyed by that id.
-2. On the client, use `@supabase/supabase-js` to sign in and get a JWT.
-3. Send it to our API (`Authorization: Bearer …`), and in `resolveUser` verify it
-   against the project's JWKS, then look up the profile by the `sub` claim.
+### What is verified, and what is not
 
-Two things to be deliberate about:
+`apps/api/src/auth/verifyToken.ts` checks the signature, expiry, issuer (so a
+validly-signed token from a *different* Supabase project is refused), audience
+(`authenticated`, so anon tokens are refused), and that the subject is a UUID.
 
-- **Do not skip our API and let the browser query Postgres directly.** That is
-  the default Supabase pattern and it moves authorisation into Row Level
-  Security policies. Our ownership model currently lives in Express, and the
-  isolation suite tests it there. Mixing both means two places to get right.
-- If you *do* want to adopt RLS later, the schema is ready for it — every
-  user-owned table already has the `user_id` column a policy would key on.
+Those checks are covered by 20 tests that generate their own keypair and sign
+their own tokens, because CI cannot reach Supabase. **What that does not prove is
+that Supabase's real tokens carry the claims we expect.** Confirm it once: sign
+in, and decode the `access_token` from the browser's session to check `iss`,
+`aud`, `sub` and `email`.
+
+### Profiles are created on first sign-in
+
+There is no signup webhook. The first time a verified identity appears,
+`apps/api/src/auth/provisionUser.ts` creates the profile and its default
+subscription rows. If a profile already exists with the same email — the seeded
+demo account, for instance — it is adopted rather than duplicated.
+
+A new profile has no vehicle, so the app routes it to `/onboarding`.
+
+### Google sign-in
+
+The login screen has a "Continue with Google" button, but it only works once you
+enable Google as a provider in **Authentication → Providers** in the Supabase
+dashboard. Until then it returns an error. Nothing in the code needs to change.
+
+### What is still missing
+
+- **Paywall gating.** The PRD makes the Repair Cost Checker paid-only. Every new
+  profile is currently created on the paid plan and nothing is gated.
+- **Password reset.** Supabase provides the flow; no UI is wired to it yet.
+- **Account deletion.** The schema cascades correctly, but nothing exposes it.
+
+## Onboarding
+
+A new user is sent to `/onboarding` until they have a vehicle.
+
+Manual entry (year, make, model, mileage) is the primary path because it always
+works. VIN lookup is an accelerator that prefills the same fields.
+
+> **The VIN decode is unverified.** It calls NHTSA's free vPIC API, which the
+> sandbox this was built in cannot reach, so the response shape is coded from the
+> documented field names but has never been exercised against the live service.
+> The parser is defensive — any unexpected shape, timeout or error falls back to
+> manual entry, so a wrong guess degrades the feature rather than blocking
+> onboarding. Check it with:
+>
+> ```
+> curl 'https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVinValues/2HGFC2F53KH124821?format=json'
+> ```
+>
+> If the field names differ, `parseVpicResponse` in
+> `apps/api/src/services/vinDecode.ts` is the only thing to change, and its tests
+> show the shapes it handles.
+
+### Newly added cars have no data, on purpose
+
+A car you just added has no valuation, no recalls and no maintenance schedule,
+because none of those sources are connected. The API returns absent values and
+the UI says "Not available yet" rather than showing a zero or a plausible-looking
+number. `estMarketValue`, `tradeInLow` and `tradeInHigh` are optional in the
+contract for exactly this reason.
 
 ## The real open question: benchmark pricing
 
@@ -169,8 +212,8 @@ drop-in.
 
 ```bash
 npm test           # typecheck + API suite + end-to-end
-npm run test:api   # 138 checks, no database required
-npm run test:e2e   # 40 checks, full stack
+npm run test:api   # 186 checks, no database required
+npm run test:e2e   # 51 checks, full stack
 ```
 
 Neither suite touches Supabase, or needs any database running. Both use
@@ -185,6 +228,8 @@ surfacing on deploy, and CI never consumes a connection slot or needs a secret.
 | `apps/api/test/api.test.ts` | Every endpoint's status codes, response shapes and validation errors |
 | `apps/api/test/isolation.test.ts` | A second seeded tenant cannot be read, completed, or deleted by the first |
 | `apps/api/test/connection.test.ts` | TLS and pooler rules for Supabase connection strings, which cannot be checked against a live project from CI |
+| `apps/api/test/auth.test.ts` | Token verification against a locally generated keypair, and profile provisioning on first sign-in |
+| `apps/api/test/onboarding.test.ts` | Vehicle creation, the no-vehicle empty state, and defensive VIN response parsing |
 | `scripts/e2e.mts` | The real production web bundle driven in jsdom against the real Express app on a real database |
 
 The e2e suite is the one that catches contract drift between the two halves —
@@ -230,11 +275,15 @@ Supabase project. Add a new one instead.
 
 ## API
 
-All routes require an authenticated user except `GET /api/health`.
+All routes require an authenticated user except `GET /api/health` and
+`GET /api/auth/config`.
 
 | Method | Path | Notes |
 |---|---|---|
-| `GET` `PATCH` | `/api/vehicle` | The caller's single vehicle |
+| `GET` | `/api/auth/config` | Sign-in mode and public keys. No auth required |
+| `GET` `PATCH` | `/api/vehicle` | The caller's single vehicle. `GET` 404s until one is added |
+| `POST` | `/api/vehicle` | Onboarding. 409 if one already exists |
+| `GET` | `/api/vehicle/decode/:vin` | VIN lookup. 404 means "use manual entry" |
 | `GET` | `/api/vehicle/maintenance` | |
 | `GET` | `/api/vehicle/known-issues` | Global, keyed by the caller's model |
 | `GET` `POST` | `/api/service-records` | |

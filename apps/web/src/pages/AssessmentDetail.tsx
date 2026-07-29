@@ -13,7 +13,8 @@ import { Card } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/toast';
-import { getAssessment, getVehicle } from '@/lib/api';
+import { useVehicle } from '@/components/layout/RequireVehicle';
+import { getAssessment } from '@/lib/api';
 import { isCompleted } from '@/lib/assessment';
 import { formatCurrency, formatMileage, vehicleName } from '@/lib/format';
 import { useApi } from '@/lib/useApi';
@@ -26,7 +27,7 @@ import { useApi } from '@/lib/useApi';
 export function AssessmentDetailPage() {
   const { id = '' } = useParams();
   const { data: assessment, loading, error } = useApi(() => getAssessment(id), [id]);
-  const { data: vehicle } = useApi(getVehicle);
+  const vehicle = useVehicle();
   const [completing, setCompleting] = React.useState(false);
   const toast = useToast();
 
@@ -54,7 +55,7 @@ export function AssessmentDetailPage() {
     );
   }
 
-  const vehicleLabel = vehicle ? vehicleName(vehicle) : '';
+  const vehicleLabel = vehicleName(vehicle);
   const mileage = formatMileage(assessment.mileageAtAssessment);
   const subtitle = assessment.quote
     ? `Quote: ${formatCurrency(assessment.quote.amount)} · ${vehicleLabel} · ${mileage}`

@@ -36,6 +36,29 @@ export const completeAssessmentSchema = z.object({
   cost: moneySchema,
 });
 
+/** A VIN is 17 characters and never contains I, O or Q, to avoid digit confusion. */
+export const vinSchema = z
+  .string()
+  .trim()
+  .toUpperCase()
+  .length(17, 'A VIN is exactly 17 characters')
+  .regex(/^[A-HJ-NPR-Z0-9]+$/, 'A VIN cannot contain the letters I, O or Q');
+
+export const newVehicleSchema = z.object({
+  year: z
+    .number()
+    .int()
+    .min(1900, 'Year looks too early')
+    // Manufacturers sell next year's models, so allow one year ahead.
+    .max(new Date().getFullYear() + 1, 'Year looks too far in the future'),
+  make: z.string().trim().min(1, 'Make is required').max(60),
+  model: z.string().trim().min(1, 'Model is required').max(80),
+  trim: z.string().trim().max(80).optional(),
+  /** Optional: plenty of owners cannot find their VIN on the spot. */
+  vin: vinSchema.optional(),
+  mileage: z.number().int().min(0).max(2_000_000),
+});
+
 export const updateAccountSchema = z
   .object({
     name: z.string().trim().min(1).max(120),
@@ -59,6 +82,7 @@ export const sendChatMessageSchema = z.object({
   text: z.string().trim().min(1, 'Message cannot be empty').max(2000),
 });
 
+export type NewVehicleInput = z.infer<typeof newVehicleSchema>;
 export type NewServiceRecordInput = z.infer<typeof newServiceRecordSchema>;
 export type NewAssessmentInput = z.infer<typeof newAssessmentSchema>;
 export type CompleteAssessmentInput = z.infer<typeof completeAssessmentSchema>;

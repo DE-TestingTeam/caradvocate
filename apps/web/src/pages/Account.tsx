@@ -61,7 +61,7 @@ export function AccountPage() {
                 <h2 className="text-lg font-semibold tracking-tight">Your vehicle</h2>
                 <div>
                   <FieldRow label="Vehicle" value={vehicleName(vehicle)} />
-                  <FieldRow label="VIN" value={maskVinTail(vehicle.vin)} />
+                  <FieldRow label="VIN" value={vehicle.vin ? maskVinTail(vehicle.vin) : 'Not added'} />
                   <FieldRow label="Mileage" value={formatMileage(vehicle.mileage)} />
                 </div>
                 <EditVehicleDialog vehicle={vehicle} />

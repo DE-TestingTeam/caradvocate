@@ -10,10 +10,12 @@ import type {
   Account,
   Assessment,
   ChatMessage,
+  DecodedVin,
   KnownIssue,
   MaintenanceItem,
   NewAssessmentInput,
   NewServiceRecordInput,
+  NewVehicleInput,
   RepairCatalogItem,
   ServiceRecord,
   UpdateAccountInput,
@@ -30,6 +32,19 @@ export function getVehicle(): Promise<Vehicle> {
 
 export function updateVehicle(patch: UpdateVehicleInput): Promise<Vehicle> {
   return http.patch<Vehicle>('/vehicle', patch);
+}
+
+/** Onboarding: adds the signed-in user's first vehicle. */
+export function createVehicle(input: NewVehicleInput): Promise<Vehicle> {
+  return http.post<Vehicle>('/vehicle', input);
+}
+
+/**
+ * Looks up a VIN. Rejects when the VIN cannot be decoded, which callers should
+ * treat as "fall back to manual entry" rather than as a failure to report.
+ */
+export function decodeVin(vin: string): Promise<DecodedVin> {
+  return http.get<DecodedVin>(`/vehicle/decode/${encodeURIComponent(vin)}`);
 }
 
 export function getMaintenance(): Promise<MaintenanceItem[]> {

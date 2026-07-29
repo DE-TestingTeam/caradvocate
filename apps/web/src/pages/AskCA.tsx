@@ -3,13 +3,14 @@ import { Composer } from '@/components/ask/Composer';
 import { MessageBubble, TypingBubble } from '@/components/ask/MessageBubble';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ErrorState } from '@/components/ErrorState';
-import { getChatHistory, getVehicle, sendChatMessage } from '@/lib/api';
+import { useVehicle } from '@/components/layout/RequireVehicle';
+import { getChatHistory, sendChatMessage } from '@/lib/api';
 import { vehicleName } from '@/lib/format';
 import { useApi } from '@/lib/useApi';
 import type { ChatMessage } from '@caradvocate/shared';
 
 export function AskCAPage() {
-  const vehicle = useApi(getVehicle);
+  const vehicle = useVehicle();
   const history = useApi(getChatHistory, []);
   const [messages, setMessages] = React.useState<ChatMessage[] | undefined>();
   const [pending, setPending] = React.useState(false);
@@ -50,7 +51,7 @@ export function AskCAPage() {
       <div className="shrink-0 border-b pb-4">
         <h1 className="text-3xl font-bold tracking-tight">Ask CA</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          {vehicle.data ? `Ask anything about your ${vehicleName(vehicle.data)}` : 'Ask anything about your car'}
+          {`Ask anything about your ${vehicleName(vehicle)}`}
         </p>
       </div>
 

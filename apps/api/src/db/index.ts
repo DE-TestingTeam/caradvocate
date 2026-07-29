@@ -16,6 +16,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
+import { sql } from 'drizzle-orm';
 import { drizzle as drizzleNode, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { drizzle as drizzlePglite } from 'drizzle-orm/pglite';
 import { Pool } from 'pg';
@@ -73,6 +74,27 @@ export function getDb(): Database {
   pglite = new PGlite(pgliteDataDir());
   instance = drizzlePglite(pglite, { schema }) as unknown as Database;
   return instance;
+}
+
+/**
+ * Confirms the schema has been created.
+ *
+ * A database can connect perfectly well while holding no tables at all -- an
+ * initialised-but-never-migrated PGlite directory does exactly that. Without this
+ * check the server starts happily and then fails on the first request with a raw
+ * `relation "users" does not exist`, which says nothing about the actual fix.
+ */
+export async function assertSchemaPresent(db: Database): Promise<void> {
+  // Both drivers return a node-postgres-shaped result here, but only `rows` is
+  // relied on so a shape difference cannot turn this check into a false alarm.
+  const result = await db.execute(sql`select to_regclass('public.users') is not null as present`);
+  const rows = (result as unknown as { rows?: { present?: boolean }[] }).rows ?? [];
+
+  if (!rows[0]?.present) {
+    throw new Error(
+      `No schema found in ${describeTarget()}. Run \`npm run db:setup\` to create the tables and seed reference data.`,
+    );
+  }
 }
 
 export async function closeDb(): Promise<void> {

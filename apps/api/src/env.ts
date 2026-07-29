@@ -21,9 +21,25 @@ const envSchema = z.object({
   DIRECT_DATABASE_URL: z.string().optional(),
   /** Escape hatch mirroring libpq's PGSSLMODE, if the automatic choice is wrong. */
   PGSSLMODE: z.enum(['require', 'disable', 'prefer']).optional(),
+  /* ------------------------------------------------------ Supabase Auth ----
+   * Set these to require real sign-in. With none of them set, the API falls
+   * back to the dev stub below so local development needs no configuration.
+   *
+   * SUPABASE_URL is enough on its own: the JWKS endpoint is derived from it.
+   * SUPABASE_JWT_SECRET covers older projects that sign with a shared secret.
+   */
+  SUPABASE_URL: z.string().url().optional(),
+  /** Public key, safe to hand to the browser. Served via GET /api/auth/config. */
+  SUPABASE_ANON_KEY: z.string().optional(),
+  /** Overrides the JWKS URL derived from SUPABASE_URL, if you need to. */
+  SUPABASE_JWKS_URL: z.string().url().optional(),
+  /** Legacy shared-secret projects (HS256). Prefer JWKS where available. */
+  SUPABASE_JWT_SECRET: z.string().min(16).optional(),
+
   /**
-   * TEMPORARY. Until real sessions land, every request is attributed to this
-   * user. See src/middleware/currentUser.ts.
+   * DEV ONLY. When Supabase is not configured, every request is attributed to
+   * this user so the app is usable without signing in.
+   * See src/auth/resolvers.ts.
    */
   DEV_USER_EMAIL: z.string().email().default('alex.rivera@email.com'),
 });

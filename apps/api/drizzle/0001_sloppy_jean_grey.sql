@@ -1,0 +1,2 @@
+ALTER TABLE "users" ADD COLUMN "supabase_user_id" uuid;--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "users_supabase_user_id_unique" ON "users" USING btree ("supabase_user_id") WHERE "users"."supabase_user_id" is not null;
