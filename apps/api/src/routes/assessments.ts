@@ -1,7 +1,7 @@
 import { and, asc, desc, eq } from 'drizzle-orm';
 import { Router } from 'express';
 import { z } from 'zod';
-import { completeAssessmentSchema, newAssessmentSchema } from '@caradvocate/shared';
+import { completeAssessmentSchema, newAssessmentSchema, type Assessment } from '@caradvocate/shared';
 import {
   assessmentLaborTasks,
   assessmentParts,
@@ -24,6 +24,29 @@ export const assessmentsRouter = Router();
 
 const idParamSchema = z.object({ id: z.string().uuid('Not a valid assessment id') });
 
+/**
+ * The snapshotted parts and labour of one assessment, in display order.
+ *
+ * `position` is what preserves the order the benchmark listed them in; without it
+ * the line items would come back in whatever order Postgres chose.
+ */
+async function loadSnapshotChildren(db: Database, assessmentId: string) {
+  const [parts, tasks] = await Promise.all([
+    db
+      .select()
+      .from(assessmentParts)
+      .where(eq(assessmentParts.assessmentId, assessmentId))
+      .orderBy(asc(assessmentParts.position)),
+    db
+      .select()
+      .from(assessmentLaborTasks)
+      .where(eq(assessmentLaborTasks.assessmentId, assessmentId))
+      .orderBy(asc(assessmentLaborTasks.position)),
+  ]);
+
+  return { parts, tasks };
+}
+
 /** Loads an assessment with its snapshot children, scoped to the requesting user. */
 async function loadOwnAssessment(db: Database, id: string, userId: string) {
   const [row] = await db
@@ -35,18 +58,7 @@ async function loadOwnAssessment(db: Database, id: string, userId: string) {
 
   if (!row) throw HttpError.notFound('Assessment not found');
 
-  const parts = await db
-    .select()
-    .from(assessmentParts)
-    .where(eq(assessmentParts.assessmentId, row.id))
-    .orderBy(asc(assessmentParts.position));
-
-  const tasks = await db
-    .select()
-    .from(assessmentLaborTasks)
-    .where(eq(assessmentLaborTasks.assessmentId, row.id))
-    .orderBy(asc(assessmentLaborTasks.position));
-
+  const { parts, tasks } = await loadSnapshotChildren(db, row.id);
   return { row, parts, tasks };
 }
 
@@ -61,18 +73,9 @@ assessmentsRouter.get('/', async (req, res) => {
 
   // Children are fetched per row for clarity. With a realistic number of
   // assessments per user this is fine; batch it if that assumption changes.
-  const result = [];
+  const result: Assessment[] = [];
   for (const row of rows) {
-    const parts = await req.db
-      .select()
-      .from(assessmentParts)
-      .where(eq(assessmentParts.assessmentId, row.id))
-      .orderBy(asc(assessmentParts.position));
-    const tasks = await req.db
-      .select()
-      .from(assessmentLaborTasks)
-      .where(eq(assessmentLaborTasks.assessmentId, row.id))
-      .orderBy(asc(assessmentLaborTasks.position));
+    const { parts, tasks } = await loadSnapshotChildren(req.db, row.id);
     result.push(toAssessment(row, parts, tasks));
   }
 
@@ -80,9 +83,44 @@ assessmentsRouter.get('/', async (req, res) => {
 });
 
 assessmentsRouter.get('/:id', validateParams(idParamSchema), async (req, res) => {
-  const { row, parts, tasks } = await loadOwnAssessment(req.db, stringParam(req, 'id'), userIdOf(req));
+  const id = stringParam(req, 'id');
+  const { row, parts, tasks } = await loadOwnAssessment(req.db, id, userIdOf(req));
   res.json(toAssessment(row, parts, tasks));
 });
+
+/**
+ * The reference pricing for one repair, with its line items.
+ *
+ * A repair with no benchmark row is a 404: the whole point of an assessment is the
+ * comparison, and there is nothing to compare against.
+ */
+async function loadBenchmark(db: Database, repairId: string) {
+  const [row] = await db
+    .select({ repair: repairs, benchmark: repairBenchmarks })
+    .from(repairs)
+    .innerJoin(repairBenchmarks, eq(repairBenchmarks.repairId, repairs.id))
+    .where(eq(repairs.id, repairId))
+    .limit(1);
+
+  if (!row) {
+    throw HttpError.notFound('No benchmark pricing available for that repair');
+  }
+
+  const [sourceParts, sourceTasks] = await Promise.all([
+    db
+      .select()
+      .from(benchmarkParts)
+      .where(eq(benchmarkParts.benchmarkId, row.benchmark.id))
+      .orderBy(asc(benchmarkParts.position)),
+    db
+      .select()
+      .from(benchmarkLaborTasks)
+      .where(eq(benchmarkLaborTasks.benchmarkId, row.benchmark.id))
+      .orderBy(asc(benchmarkLaborTasks.position)),
+  ]);
+
+  return { repair: row.repair, benchmark: row.benchmark, sourceParts, sourceTasks };
+}
 
 /**
  * Creates an assessment by SNAPSHOTTING the current benchmark.
@@ -95,30 +133,10 @@ assessmentsRouter.post('/', validateBody(newAssessmentSchema), async (req, res) 
   const userId = userIdOf(req);
   const vehicle = await requireOwnVehicle(req);
 
-  const [benchmarkRow] = await req.db
-    .select({ repair: repairs, benchmark: repairBenchmarks })
-    .from(repairs)
-    .innerJoin(repairBenchmarks, eq(repairBenchmarks.repairId, repairs.id))
-    .where(eq(repairs.id, req.body.repairId))
-    .limit(1);
-
-  if (!benchmarkRow) {
-    throw HttpError.notFound('No benchmark pricing available for that repair');
-  }
-
-  const { repair, benchmark } = benchmarkRow;
-
-  const sourceParts = await req.db
-    .select()
-    .from(benchmarkParts)
-    .where(eq(benchmarkParts.benchmarkId, benchmark.id))
-    .orderBy(asc(benchmarkParts.position));
-
-  const sourceTasks = await req.db
-    .select()
-    .from(benchmarkLaborTasks)
-    .where(eq(benchmarkLaborTasks.benchmarkId, benchmark.id))
-    .orderBy(asc(benchmarkLaborTasks.position));
+  const { repair, benchmark, sourceParts, sourceTasks } = await loadBenchmark(
+    req.db,
+    req.body.repairId,
+  );
 
   const quote =
     typeof req.body.quoteAmount === 'number'

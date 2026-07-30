@@ -15,10 +15,10 @@
  *     the difference between an NHTSA recall and an unverified complaint. Stripping
  *     the provenance to save tokens would remove exactly what stops it overclaiming.
  */
-import { and, desc, eq, isNotNull, max } from 'drizzle-orm';
+import { desc, eq } from 'drizzle-orm';
+import type { MaintenanceItem } from '@caradvocate/shared';
 import type { Database } from '../db/index.js';
 import {
-  maintenanceItems,
   modelOwnerReportQuotes,
   modelOwnerReports,
   serviceRecords,
@@ -26,27 +26,40 @@ import {
   vehicles,
 } from '../db/schema.js';
 import { getOwnerReports } from './complaintSync.js';
-import { byUrgency, toMaintenanceItem } from './maintenanceDue.js';
-import { modelMatches } from './modelFeed.js';
+import { loadMaintenanceItems } from './maintenanceDue.js';
+import { modelMatches, type ModelKey } from './modelFeed.js';
 import { getModelRecalls } from './recallSync.js';
 import { getModelSafetyRatings } from './safetyRatingSync.js';
 
 type Vehicle = typeof vehicles.$inferSelect;
 
-/** How many owner accounts to include per component. Enough to be useful, not a wall. */
-const QUOTES_PER_COMPONENT = 2;
+/**
+ * How many owner accounts to include per component. Enough to be useful, not a wall.
+ *
+ * Fewer than complaints.ts stores per component: everything here competes for the
+ * model's attention against the recalls and the upkeep schedule.
+ */
+const QUOTES_IN_PROMPT = 2;
+
+/**
+ * How many complaint components to describe, most-reported first.
+ *
+ * Matches MAX_REPORTED_ISSUES on the known-issues endpoint deliberately: the model
+ * should be reasoning over the same list the owner is looking at.
+ */
+const COMPONENTS_IN_PROMPT = 8;
 
 /** Recent history only -- an owner's full service record can run to dozens of rows. */
 const HISTORY_LIMIT = 8;
 
 export async function buildVehicleContext(db: Database, vehicle: Vehicle): Promise<string> {
-  const model = { year: vehicle.year, make: vehicle.make, model: vehicle.model };
+  const model: ModelKey = { year: vehicle.year, make: vehicle.make, model: vehicle.model };
 
   const [recalls, reports, safety, jobs, history] = await Promise.all([
     getModelRecalls(db, model),
     getOwnerReports(db, model),
     getModelSafetyRatings(db, model),
-    loadMaintenance(db, vehicle),
+    loadMaintenanceItems(db, vehicle),
     db
       .select()
       .from(serviceRecords)
@@ -98,7 +111,11 @@ function recallSection(
         : repaired === false
           ? 'the owner says this is still outstanding'
           : 'the owner has not said whether this was repaired';
-    const urgency = recall.parkIt ? ' [NHTSA SAYS STOP DRIVING]' : recall.parkOutside ? ' [NHTSA SAYS PARK OUTSIDE]' : '';
+    const urgency = recall.parkIt
+      ? ' [NHTSA SAYS STOP DRIVING]'
+      : recall.parkOutside
+        ? ' [NHTSA SAYS PARK OUTSIDE]'
+        : '';
     return `- ${recall.campaignNumber} ${recall.component}${urgency}: ${recall.consequence} Remedy: ${recall.remedy} (${status})`;
   });
 
@@ -118,7 +135,7 @@ function knownIssuesSection(
     return 'WHAT OWNERS REPORT\nNo complaints filed with NHTSA for this year/make/model.';
   }
 
-  const lines = reports.reports.slice(0, 8).map((row) => {
+  const lines = reports.reports.slice(0, COMPONENTS_IN_PROMPT).map((row) => {
     const harms = [
       row.deathCount ? `${row.deathCount} death` : '',
       row.injuryCount ? `${row.injuryCount} injured` : '',
@@ -204,7 +221,7 @@ function describeAssist(label: string, fitment: string | null): string {
   return '';
 }
 
-function maintenanceSection(jobs: Awaited<ReturnType<typeof loadMaintenance>>): string {
+function maintenanceSection(jobs: MaintenanceItem[]): string {
   if (jobs.length === 0) {
     return 'UPKEEP SCHEDULE\nThe owner has not set up any upkeep jobs, so nothing is being tracked. Do not invent service intervals for this model -- the manufacturer schedule is licensed data this app does not have.';
   }
@@ -243,33 +260,8 @@ function historySection(history: (typeof serviceRecords.$inferSelect)[]): string
 ${lines.join('\n')}`;
 }
 
-/** Upkeep jobs with their due status, matching what the My Car screen shows. */
-async function loadMaintenance(db: Database, vehicle: Vehicle) {
-  const [rows, lastServices] = await Promise.all([
-    db.select().from(maintenanceItems).where(eq(maintenanceItems.vehicleId, vehicle.id)),
-    db
-      .select({
-        maintenanceItemId: serviceRecords.maintenanceItemId,
-        date: max(serviceRecords.serviceDate),
-        mileage: max(serviceRecords.mileageAtService),
-      })
-      .from(serviceRecords)
-      .where(and(eq(serviceRecords.vehicleId, vehicle.id), isNotNull(serviceRecords.maintenanceItemId)))
-      .groupBy(serviceRecords.maintenanceItemId),
-  ]);
-
-  const lastByItem = new Map(
-    lastServices
-      .filter((row) => row.maintenanceItemId && row.date)
-      .map((row) => [row.maintenanceItemId as string, { date: row.date as string, mileage: row.mileage }]),
-  );
-
-  const context = { currentMileage: vehicle.mileage, today: new Date() };
-  return rows.map((row) => toMaintenanceItem(row, lastByItem.get(row.id), context)).sort(byUrgency);
-}
-
 /** A couple of owner accounts per component, for colour the counts cannot give. */
-async function loadQuotes(db: Database, model: { year: number; make: string; model: string }) {
+async function loadQuotes(db: Database, model: ModelKey) {
   const rows = await db
     .select({
       component: modelOwnerReports.component,
@@ -283,7 +275,7 @@ async function loadQuotes(db: Database, model: { year: number; make: string; mod
   const byComponent = new Map<string, string[]>();
   for (const row of [...rows].sort((a, b) => a.position - b.position)) {
     const list = byComponent.get(row.component) ?? [];
-    if (list.length < QUOTES_PER_COMPONENT) list.push(row.text);
+    if (list.length < QUOTES_IN_PROMPT) list.push(row.text);
     byComponent.set(row.component, list);
   }
   return byComponent;

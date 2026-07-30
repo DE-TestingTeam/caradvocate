@@ -180,26 +180,22 @@ async function open(route: string): Promise<JSDOM> {
     resources: 'usable',
     pretendToBeVisual: true,
     virtualConsole: vc,
+    // Everything here is a browser global jsdom does not provide. `DOMWindow` is
+    // declared with an index signature, so assigning them needs no suppression.
     beforeParse(window) {
       // Present in every browser we target; jsdom omits both.
-      // @ts-expect-error -- augmenting the jsdom window
       window.ResizeObserver = class {
         observe() {}
         unobserve() {}
         disconnect() {}
       };
-      // @ts-expect-error -- augmenting the jsdom window
       window.structuredClone = (value: unknown) => JSON.parse(JSON.stringify(value));
       // jsdom ships no fetch implementation. Bridge to Node's, resolving the
       // app's relative /api paths against the test origin the way a browser does.
-      // @ts-expect-error -- augmenting the jsdom window
       window.fetch = (input: string | URL, init?: RequestInit) =>
         globalThis.fetch(new URL(String(input), ORIGIN), init);
-      // @ts-expect-error -- augmenting the jsdom window
       window.Headers = Headers;
-      // @ts-expect-error -- augmenting the jsdom window
       window.Request = Request;
-      // @ts-expect-error -- augmenting the jsdom window
       window.Response = Response;
     },
   });
@@ -217,7 +213,16 @@ function findByText(dom: JSDOM, selector: string, needle: string): Element | und
 }
 
 function click(dom: JSDOM, el: Element): void {
-  el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true, view: dom.window }));
+  el.dispatchEvent(
+    new dom.window.MouseEvent('click', {
+      bubbles: true,
+      cancelable: true,
+      // `view` is typed as lib.dom's `Window`, which jsdom's `DOMWindow` deliberately
+      // is not -- it omits the several hundred globals it does not implement. At
+      // runtime this is the window the event belongs to, which is what Radix reads.
+      view: dom.window as unknown as Window,
+    }),
+  );
 }
 
 /**

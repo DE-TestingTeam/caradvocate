@@ -1,4 +1,4 @@
-import { and, asc, eq, isNotNull, max, sql } from 'drizzle-orm';
+import { and, asc, eq, max, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { Router } from 'express';
 import {
@@ -12,7 +12,9 @@ import {
   type KnownIssueReport,
   type RecallReport,
   type SafetyRatingReport,
+  type VehicleImage,
 } from '@caradvocate/shared';
+import type { Database } from '../db/index.js';
 import {
   maintenanceItems,
   modelKnownIssues,
@@ -25,9 +27,10 @@ import {
 import { toKnownIssue, toKnownIssueFromReports, toRecall, toSafetyRating, toVehicle } from '../mappers.js';
 import { validateBody } from '../middleware/validate.js';
 import { userIdOf } from '../middleware/currentUser.js';
+import { fetchVehicleImage } from '../services/carImages.js';
 import { getOwnerReports } from '../services/complaintSync.js';
-import { byUrgency, toMaintenanceItem } from '../services/maintenanceDue.js';
-import { modelMatches } from '../services/modelFeed.js';
+import { loadMaintenanceItems, toMaintenanceItem } from '../services/maintenanceDue.js';
+import { modelMatches, type ModelKey } from '../services/modelFeed.js';
 import { getModelRecalls } from '../services/recallSync.js';
 import { getModelSafetyRatings } from '../services/safetyRatingSync.js';
 import { decodeVin } from '../services/vinDecode.js';
@@ -36,13 +39,23 @@ import { requireOwnVehicle, stringParam } from './helpers.js';
 
 export const vehicleRouter = Router();
 
-vehicleRouter.get('/', async (req, res) => {
-  const vehicle = await requireOwnVehicle(req);
-  const points = await req.db
+/** The year/make/model a global feed is keyed on. */
+function modelKeyOf(vehicle: ModelKey): ModelKey {
+  return { year: vehicle.year, make: vehicle.make, model: vehicle.model };
+}
+
+/** The valuation trend points, in the order the chart plots them. */
+function loadValuePoints(db: Database, vehicleId: string) {
+  return db
     .select()
     .from(vehicleValuePoints)
-    .where(eq(vehicleValuePoints.vehicleId, vehicle.id))
+    .where(eq(vehicleValuePoints.vehicleId, vehicleId))
     .orderBy(asc(vehicleValuePoints.position));
+}
+
+vehicleRouter.get('/', async (req, res) => {
+  const vehicle = await requireOwnVehicle(req);
+  const points = await loadValuePoints(req.db, vehicle.id);
 
   res.json(toVehicle(vehicle, points));
 });
@@ -58,11 +71,7 @@ vehicleRouter.patch('/', validateBody(updateVehicleSchema), async (req, res) => 
     .where(eq(vehicles.id, vehicle.id))
     .returning();
 
-  const points = await req.db
-    .select()
-    .from(vehicleValuePoints)
-    .where(eq(vehicleValuePoints.vehicleId, updated.id))
-    .orderBy(asc(vehicleValuePoints.position));
+  const points = await loadValuePoints(req.db, updated.id);
 
   res.json(toVehicle(updated, points));
 });
@@ -77,7 +86,12 @@ vehicleRouter.patch('/', validateBody(updateVehicleSchema), async (req, res) => 
 vehicleRouter.post('/', validateBody(newVehicleSchema), async (req, res) => {
   const userId = userIdOf(req);
 
-  const existing = await req.db.select({ id: vehicles.id }).from(vehicles).where(eq(vehicles.userId, userId)).limit(1);
+  const existing = await req.db
+    .select({ id: vehicles.id })
+    .from(vehicles)
+    .where(eq(vehicles.userId, userId))
+    .limit(1);
+
   if (existing.length > 0) {
     // The product is single-vehicle today. Fail loudly rather than silently
     // creating a second car the rest of the app cannot reach.
@@ -128,35 +142,7 @@ vehicleRouter.get('/decode/:vin', async (req, res) => {
  */
 vehicleRouter.get('/maintenance', async (req, res) => {
   const vehicle = await requireOwnVehicle(req);
-
-  const [rows, lastServices] = await Promise.all([
-    req.db
-      .select()
-      .from(maintenanceItems)
-      .where(eq(maintenanceItems.vehicleId, vehicle.id))
-      .orderBy(asc(maintenanceItems.position)),
-    req.db
-      .select({
-        maintenanceItemId: serviceRecords.maintenanceItemId,
-        date: max(serviceRecords.serviceDate),
-        mileage: max(serviceRecords.mileageAtService),
-      })
-      .from(serviceRecords)
-      .where(and(eq(serviceRecords.vehicleId, vehicle.id), isNotNull(serviceRecords.maintenanceItemId)))
-      .groupBy(serviceRecords.maintenanceItemId),
-  ]);
-
-  const lastByItem = new Map(
-    lastServices
-      .filter((row) => row.maintenanceItemId && row.date)
-      .map((row) => [row.maintenanceItemId as string, { date: row.date as string, mileage: row.mileage }]),
-  );
-
-  const context = { currentMileage: vehicle.mileage, today: new Date() };
-  const items = rows.map((row) => toMaintenanceItem(row, lastByItem.get(row.id), context));
-  items.sort(byUrgency);
-
-  res.json(items);
+  res.json(await loadMaintenanceItems(req.db, vehicle));
 });
 
 vehicleRouter.post('/maintenance', validateBody(newMaintenanceItemSchema), async (req, res) => {
@@ -257,7 +243,7 @@ async function requireOwnMaintenanceItem(
 vehicleRouter.get('/recalls', async (req, res) => {
   const vehicle = await requireOwnVehicle(req);
   const [{ recalls, synced }, owned] = await Promise.all([
-    getModelRecalls(req.db, { year: vehicle.year, make: vehicle.make, model: vehicle.model }),
+    getModelRecalls(req.db, modelKeyOf(vehicle)),
     req.db.select().from(vehicleRecallStatus).where(eq(vehicleRecallStatus.vehicleId, vehicle.id)),
   ]);
 
@@ -316,7 +302,7 @@ vehicleRouter.delete('/recalls/:campaign', async (req, res) => {
  */
 async function requireCampaignForVehicle(
   req: Parameters<typeof requireOwnVehicle>[0],
-  vehicle: { year: number; make: string; model: string },
+  vehicle: ModelKey,
 ): Promise<string> {
   const parsed = campaignNumberSchema.safeParse(stringParam(req, 'campaign'));
   if (!parsed.success) {
@@ -347,13 +333,28 @@ async function requireCampaignForVehicle(
  */
 vehicleRouter.get('/safety', async (req, res) => {
   const vehicle = await requireOwnVehicle(req);
-  const { variants, synced } = await getModelSafetyRatings(req.db, {
-    year: vehicle.year,
-    make: vehicle.make,
-    model: vehicle.model,
-  });
+  const { variants, synced } = await getModelSafetyRatings(req.db, modelKeyOf(vehicle));
 
   res.json({ variants: variants.map(toSafetyRating), checked: synced } satisfies SafetyRatingReport);
+});
+
+/**
+ * The signed URL of a studio photo of the caller's model.
+ *
+ * Deliberately not part of `GET /api/vehicle`: it expires, so bundling it into the
+ * vehicle record would put a decaying value inside the one response the whole app
+ * caches and reuses. A separate endpoint also means a slow or broken CarImages
+ * delays a picture rather than the car.
+ *
+ * Always 200, even with nothing to show -- an absent `imageUrl` is the normal way
+ * this says "placeholder", not an error. See the VehicleImage contract.
+ */
+vehicleRouter.get('/image', async (req, res) => {
+  const vehicle = await requireOwnVehicle(req);
+
+  const image: VehicleImage = await fetchVehicleImage(modelKeyOf(vehicle));
+
+  res.json(image);
 });
 
 /** Beyond this the list stops informing and starts overwhelming. */
@@ -371,7 +372,6 @@ const MAX_REPORTED_ISSUES = 8;
  */
 vehicleRouter.get('/known-issues', async (req, res) => {
   const vehicle = await requireOwnVehicle(req);
-  const model = { year: vehicle.year, make: vehicle.make, model: vehicle.model };
 
   const [curated, reported] = await Promise.all([
     req.db
@@ -385,7 +385,7 @@ vehicleRouter.get('/known-issues', async (req, res) => {
         ),
       )
       .orderBy(asc(modelKnownIssues.position)),
-    getOwnerReports(req.db, model),
+    getOwnerReports(req.db, modelKeyOf(vehicle)),
   ]);
 
   res.json({

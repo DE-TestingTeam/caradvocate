@@ -12,10 +12,9 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useToast } from '@/components/ui/toast';
 import { addServiceRecord, deleteServiceRecord, updateServiceRecord } from '@/lib/api';
 import { todayIso } from '@/lib/format';
-import { invalidateAll } from '@/lib/useApi';
+import { useWrite } from '@/lib/useWrite';
 import type { MaintenanceItem, ServiceRecord } from '@caradvocate/shared';
 
 /**
@@ -63,8 +62,7 @@ export function LogServiceDialog({
   const [cost, setCost] = React.useState('');
   const [mileage, setMileage] = React.useState('');
   const [jobId, setJobId] = React.useState('');
-  const [saving, setSaving] = React.useState(false);
-  const toast = useToast();
+  const { saving, write } = useWrite(() => setOpen(false));
 
   // Reset from the record each time it opens, so reopening never shows stale input.
   React.useEffect(() => {
@@ -76,7 +74,8 @@ export function LogServiceDialog({
     setJobId(record?.maintenanceItemId ?? '');
   }, [open, record]);
 
-  const valid = description.trim().length > 0 && date.length > 0 && cost !== '' && Number(cost) >= 0 && !saving;
+  const valid =
+    description.trim().length > 0 && date.length > 0 && cost !== '' && Number(cost) >= 0 && !saving;
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -90,33 +89,16 @@ export function LogServiceDialog({
       maintenanceItemId: jobId === '' ? undefined : jobId,
     };
 
-    setSaving(true);
-    try {
-      if (record) await updateServiceRecord(record.id, body);
-      else await addServiceRecord(body);
-      invalidateAll();
-      setOpen(false);
-      toast(record ? 'Record updated.' : 'Service logged to your history.');
-    } catch (cause) {
-      toast(cause instanceof Error ? cause.message : 'Could not save that.');
-    } finally {
-      setSaving(false);
-    }
+    await write(
+      () => (record ? updateServiceRecord(record.id, body) : addServiceRecord(body)),
+      record ? 'Record updated.' : 'Service logged to your history.',
+      'Could not save that.',
+    );
   }
 
   async function handleDelete() {
     if (!record) return;
-    setSaving(true);
-    try {
-      await deleteServiceRecord(record.id);
-      invalidateAll();
-      setOpen(false);
-      toast('Record deleted.');
-    } catch (cause) {
-      toast(cause instanceof Error ? cause.message : 'Could not delete that.');
-    } finally {
-      setSaving(false);
-    }
+    await write(() => deleteServiceRecord(record.id), 'Record deleted.', 'Could not delete that.');
   }
 
   return (
@@ -134,7 +116,9 @@ export function LogServiceDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{isEditing ? 'Edit service record' : 'Log a service'}</DialogTitle>
-          <DialogDescription>Add a repair or maintenance record to your service history.</DialogDescription>
+          <DialogDescription>
+            Add a repair or maintenance record to your service history.
+          </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">

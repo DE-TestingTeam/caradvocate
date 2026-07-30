@@ -108,7 +108,7 @@ export async function fetchComponentReports(
   return aggregateComplaints(body);
 }
 
-async function requestComplaints(lookup: ComplaintLookup): Promise<unknown | undefined> {
+async function requestComplaints(lookup: ComplaintLookup): Promise<unknown> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 

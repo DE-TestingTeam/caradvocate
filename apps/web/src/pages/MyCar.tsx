@@ -8,7 +8,7 @@ import { MaintenanceList } from '@/components/my-car/MaintenanceList';
 import { RecallsList } from '@/components/my-car/RecallsList';
 import { ServiceHistory } from '@/components/my-car/ServiceHistory';
 import { ValueCard } from '@/components/my-car/ValueCard';
-import { ViewerPlaceholder } from '@/components/my-car/ViewerPlaceholder';
+import { VehicleImage } from '@/components/my-car/VehicleImage';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useVehicle } from '@/components/layout/RequireVehicle';
@@ -56,7 +56,7 @@ export function MyCarPage() {
   return (
     <div className="space-y-8">
       <section className="space-y-4">
-        <ViewerPlaceholder />
+        <VehicleImage vehicle={vehicle} />
 
         <div>
           <h1 className="text-3xl font-bold tracking-tight">{vehicleName(vehicle)}</h1>

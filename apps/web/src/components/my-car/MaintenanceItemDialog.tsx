@@ -10,9 +10,8 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useToast } from '@/components/ui/toast';
 import { addMaintenanceItem, deleteMaintenanceItem, updateMaintenanceItem } from '@/lib/api';
-import { invalidateAll } from '@/lib/useApi';
+import { useWrite } from '@/lib/useWrite';
 import type { MaintenanceItem } from '@caradvocate/shared';
 
 /**
@@ -37,8 +36,7 @@ export function MaintenanceItemDialog({
   const [label, setLabel] = React.useState('');
   const [miles, setMiles] = React.useState('');
   const [months, setMonths] = React.useState('');
-  const [saving, setSaving] = React.useState(false);
-  const toast = useToast();
+  const { saving, write } = useWrite(() => onOpenChange(false));
 
   // Reset from the item each time it opens, so reopening never shows stale input.
   React.useEffect(() => {
@@ -62,34 +60,21 @@ export function MaintenanceItemDialog({
       intervalMonths: months.trim() === '' ? undefined : Number(months),
     };
 
-    setSaving(true);
-    try {
-      if (item) await updateMaintenanceItem(item.id, patch);
-      else await addMaintenanceItem(patch);
-      invalidateAll();
-      onOpenChange(false);
-      toast(item ? 'Job updated.' : 'Job added.');
-    } catch (cause) {
-      toast(cause instanceof Error ? cause.message : 'Could not save that.');
-    } finally {
-      setSaving(false);
-    }
+    await write(
+      () => (item ? updateMaintenanceItem(item.id, patch) : addMaintenanceItem(patch)),
+      item ? 'Job updated.' : 'Job added.',
+      'Could not save that.',
+    );
   }
 
   async function handleDelete() {
     if (!item) return;
-    setSaving(true);
-    try {
-      await deleteMaintenanceItem(item.id);
-      invalidateAll();
-      onOpenChange(false);
+    await write(
+      () => deleteMaintenanceItem(item.id),
       // Said plainly, because it is not obvious that history survives.
-      toast('Job removed. Your service records are untouched.');
-    } catch (cause) {
-      toast(cause instanceof Error ? cause.message : 'Could not remove that.');
-    } finally {
-      setSaving(false);
-    }
+      'Job removed. Your service records are untouched.',
+      'Could not remove that.',
+    );
   }
 
   return (

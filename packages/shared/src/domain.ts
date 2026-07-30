@@ -56,6 +56,24 @@ export interface Vehicle {
 }
 
 /**
+ * The signed URL of a studio photo of the owner's model, shown on My Car.
+ *
+ * `{}` is a routine response, not an error. An absent `imageUrl` covers all of
+ * "CarImages is not configured", "no match for this year/make/model" and "the
+ * service could not be reached", because the photo is decoration and none of those
+ * deserve an error state on the page whose job is telling an owner about recalls.
+ * The UI falls back to a static placeholder.
+ *
+ * The URL is signed and expiring, so it is fetched when the image mounts rather
+ * than stored anywhere. How long it lasts is CarImages' choice and not part of
+ * this contract -- treat it as good for this page view only.
+ */
+export interface VehicleImage {
+  /** Studio photo of this generation, 3:2. */
+  imageUrl?: string;
+}
+
+/**
  * What a VIN lookup yields during onboarding. Every field but the VIN itself is
  * optional: the decoder reports only what it could determine, and the form falls
  * back to manual entry for the rest.

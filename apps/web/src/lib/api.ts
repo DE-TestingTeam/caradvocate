@@ -25,6 +25,7 @@ import type {
   UpdateAccountInput,
   UpdateVehicleInput,
   Vehicle,
+  VehicleImage,
 } from '@caradvocate/shared';
 import { http } from './http';
 
@@ -99,6 +100,17 @@ export function setRecallRepaired(campaignNumber: string, repaired: boolean): Pr
 /** Returns a recall to "unknown", for when the owner is no longer sure. */
 export function clearRecallStatus(campaignNumber: string): Promise<void> {
   return http.delete<void>(`/vehicle/recalls/${encodeURIComponent(campaignNumber)}`);
+}
+
+/**
+ * The signed URL of a studio photo of the caller's model.
+ *
+ * Resolves to `{}` rather than rejecting when there is nothing to show, so an
+ * unconfigured or unmatched photo is a placeholder and not an error state. The URL
+ * expires -- fetch when the image mounts, do not hold it.
+ */
+export function getVehicleImage(): Promise<VehicleImage> {
+  return http.get<VehicleImage>('/vehicle/image');
 }
 
 /* -------------------------------------------------------- service history */

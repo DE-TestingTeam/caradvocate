@@ -43,7 +43,6 @@ export function toVehicle(
   };
 }
 
-
 export function toKnownIssue(row: Row<typeof t.modelKnownIssues>): KnownIssue {
   return { id: row.id, label: row.label, severity: row.severity, source: 'curated' };
 }
@@ -61,7 +60,8 @@ const PATTERN_THRESHOLD = 5;
  * fault, and dressing it up as one would mislead.
  */
 export function toKnownIssueFromReports(row: Row<typeof t.modelOwnerReports>): KnownIssue {
-  const harmed = row.crashCount > 0 || row.fireCount > 0 || row.injuryCount > 0 || row.deathCount > 0;
+  const harmed =
+    row.crashCount > 0 || row.fireCount > 0 || row.injuryCount > 0 || row.deathCount > 0;
 
   return {
     id: row.id,
@@ -84,7 +84,12 @@ export function toKnownIssueFromReports(row: Row<typeof t.modelOwnerReports>): K
  */
 function toMileageAtFailure(row: Row<typeof t.modelOwnerReports>): MileageAtFailure | undefined {
   const { mileageSampleCount, mileageLowMi, mileageMedianMi, mileageHighMi } = row;
-  if (mileageSampleCount == null || mileageLowMi == null || mileageMedianMi == null || mileageHighMi == null) {
+  if (
+    mileageSampleCount == null ||
+    mileageLowMi == null ||
+    mileageMedianMi == null ||
+    mileageHighMi == null
+  ) {
     return undefined;
   }
   return {

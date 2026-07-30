@@ -16,7 +16,6 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0",
     "@caradvocate/shared": "*",
-    "@electric-sql/pglite": "^0.2.14",
     "drizzle-orm": "^0.36.4",
     "express": "^5.2.1",
     "jose": "^5.10.0",
@@ -24,6 +23,7 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.2.14",
     "@types/express": "^5.0.6",
     "@types/node": "^22.9.0",
     "@types/pg": "^8.11.10",

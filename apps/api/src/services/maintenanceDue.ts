@@ -15,8 +15,16 @@
  *     how manufacturers write schedules ("every 10,000 miles or 12 months") and
  *     taking the later of the two would tell someone they are fine when they are a
  *     year overdue.
+ *
+ * The calculation is pure and takes rows rather than a database, so the suite can
+ * exercise it without one. `loadMaintenanceItems` at the foot of the file is the one
+ * exception: it is the two queries the calculation needs, and it lives here because
+ * both the My Car endpoint and the Ask CA context block ask the same question.
  */
+import { and, asc, eq, isNotNull, max } from 'drizzle-orm';
 import type { MaintenanceItem, MaintenanceStatus } from '@caradvocate/shared';
+import type { Database } from '../db/index.js';
+import { maintenanceItems, serviceRecords } from '../db/schema.js';
 
 /** Inside this much of the due point, a job reads as due rather than fine. */
 const SOON_MILES = 500;
@@ -129,4 +137,55 @@ function daysBetween(today: Date, iso: string): number {
   const start = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
   const [year, month, day] = iso.split('-').map(Number);
   return Math.round((Date.UTC(year, month - 1, day) - start) / 86_400_000);
+}
+
+/**
+ * One car's upkeep jobs with their due status worked out, most urgent first.
+ *
+ * The status is computed rather than stored, which needs two things beyond the jobs
+ * themselves: today's odometer, and the last service logged against each job. The
+ * latter is one grouped query rather than one per item.
+ *
+ * Shared by `GET /api/vehicle/maintenance` and the Ask CA context block, which must
+ * agree -- an owner told a job is overdue on My Car and fine in chat would rightly
+ * trust neither.
+ */
+export async function loadMaintenanceItems(
+  db: Database,
+  vehicle: { id: string; mileage: number },
+): Promise<MaintenanceItem[]> {
+  const [rows, lastServices] = await Promise.all([
+    db
+      .select()
+      .from(maintenanceItems)
+      .where(eq(maintenanceItems.vehicleId, vehicle.id))
+      // The owner's own ordering, which decides ties once the urgency sort is applied.
+      .orderBy(asc(maintenanceItems.position)),
+    db
+      .select({
+        maintenanceItemId: serviceRecords.maintenanceItemId,
+        date: max(serviceRecords.serviceDate),
+        mileage: max(serviceRecords.mileageAtService),
+      })
+      .from(serviceRecords)
+      .where(
+        and(eq(serviceRecords.vehicleId, vehicle.id), isNotNull(serviceRecords.maintenanceItemId)),
+      )
+      .groupBy(serviceRecords.maintenanceItemId),
+  ]);
+
+  const lastByItem = new Map(
+    lastServices
+      .filter((row) => row.maintenanceItemId && row.date)
+      .map((row) => [
+        row.maintenanceItemId as string,
+        { date: row.date as string, mileage: row.mileage },
+      ]),
+  );
+
+  const context = { currentMileage: vehicle.mileage, today: new Date() };
+  const items = rows.map((row) => toMaintenanceItem(row, lastByItem.get(row.id), context));
+  // Stable, so equal urgencies keep the owner's ordering from the query above.
+  items.sort(byUrgency);
+  return items;
 }
