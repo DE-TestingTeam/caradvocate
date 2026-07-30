@@ -2,6 +2,7 @@ import { createApp } from './app.js';
 import { assertProductionSafe, authMode } from './auth/config.js';
 import { askIsConfigured } from './services/askClaude.js';
 import { carImagesIsConfigured } from './services/carImages.js';
+import { describePrice } from './services/paywall.js';
 import { assertSchemaPresent, closeDb, describeTarget, getDb } from './db/index.js';
 import { env } from './env.js';
 
@@ -52,6 +53,12 @@ const server = app.listen(env.PORT, () => {
     console.log('Vehicle photo: static placeholder -- no CarImages call');
     console.log('  Set CARIMAGES_API_KEY to show a photo of the model.');
   }
+
+  // Logged every boot rather than only when it is unset: this is the number the
+  // prototype's whole result is denominated in, and shipping the placeholder by
+  // accident would invalidate the test rather than break anything visibly.
+  console.log(`Paywall: ${describePrice()} -- nobody is charged, taps are recorded`);
+  console.log('  Set PAYWALL_PRICE_CENTS and PAYWALL_INTERVAL to price the test.');
 });
 
 /**

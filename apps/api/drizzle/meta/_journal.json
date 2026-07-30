@@ -85,6 +85,13 @@
       "when": 1785421164770,
       "tag": "0011_busy_stature",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1785436207753,
+      "tag": "0012_brief_gargoyle",
+      "breakpoints": true
     }
   ]
 }

@@ -17,6 +17,14 @@ export async function run(): Promise<void> {
   section('tenant isolation');
   const { db, request, close } = await startTestServer();
 
+  // Dana is seeded behind the paywall so that dev and QA have an account which shows
+  // it. Assessments are the paid surface, and this suite has to reach them as her to
+  // prove Alex cannot. Unlocked directly rather than through POST /api/paywall/unlock
+  // so this suite records no purchase-intent row -- that endpoint is the paywall
+  // suite's subject, and a row written here would be indistinguishable from a real
+  // signal in the data the prototype collects.
+  await db.update(t.users).set({ plan: 'paid' }).where(eq(t.users.email, DANA));
+
   /* --------------------------- each user sees only their own aggregate roots */
 
   const alexVehicle = await request('GET', '/api/vehicle');

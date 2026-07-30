@@ -46,7 +46,7 @@ export const severityEnum = pgEnum('severity', ['low', 'medium', 'high']);
 // See maintenanceItems below and services/maintenanceDue.ts.
 export const quoteVerdictEnum = pgEnum('quote_verdict', ['fair', 'overpriced']);
 export const serviceSourceEnum = pgEnum('service_record_source', ['manual', 'repair_cost_checker']);
-export const featureStatusEnum = pgEnum('feature_status', ['Included', 'Active']);
+export const featureStatusEnum = pgEnum('feature_status', ['Included', 'Active', 'Locked']);
 export const planEnum = pgEnum('plan', ['free', 'paid']);
 
 /* ------------------------------------------------------------------- users */
@@ -67,7 +67,12 @@ export const users = pgTable(
     phone: text('phone').notNull().default(''),
     /** Displayed as "Member since 2024"; the year is derived from this. */
     memberSince: date('member_since').notNull(),
-    plan: planEnum('plan').notNull().default('paid'),
+    /**
+     * Free until the owner taps through the paywall. See services/paywall.ts --
+     * v1 charges nobody, so this records that the tap happened rather than that
+     * money changed hands.
+     */
+    plan: planEnum('plan').notNull().default('free'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
@@ -93,6 +98,46 @@ export const userFeatures = pgTable(
   },
   (table) => ({
     byUser: index('user_features_user_idx').on(table.userId, table.position),
+  }),
+);
+
+/**
+ * Every tap on the paywall's unlock button.
+ *
+ * This table is the prototype's actual output. Nobody is charged in v1, so the tap
+ * is the only evidence of willingness to pay, and the number shown at the moment of
+ * the tap is what it is evidence *for* -- hence `priceCents` and `interval` are
+ * copied in rather than read from config at analysis time. Change the price
+ * mid-test and earlier rows still mean what they meant.
+ *
+ * Append-only. Nothing updates or deletes a row, and a second tap by the same owner
+ * is a second row: re-deciding at a new price is itself a finding. Cascades with
+ * the user because it is their personal data, which does mean a deleted account
+ * takes its intent history with it -- export before honouring a deletion request.
+ */
+export const paywallIntents = pgTable(
+  'paywall_intents',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** Whole cents, as shown. Integer for the same reason every other price here is. */
+    priceCents: integer('price_cents').notNull(),
+    /** 'month' or 'year'. Plain text so a new cadence needs no migration. */
+    interval: text('interval').notNull(),
+    /**
+     * Where they tapped from: 'repair_cost_checker' (the gate on the page itself)
+     * or 'account' (the unlock button on Account). Plain text for the same reason.
+     * Worth keeping separate -- arriving from an Ask CA answer about a repair is a
+     * warmer signal than browsing the nav, and conversion by entry point is a
+     * question the PoC will want to ask.
+     */
+    source: text('source').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    byUser: index('paywall_intents_user_idx').on(table.userId, table.createdAt),
   }),
 );
 

@@ -32,7 +32,8 @@ export type QuoteVerdict = 'fair' | 'overpriced';
 
 export type ServiceRecordSource = 'manual' | 'repair_cost_checker';
 
-export type FeatureStatus = 'Included' | 'Active';
+/** `Locked` is a paid feature the owner has not unlocked yet. */
+export type FeatureStatus = 'Included' | 'Active' | 'Locked';
 
 export interface Vehicle {
   id: string;
@@ -334,13 +335,42 @@ export interface AccountFeature {
   status: FeatureStatus;
 }
 
+/**
+ * Which tier the owner is on.
+ *
+ * `paid` means they tapped through the paywall, not that they were charged -- v1
+ * charges nobody. See PaywallStatus.
+ */
+export type Plan = 'free' | 'paid';
+
 export interface Account {
   name: string;
   email: string;
   phone: string;
   memberSince: string;
-  plan: 'paid';
+  plan: Plan;
   features: AccountFeature[];
+}
+
+/**
+ * What the paywall shows, and whether this owner is past it.
+ *
+ * The price is served rather than hardcoded in the client for two reasons: the
+ * number is the independent variable of the whole experiment, so it has to be
+ * changeable without a deploy; and the figure recorded against an unlock must be
+ * the figure that was on screen, which is only guaranteed if one side owns it.
+ */
+export interface PaywallStatus {
+  /** True once the owner has tapped unlock. Paid features are open to them. */
+  unlocked: boolean;
+  /** Whole cents, so the client formats and never arithmetics on a float. */
+  priceCents: number;
+  /** ISO 4217. Only USD in v1, but the client should not assume a `$`. */
+  currency: string;
+  /** Per the spec, v1 tests a subscription only -- never per-incident pricing. */
+  interval: 'month' | 'year';
+  /** What unlocking opens up, in the order the paywall lists them. */
+  includes: string[];
 }
 
 export interface RepairCatalogItem {

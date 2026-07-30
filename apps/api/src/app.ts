@@ -2,11 +2,13 @@ import express, { type Express } from 'express';
 import { attachDb } from './middleware/attachDb.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { requireUser, type UserResolver } from './middleware/currentUser.js';
+import { requirePaid } from './middleware/requirePaid.js';
 import { defaultResolver } from './auth/resolvers.js';
 import { publicAuthConfig } from './auth/config.js';
 import { accountRouter } from './routes/account.js';
 import { assessmentsRouter } from './routes/assessments.js';
 import { chatRouter } from './routes/chat.js';
+import { paywallRouter } from './routes/paywall.js';
 import { repairsRouter } from './routes/repairs.js';
 import { serviceRecordsRouter } from './routes/serviceRecords.js';
 import { vehicleRouter } from './routes/vehicle.js';
@@ -50,7 +52,10 @@ export function createApp(db: Database, options: AppOptions = {}): Express {
 
   app.use('/api/vehicle', vehicleRouter);
   app.use('/api/service-records', serviceRecordsRouter);
-  app.use('/api/assessments', assessmentsRouter);
+  app.use('/api/paywall', paywallRouter);
+  // The one paid surface in v1. requirePaid is what makes a recorded unlock mean the
+  // owner actually decided to open this -- see middleware/requirePaid.ts.
+  app.use('/api/assessments', requirePaid, assessmentsRouter);
   app.use('/api/repairs', repairsRouter);
   app.use('/api/chat', chatRouter);
   app.use('/api/account', accountRouter);

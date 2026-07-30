@@ -14,6 +14,7 @@
 import { eq } from 'drizzle-orm';
 import type { Database } from '../db/index.js';
 import { userFeatures, users } from '../db/schema.js';
+import { PAID_FEATURE } from '../services/paywall.js';
 import type { VerifiedIdentity } from './verifyToken.js';
 
 export interface ProfileRef {
@@ -21,11 +22,17 @@ export interface ProfileRef {
   email: string;
 }
 
-/** The subscription rows the Account screen renders. */
+/**
+ * The subscription rows the Account screen renders.
+ *
+ * The Repair Cost Checker starts `Locked`: a new account is behind the paywall until
+ * they tap through it, and this row is what Account shows them. services/paywall.ts
+ * flips it when they do.
+ */
 const DEFAULT_FEATURES = [
   { name: 'My Car', status: 'Included' as const, position: 0 },
   { name: 'Ask CA', status: 'Included' as const, position: 1 },
-  { name: 'Repair Cost Checker', status: 'Active' as const, position: 2 },
+  { name: PAID_FEATURE, status: 'Locked' as const, position: 2 },
 ];
 
 export async function provisionUser(db: Database, identity: VerifiedIdentity): Promise<ProfileRef> {
@@ -63,7 +70,9 @@ export async function provisionUser(db: Database, identity: VerifiedIdentity): P
         name: defaultNameFor(identity.email),
         phone: '',
         memberSince: new Date().toISOString().slice(0, 10),
-        plan: 'paid',
+        // Every real signup starts behind the paywall. This is the cohort the
+        // prototype measures, so it must not be pre-unlocked.
+        plan: 'free',
       })
       .returning({ id: users.id, email: users.email });
 

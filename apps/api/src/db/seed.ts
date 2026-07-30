@@ -140,6 +140,9 @@ async function seedAlexRivera(db: Database, repairIdBySlug: Map<string, string>)
       name: 'Alex Rivera',
       phone: '(555) 018-2245',
       memberSince: '2024-01-01',
+      // Past the paywall, because the wireframes depict the Repair Cost Checker in
+      // use and this is also the dev-bypass account. To see the paywall in dev,
+      // point DEV_USER_EMAIL at Dana below.
       plan: 'paid',
     })
     .returning({ id: t.users.id });
@@ -341,14 +344,19 @@ async function seedSecondUser(db: Database, repairIdBySlug: Map<string, string>)
       name: 'Dana Whitfield',
       phone: '(555) 442-9910',
       memberSince: '2025-06-01',
-      plan: 'paid',
+      // Deliberately still behind the paywall, so there is an account that shows it
+      // without anyone editing the database. Set DEV_USER_EMAIL=dana@example.com to
+      // develop against it. Dana keeps the seeded assessment below -- the isolation
+      // suite needs a second tenant's row to prove Alex cannot read it, and an
+      // assessment predating an unlock is a real state anyway.
+      plan: 'free',
     })
     .returning({ id: t.users.id });
 
   await db.insert(t.userFeatures).values([
     { userId: user.id, name: 'My Car', status: 'Included', position: 0 },
     { userId: user.id, name: 'Ask CA', status: 'Included', position: 1 },
-    { userId: user.id, name: 'Repair Cost Checker', status: 'Active', position: 2 },
+    { userId: user.id, name: 'Repair Cost Checker', status: 'Locked', position: 2 },
   ]);
 
   const [vehicle] = await db

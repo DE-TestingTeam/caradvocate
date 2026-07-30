@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { AppShell } from '@/components/layout/AppShell';
 import { AuthGate } from '@/components/layout/AuthGate';
+import { RequirePaidPlan } from '@/components/layout/RequirePaidPlan';
 import { RequireVehicle } from '@/components/layout/RequireVehicle';
 import { AccountPage } from '@/pages/Account';
 import { AskCAPage } from '@/pages/AskCA';
@@ -31,9 +32,12 @@ export default function App() {
             <Route path="/" element={<Navigate to="/my-car" replace />} />
             <Route path="/my-car" element={<MyCarPage />} />
             <Route path="/ask" element={<AskCAPage />} />
-            <Route path="/assessments" element={<AssessmentsPage />} />
-            <Route path="/assessments/new" element={<NewAssessmentPage />} />
-            <Route path="/assessments/:id" element={<AssessmentDetailPage />} />
+            {/* The Repair Cost Checker: the only paid surface in v1. */}
+            <Route element={<RequirePaidPlan />}>
+              <Route path="/assessments" element={<AssessmentsPage />} />
+              <Route path="/assessments/new" element={<NewAssessmentPage />} />
+              <Route path="/assessments/:id" element={<AssessmentDetailPage />} />
+            </Route>
           </Route>
         </Route>
 

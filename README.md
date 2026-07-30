@@ -42,6 +42,8 @@ boot by `apps/api/src/env.ts`, which documents each one.
 | `SUPABASE_JWT_SECRET` | — | legacy shared-secret projects (HS256) |
 | `ANTHROPIC_API_KEY` | Ask CA uses canned replies | Ask CA answers with Claude |
 | `CARIMAGES_API_KEY` | My Car shows a placeholder | studio photo of the model |
+| `PAYWALL_PRICE_CENTS` | **`1499` — a placeholder** | the price the paywall shows |
+| `PAYWALL_INTERVAL` | `month` | `month` or `year` |
 | `DEV_USER_EMAIL` | `alex.rivera@email.com` | who the dev bypass acts as |
 
 The API prints which mode it chose at startup. Never put the Supabase
@@ -57,8 +59,8 @@ provide the stable session DDL needs, so migrations use the direct one (5432). S
 ```bash
 npm run dev            # API + web, watching
 npm test               # typecheck + API suite + e2e
-npm run test:api       # 571 checks, no database needed
-npm run test:e2e       # 84 checks, full stack
+npm run test:api       # 602 checks, no database needed
+npm run test:e2e       # 93 checks, full stack
 npm run build          # shared, then api, then web
 npm run db:generate    # schema.ts -> a new migration (offline)
 npm run db:migrate     # apply migrations via DIRECT_DATABASE_URL
@@ -70,7 +72,7 @@ npm run ingest:mileage # complaint mileage from NHTSA's bulk file (needs unzip)
 run. `install`, `dev`, `test` and `build` all handle that; `npm run dev:shared`
 watches it if you are editing it live.
 
-## Two things that will bite
+## Things that will bite
 
 **`db:seed` truncates `users`.** Run against a database someone has signed up to,
 it deletes their account, car, recall answers and service history. That happened
@@ -79,6 +81,49 @@ identity and names the accounts at risk. `SEED_WIPE_REAL_ACCOUNTS=1` overrides i
 
 **Never edit a migration that has been applied anywhere**, including a teammate's
 project. Add a new one.
+
+**`PAYWALL_PRICE_CENTS` defaults to a placeholder.** It is the price shown to real
+people and the figure the prototype's result is denominated in, so set it
+deliberately before any cohort sees it. The API prints it on every boot.
+
+## The paywall
+
+The Repair Cost Checker is the one paid surface, and v1 takes no money: the paywall
+shows a price, tapping unlock charges nothing and opens the feature, and the tap is
+recorded as a willingness-to-pay signal. That is the spec's design — it measures WTP
+at a price point without building billing.
+
+Two things make the number trustworthy, and both are easy to break:
+
+- **The price travels with the tap.** `paywall_intents` stores the price and cadence
+  that were on screen, not a foreign key to config. Change the price mid-test and
+  earlier rows still mean what they meant.
+- **The gate is enforced server-side.** `apps/api/src/middleware/requirePaid.ts`
+  returns 402 on `/api/assessments` for a free account. The client gate is what the
+  owner sees; this is what makes a recorded tap mean they chose to open it. Without
+  it, a typed URL or a stale tab hands someone the feature with no tap, and the
+  conversion rate is quietly wrong.
+
+The screen states the price before the button and discloses that nothing is charged
+on the same screen, above the fold — no card is requested and nothing is billed. It
+does not say "free" above the button, because a tap on something free measures
+nothing.
+
+Reading the results:
+
+```sql
+select price_cents, interval, source, count(*), count(distinct user_id)
+from paywall_intents group by 1, 2, 3;
+```
+
+`source` is the entry point — `repair_cost_checker` (the gate itself, including
+arrivals from Ask CA's "CHECK REPAIR COSTS" answer) or `account`. A second tap by the
+same owner is a second row on purpose: re-deciding at a new price is the finding.
+
+Seeded accounts: Alex is past the paywall (the wireframes show the feature in use, and
+he is the dev-bypass account); Dana is behind it, so
+`DEV_USER_EMAIL=dana@example.com` shows the paywall without editing anything. Every
+real signup starts free.
 
 ## Tests
 
@@ -121,8 +166,13 @@ come from the wireframes, and the rest are marked as invented in
 licensing problem, not an engineering one. Assessments snapshot their figures at
 creation, so real pricing can land without rewriting history.
 
-**Not built:** paywall gating (every profile is created paid, nothing is gated),
-password reset, account deletion, quote-PDF parsing.
+**Not built:** password reset, account deletion, quote-PDF parsing, `safe_to_drive`
+on the urgency triage (the spec's paid triage output; Ask CA returns `urgency` but no
+safe-to-drive verdict), Car Value Tracking (needs a valuation vendor), and
+factory-scheduled maintenance intervals (licensed data — owners set their own).
+
+**Deleting an account takes its `paywall_intents` rows with it** (they cascade).
+Export before honouring a deletion request, or the PoC loses that data point.
 
 **Unverified:** token verification is covered by tests using a locally generated
 keypair, since CI cannot reach Supabase. Confirm real tokens once by decoding an

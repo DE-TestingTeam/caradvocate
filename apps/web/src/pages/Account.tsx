@@ -1,3 +1,4 @@
+import * as React from 'react';
 import { ErrorState } from '@/components/ErrorState';
 import { EditProfileDialog } from '@/components/account/EditProfileDialog';
 import { EditVehicleDialog } from '@/components/account/EditVehicleDialog';
@@ -9,14 +10,53 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/toast';
-import { getAccount, getVehicle } from '@/lib/api';
-import { formatMileage, maskVinTail, vehicleName } from '@/lib/format';
-import { useApi } from '@/lib/useApi';
+import { getAccount, getPaywall, getVehicle, unlockPaywall } from '@/lib/api';
+import { formatMileage, formatPrice, maskVinTail, vehicleName } from '@/lib/format';
+import { invalidateAll, useApi } from '@/lib/useApi';
+
+/**
+ * Unlocks from Account rather than from the Repair Cost Checker gate.
+ *
+ * Recorded with its own source, because a tap here is a colder signal than one from
+ * someone who arrived mid-repair via Ask CA -- and telling the two apart is the point
+ * of collecting the source at all.
+ */
+function UnlockButton() {
+  const { data: paywall } = useApi(getPaywall);
+  const [unlocking, setUnlocking] = React.useState(false);
+  const toast = useToast();
+
+  async function handleUnlock() {
+    setUnlocking(true);
+    try {
+      await unlockPaywall('account');
+      invalidateAll();
+    } catch (cause) {
+      toast(cause instanceof Error ? cause.message : 'Could not unlock that.');
+    } finally {
+      setUnlocking(false);
+    }
+  }
+
+  if (!paywall) return <Skeleton className="h-10 w-full" />;
+
+  const price = formatPrice(paywall.priceCents, paywall.currency);
+
+  return (
+    <div className="space-y-2">
+      <Button className="w-full" onClick={handleUnlock} disabled={unlocking}>
+        {unlocking ? 'Unlocking…' : `Unlock the Repair Cost Checker — ${price}/${paywall.interval}`}
+      </Button>
+      <p className="text-xs text-muted-foreground">
+        You will not be charged. Unlocking is free while CarAdvocate is in preview.
+      </p>
+    </div>
+  );
+}
 
 export function AccountPage() {
   const { data: account, error: accountError } = useApi(getAccount);
   const { data: vehicle, error: vehicleError } = useApi(getVehicle);
-  const toast = useToast();
 
   return (
     <div>
@@ -98,9 +138,16 @@ export function AccountPage() {
                     />
                   ))}
                 </div>
-                <Button className="w-full" onClick={() => toast('Subscription management is not wired up yet.')}>
-                  Manage subscription
-                </Button>
+                {/* The spec puts "plan / paywall status" on this page. For a free
+                    account that means a way through the paywall from here, which is
+                    a second entry point and is recorded as such. */}
+                {account.plan === 'free' ? (
+                  <UnlockButton />
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Unlocked while CarAdvocate is in preview. You have not been charged.
+                  </p>
+                )}
               </>
             ) : (
               <CardSkeleton />

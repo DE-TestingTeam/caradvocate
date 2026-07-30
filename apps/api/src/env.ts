@@ -62,6 +62,20 @@ const envSchema = z.object({
    */
   CARIMAGES_API_SECRET: z.string().min(1).optional(),
 
+  /* ------------------------------------------------------------ Paywall ----
+   * The price the fake paywall shows. Nobody is charged -- the tap is recorded as
+   * a willingness-to-pay signal and the feature opens. See services/paywall.ts.
+   *
+   * This is the experiment's independent variable, so it is configuration rather
+   * than a constant: it has to be changeable between cohorts without a deploy,
+   * and each recorded tap stores the figure that was on screen at the time.
+   *
+   * THE DEFAULT IS A PLACEHOLDER. Set it deliberately before any real test.
+   */
+  PAYWALL_PRICE_CENTS: z.coerce.number().int().positive().default(1499),
+  /** v1 tests a subscription only, never per-incident pricing. */
+  PAYWALL_INTERVAL: z.enum(['month', 'year']).default('month'),
+
   /**
    * DEV ONLY. When Supabase is not configured, every request is attributed to
    * this user so the app is usable without signing in.

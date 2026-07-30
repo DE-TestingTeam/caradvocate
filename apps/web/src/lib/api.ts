@@ -22,6 +22,7 @@ import type {
   RecallReport,
   RepairCatalogItem,
   ServiceRecord,
+  PaywallStatus,
   UpdateAccountInput,
   UpdateVehicleInput,
   Vehicle,
@@ -111,6 +112,23 @@ export function clearRecallStatus(campaignNumber: string): Promise<void> {
  */
 export function getVehicleImage(): Promise<VehicleImage> {
   return http.get<VehicleImage>('/vehicle/image');
+}
+
+/* ---------------------------------------------------------------- paywall */
+
+/** The offer as shown, plus whether this owner is already past it. */
+export function getPaywall(): Promise<PaywallStatus> {
+  return http.get<PaywallStatus>('/paywall');
+}
+
+/**
+ * Records a tap on unlock and opens the paid features.
+ *
+ * Charges nothing -- the tap is the signal. `source` is where it was tapped, which
+ * the prototype reads conversion by, so pass the screen the owner was actually on.
+ */
+export function unlockPaywall(source: 'repair_cost_checker' | 'account'): Promise<PaywallStatus> {
+  return http.post<PaywallStatus>('/paywall/unlock', { source });
 }
 
 /* -------------------------------------------------------- service history */

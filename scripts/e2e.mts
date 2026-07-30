@@ -15,7 +15,7 @@ import { execFileSync } from 'node:child_process';
 import { JSDOM, VirtualConsole } from 'jsdom';
 import { eq } from 'drizzle-orm';
 import { createApp } from '../apps/api/src/app.js';
-import { assessments, serviceRecords, users, vehicles } from '../apps/api/src/db/schema.js';
+import { assessments, paywallIntents, serviceRecords, users, vehicles } from '../apps/api/src/db/schema.js';
 import { createTestDb } from '../apps/api/test/harness.js';
 import { HttpError } from '../apps/api/src/lib/httpError.js';
 import { setComplaintFetcherForTesting } from '../apps/api/src/services/complaintSync.js';
@@ -479,7 +479,57 @@ const check = (name: string, pass: boolean, detail = '') => checks.push({ name, 
   dom.window.close();
 }
 
-/* ============ 5. a vehicle-less user is walked through onboarding =========== */
+/* ============ 5. the paywall in front of the Repair Cost Checker ============ */
+
+{
+  // Alex is seeded past the paywall, so this puts him back behind it -- there is no
+  // way to re-lock through the app, by design. The prototype's entire output is the
+  // record of taps on this screen, so it is worth driving in the real bundle rather
+  // than trusting the API test alone.
+  const [alex] = await db.select().from(users).where(eq(users.email, 'alex.rivera@email.com'));
+  await db.update(users).set({ plan: 'free' }).where(eq(users.id, alex.id));
+
+  const dom = await open('/assessments/new');
+  await settle(dom, 800);
+
+  const gated = text(dom);
+  check('a free account hits the paywall instead of the Repair Cost Checker', gated.includes('Unlock for'));
+  check('the price is on screen before the button', /\$\d/.test(gated), 'no price rendered');
+  check(
+    'and it is disclosed that nothing is charged',
+    gated.toLowerCase().includes('will not be charged'),
+  );
+  check(
+    'the repair picker is not rendered behind the gate',
+    !findByText(dom, 'button[role="option"]', 'Oil Change & Filter'),
+  );
+
+  click(dom, findByText(dom, 'button', 'Unlock for')!);
+  await settle(dom, 1200);
+
+  check(
+    'unlocking reveals the feature without leaving the route',
+    dom.window.location.pathname === '/assessments/new',
+    `landed on ${dom.window.location.pathname}`,
+  );
+  check(
+    'and the repair picker is now there',
+    Boolean(findByText(dom, 'button[role="option"]', 'Oil Change & Filter')),
+  );
+
+  const [intent] = await db.select().from(paywallIntents).where(eq(paywallIntents.userId, alex.id));
+  check('the tap was recorded as purchase intent', Boolean(intent));
+  check(
+    'attributed to the screen it happened on',
+    intent?.source === 'repair_cost_checker',
+    `got ${intent?.source}`,
+  );
+  check('with the price that was displayed', intent?.priceCents > 0, `got ${intent?.priceCents}`);
+
+  dom.window.close();
+}
+
+/* ============ 6. a vehicle-less user is walked through onboarding =========== */
 
 {
   // Strip the seeded car so the app behaves like a brand-new account. This is the

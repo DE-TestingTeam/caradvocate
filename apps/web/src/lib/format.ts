@@ -21,6 +21,20 @@ export function formatMileage(value: number): string {
   return `${value.toLocaleString('en-US')} mi`;
 }
 
+/**
+ * 1499, 'USD' -> "$14.99". Cents in, so nothing upstream holds a float.
+ *
+ * Shows cents unlike formatCurrency, which rounds them away: this renders a price
+ * someone is deciding whether to pay, and "$15" for $14.99 is the wrong number on
+ * the one screen where the exact figure is the point.
+ */
+export function formatPrice(cents: number, currencyCode: string): string {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: currencyCode,
+  }).format(cents / 100);
+}
+
 /** "2026-06-14" -> "Jun 2026" */
 export function formatMonthYear(iso: string): string {
   const d = parseIso(iso);

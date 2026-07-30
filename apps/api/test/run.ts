@@ -12,6 +12,7 @@ import { run as runSafetyRatings } from './safetyRatings.test.js';
 import { run as runMaintenance } from './maintenance.test.js';
 import { run as runAskCa } from './askca.test.js';
 import { run as runCarImages } from './carImages.test.js';
+import { run as runPaywall } from './paywall.test.js';
 
 // No test reaches NHTSA unless it installs its own fetcher.
 goOffline();
@@ -28,6 +29,7 @@ await runSafetyRatings();
 await runMaintenance();
 await runAskCa();
 await runCarImages();
+await runPaywall();
 
 const { total, failures } = summary();
 console.log(`\n${total - failures}/${total} passed`);

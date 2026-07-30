@@ -25,4 +25,9 @@ export class HttpError extends Error {
   static conflict(message: string): HttpError {
     return new HttpError('conflict', message);
   }
+
+  /** A paid feature the caller has not unlocked. 402, so the client can offer the paywall. */
+  static paymentRequired(message = 'This feature has not been unlocked'): HttpError {
+    return new HttpError('payment_required', message);
+  }
 }

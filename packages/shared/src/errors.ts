@@ -13,6 +13,8 @@ export type ApiErrorCode =
   | 'unauthenticated'
   | 'not_found'
   | 'conflict'
+  /** The caller has not unlocked a paid feature. See PaywallStatus. */
+  | 'payment_required'
   | 'internal_error';
 
 export const httpStatusForCode: Record<ApiErrorCode, number> = {
@@ -20,5 +22,6 @@ export const httpStatusForCode: Record<ApiErrorCode, number> = {
   unauthenticated: 401,
   not_found: 404,
   conflict: 409,
+  payment_required: 402,
   internal_error: 500,
 };
