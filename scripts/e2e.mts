@@ -220,6 +220,17 @@ function click(dom: JSDOM, el: Element): void {
   el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true, view: dom.window }));
 }
 
+/**
+ * Activates an element from the keyboard.
+ *
+ * Radix menus open on `pointerdown`, which jsdom cannot synthesise -- and dispatching a
+ * plain `click` silently does nothing, so a menu driven that way looks broken when it is
+ * not. Enter is handled by the same Radix code path a real user's keyboard hits.
+ */
+function pressEnter(dom: JSDOM, el: Element): void {
+  el.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+}
+
 function setInput(dom: JSDOM, el: Element, value: string): void {
   const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value')!.set!;
   setter.call(el, value);
@@ -316,9 +327,38 @@ const check = (name: string, pass: boolean, detail = '') => checks.push({ name, 
 {
   const dom = await open('/ask');
   const body = text(dom);
-  check('chat history loads from the database', body.includes('My car makes a grinding sound when I brake'));
-  check('the urgency callout survives the round trip', body.includes('Urgency: High'));
-  check('the CTA survives the round trip', body.includes('CHECK REPAIR COSTS'));
+  // A fresh screen is an empty conversation: nothing is stored, so there is no
+  // transcript to load and no skeleton waiting on one.
+  check('Ask CA opens on an empty conversation', body.includes('Ask about a noise'));
+  check('and says the conversation is not kept', body.includes('it clears when you leave'));
+  check('the car it will answer about is named', body.includes('Honda Civic'));
+  dom.window.close();
+}
+
+{
+  // The Account dropdown in the top bar, which is where Sign out is nested. Sign out
+  // itself needs a Supabase session, which this suite does not have -- so what is
+  // asserted here is that the menu exists, opens, and navigates. See the note below
+  // about what that leaves uncovered.
+  const dom = await open('/my-car');
+
+  const trigger = findByText(dom, 'button', 'account');
+  check('the top bar has an Account menu trigger', Boolean(trigger));
+  check('and it is not the mobile hamburger', !(trigger?.className ?? '').includes('lg:hidden'));
+
+  pressEnter(dom, trigger!);
+  await settle(dom, 400);
+
+  const menuText = text(dom);
+  check('opening it reveals the nested account items', menuText.includes('Account settings'));
+  // Dev mode has no session, so this is the correct absence rather than a missing feature.
+  check('Sign out is absent in dev mode, where there is no session', !menuText.includes('Sign out'));
+
+  const item = findByText(dom, '[role="menuitem"]', 'account settings');
+  check('the item is a real menu item, not a styled div', Boolean(item));
+  pressEnter(dom, item!);
+  await settle(dom, 900);
+  check('choosing it navigates to Account', dom.window.location.pathname === '/account');
   dom.window.close();
 }
 

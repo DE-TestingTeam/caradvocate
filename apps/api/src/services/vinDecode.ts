@@ -1,17 +1,27 @@
 /**
  * VIN decoding via NHTSA's free vPIC API.
  *
- * ============================ UNVERIFIED INTEGRATION ========================
- * The network sandbox this was written in cannot reach vpic.nhtsa.dot.gov, so
- * the response shape below is coded from the documented field names but has NOT
- * been exercised against the live service. Check it with:
+ * Verified against the live service:
  *
  *   curl 'https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVinValues/2HGFC2F53KH124821?format=json'
  *
- * Everything here is therefore defensive: an unexpected shape, a missing field,
- * a timeout or a non-200 all resolve to `undefined`, and the UI falls back to
- * manual entry. A wrong guess degrades the feature; it cannot break onboarding.
- * ============================================================================
+ * The documented shape held up: `{ Results: [ { Make, Model, ModelYear, Trim, ... } ] }`,
+ * 154 fields, `ModelYear` as a *string*, and empty strings rather than nulls for
+ * anything vPIC could not determine.
+ *
+ * Two things the live check settled that the docs did not:
+ *
+ *   - **An undecodable VIN is a 200, not an error.** Garbage in yields a full row
+ *     with every field empty. That is why the "no make and no model" test below is
+ *     what detects failure -- there is no status code to key off.
+ *   - **`ErrorCode` is unreliable as a gate.** A valid, fully decoded VIN can still
+ *     come back with `ErrorCode: '1'` ("check digit does not calculate properly"),
+ *     and it arrives comma-joined ("6,7") when several apply. Rejecting on a
+ *     non-zero code would throw away good decodes, so it is deliberately ignored.
+ *
+ * Everything here is defensive regardless: an unexpected shape, a missing field, a
+ * timeout or a non-200 all resolve to `undefined`, and the UI falls back to manual
+ * entry. A degraded decode cannot break onboarding.
  */
 import type { DecodedVin } from '@caradvocate/shared';
 import { HttpError } from '../lib/httpError.js';
@@ -53,7 +63,8 @@ async function fetchVpic(vin: string): Promise<unknown | undefined> {
 
 /**
  * Exported for testing. vPIC returns `{ Results: [ { Make, Model, ModelYear, ... } ] }`
- * with empty strings (not nulls) for fields it cannot determine.
+ * with empty strings (not nulls) for fields it cannot determine -- confirmed against
+ * the live service, where `Series` came back as `''` on a car that has no series.
  */
 export function parseVpicResponse(vin: string, body: unknown): DecodedVin {
   const result = firstResult(body);

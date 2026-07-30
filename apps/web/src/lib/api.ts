@@ -147,12 +147,18 @@ export function getRepairCatalog(): Promise<RepairCatalogItem[]> {
 
 /* ------------------------------------------------------------------- chat */
 
-export function getChatHistory(): Promise<ChatMessage[]> {
-  return http.get<ChatMessage[]>('/chat');
-}
-
-export function sendChatMessage(text: string): Promise<{ user: ChatMessage; assistant: ChatMessage }> {
-  return http.post<{ user: ChatMessage; assistant: ChatMessage }>('/chat', { text });
+/**
+ * Sends a question along with the conversation so far.
+ *
+ * There is no getChatHistory: nothing is stored, so there is nothing to fetch. The
+ * conversation lives in the Ask CA page's state and goes when the page does -- see
+ * apps/api/src/routes/chat.ts for why.
+ */
+export function sendChatMessage(
+  text: string,
+  history: { role: 'user' | 'assistant'; text: string }[],
+): Promise<{ user: ChatMessage; assistant: ChatMessage }> {
+  return http.post<{ user: ChatMessage; assistant: ChatMessage }>('/chat', { text, history });
 }
 
 /* ---------------------------------------------------------------- account */

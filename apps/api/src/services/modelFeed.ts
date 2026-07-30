@@ -1,12 +1,15 @@
 /**
  * Shared machinery for upstream feeds keyed by year/make/model.
  *
- * Recalls and owner complaints are both properties of a *model* rather than an
- * owner, both come from NHTSA, and both are mirrored locally so a page load is a
- * local query. The freshness policy, the case normalising and the record of what
- * has been checked are identical, so they live here once rather than being copied
- * per feed. A third feed (investigations, safety ratings) should need only a
- * fetcher and a table.
+ * Recalls, owner complaints and crash-test ratings are all properties of a *model*
+ * rather than an owner, all come from NHTSA, and all are mirrored locally so a page
+ * load is a local query. The freshness policy, the case normalising and the record of
+ * what has been checked are identical, so they live here once rather than being
+ * copied per feed.
+ *
+ * Safety ratings were the third feed and needed only a fetcher and a table, which is
+ * the evidence this split was drawn in the right place. A fourth (investigations)
+ * should cost the same.
  */
 import { and, eq } from 'drizzle-orm';
 import type { Database } from '../db/index.js';
@@ -18,7 +21,7 @@ const FRESH_MS = 7 * 24 * 60 * 60 * 1000;
 const RETRY_AFTER_MS = 15 * 60 * 1000;
 
 /** Which upstream feed a sync record belongs to. */
-export type FeedName = 'recalls' | 'complaints';
+export type FeedName = 'recalls' | 'complaints' | 'safety_ratings';
 
 export interface ModelKey {
   year: number;

@@ -8,7 +8,9 @@ import { run as runIsolation } from './isolation.test.js';
 import { run as runOnboarding } from './onboarding.test.js';
 import { run as runRecalls } from './recalls.test.js';
 import { run as runComplaints } from './complaints.test.js';
+import { run as runSafetyRatings } from './safetyRatings.test.js';
 import { run as runMaintenance } from './maintenance.test.js';
+import { run as runAskCa } from './askca.test.js';
 
 // No test reaches NHTSA unless it installs its own fetcher.
 goOffline();
@@ -21,7 +23,9 @@ await runIsolation();
 await runOnboarding();
 await runRecalls();
 await runComplaints();
+await runSafetyRatings();
 await runMaintenance();
+await runAskCa();
 
 const { total, failures } = summary();
 console.log(`\n${total - failures}/${total} passed`);

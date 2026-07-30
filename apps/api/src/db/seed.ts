@@ -1,27 +1,64 @@
 /**
  * Seeds reference data and two demo accounts.
  *
- * Idempotent: truncates everything first, so `npm run db:seed` is always safe to
- * re-run. The second account (dana@example.com) exists so the test suite can
- * prove one user cannot reach another user's rows.
+ * Truncates everything first, so `npm run db:seed` is repeatable. The second account
+ * (dana@example.com) exists so the test suite can prove one user cannot reach another
+ * user's rows.
+ *
+ * "Repeatable" is not the same as "safe", which is what assertNoRealAccounts below is
+ * for. This ran once against a database holding a real signed-up account and deleted it,
+ * along with the owner's car and their recall answers. A demo seed must not be one
+ * mistyped command away from that.
  */
-import { sql } from 'drizzle-orm';
+import { isNotNull, sql } from 'drizzle-orm';
 import { closeDb, describeTarget, getDb, type Database } from './index.js';
 import * as t from './schema.js';
 import { benchmarkSeeds } from './fixtures.js';
 
 export async function seed(db: Database): Promise<void> {
+  await assertNoRealAccounts(db);
   await truncateAll(db);
   const repairIdBySlug = await seedReference(db);
   await seedAlexRivera(db, repairIdBySlug);
   await seedSecondUser(db, repairIdBySlug);
 }
 
+/**
+ * Refuses to run when the database holds accounts somebody actually signed up for.
+ *
+ * A real account is one linked to a Supabase identity; the seeded demo users have
+ * `supabaseUserId` null by design, so they are not protected and reseeding a demo
+ * database still works exactly as before. SEED_WIPE_REAL_ACCOUNTS=1 is the deliberate
+ * override, which exists so the answer to this guard is never "comment it out".
+ */
+async function assertNoRealAccounts(db: Database): Promise<void> {
+  if (process.env.SEED_WIPE_REAL_ACCOUNTS === '1') {
+    console.warn('SEED_WIPE_REAL_ACCOUNTS=1 -- deleting real accounts as instructed.');
+    return;
+  }
+
+  const real = await db
+    .select({ email: t.users.email })
+    .from(t.users)
+    .where(isNotNull(t.users.supabaseUserId));
+
+  if (real.length === 0) return;
+
+  const who = real.map((row) => `  - ${row.email}`).join('\n');
+  throw new Error(
+    `Refusing to seed ${describeTarget()}: it holds ${real.length} real signed-up account(s).\n\n` +
+      `${who}\n\n` +
+      'Seeding truncates users, which would delete these accounts and every car, recall\n' +
+      'answer and service record belonging to them. Point DATABASE_URL at a scratch\n' +
+      'database, or set SEED_WIPE_REAL_ACCOUNTS=1 if deleting them is genuinely intended.',
+  );
+}
+
 async function truncateAll(db: Database): Promise<void> {
   // Order does not matter with CASCADE, and RESTART IDENTITY keeps reruns clean.
   await db.execute(sql`
     truncate table
-      ${t.chatMessages}, ${t.assessmentLaborTasks}, ${t.assessmentParts}, ${t.assessments},
+      ${t.assessmentLaborTasks}, ${t.assessmentParts}, ${t.assessments},
       ${t.serviceRecords}, ${t.maintenanceItems}, ${t.vehicleValuePoints}, ${t.vehicles},
       ${t.userFeatures}, ${t.users},
       ${t.benchmarkLaborTasks}, ${t.benchmarkParts}, ${t.repairBenchmarks}, ${t.repairs},
@@ -182,7 +219,6 @@ async function seedAlexRivera(db: Database, repairIdBySlug: Map<string, string>)
   void brakeFluid;
 
   await seedAssessments(db, user.id, vehicle.id, repairIdBySlug);
-  await seedChat(db, user.id);
 }
 
 async function seedAssessments(
@@ -293,41 +329,6 @@ async function seedAssessments(
   }
 }
 
-/** The conversation transcribed from viewport-mobile-1.png. */
-async function seedChat(db: Database, userId: string): Promise<void> {
-  const base = Date.parse('2026-07-01T10:00:00Z');
-  await db.insert(t.chatMessages).values([
-    {
-      userId,
-      role: 'user',
-      text: 'My car makes a grinding sound when I brake',
-      createdAt: new Date(base),
-    },
-    {
-      userId,
-      role: 'assistant',
-      text: 'This is commonly caused by worn brake pads grinding against the rotor. It can also indicate rotor damage or a stuck caliper.',
-      urgencyLevel: 'high',
-      urgencyText: 'Urgency: High - avoid highway driving until inspected',
-      createdAt: new Date(base + 1000),
-    },
-    {
-      userId,
-      role: 'user',
-      text: 'How much should I expect to pay to fix this?',
-      createdAt: new Date(base + 2000),
-    },
-    {
-      userId,
-      role: 'assistant',
-      text: 'To find out how much this repair costs, please start a repair assessment.',
-      ctaLabel: 'CHECK REPAIR COSTS',
-      ctaAction: 'start_assessment',
-      createdAt: new Date(base + 3000),
-    },
-  ]);
-}
-
 /**
  * A second tenant with its own car and assessment. Exists purely so the test
  * suite can assert that Alex cannot see any of it.
@@ -390,10 +391,6 @@ async function seedSecondUser(db: Database, repairIdBySlug: Map<string, string>)
     { userId: user.id, vehicleId: vehicle.id, description: 'Dana private oil change', serviceDate: '2026-05-02', cost: 74, source: 'manual', mileageAtService: 21000 },
   ]);
 
-  await db.insert(t.chatMessages).values([
-    { userId: user.id, role: 'user', text: 'Dana private question about a rattle', createdAt: new Date('2026-05-02T09:00:00Z') },
-  ]);
-
   // Dana's own assessment. The isolation tests fetch this id as Alex and expect a 404.
   const repairId = repairIdBySlug.get('brake-pad-replacement');
   if (!repairId) throw new Error('Missing seeded repair brake-pad-replacement');
@@ -446,7 +443,15 @@ function round2(value: number): number {
 const invokedDirectly = process.argv[1]?.includes('seed');
 if (invokedDirectly) {
   console.log(`Seeding ${describeTarget()}`);
-  await seed(getDb());
-  console.log('Seeded reference data, alex.rivera@email.com, and dana@example.com.');
+  try {
+    await seed(getDb());
+    console.log('Seeded reference data, alex.rivera@email.com, and dana@example.com.');
+  } catch (error) {
+    // Printed rather than thrown: a refusal to delete real accounts is an expected
+    // outcome with something to read, and a stack trace buries the instructions.
+    console.error(`\n${error instanceof Error ? error.message : String(error)}\n`);
+    await closeDb();
+    process.exit(1);
+  }
   await closeDb();
 }

@@ -109,6 +109,52 @@ export async function run(): Promise<void> {
   const impossibleYear = parseVpicResponse(vin, { Results: [{ Make: 'HONDA', ModelYear: '1823' }] });
   check('an impossible year is discarded', impossibleYear.year === undefined);
 
+  /*
+   * Both of the following are captured from the live service, and both would be easy
+   * to "fix" into a regression later.
+   *
+   * A real, fully decoded VIN carries ErrorCode '1' -- the check digit complaint --
+   * and an undecodable one still returns HTTP 200 with a full row of empty strings.
+   * So the error code must not gate the decode, and emptiness is the only real signal
+   * of failure.
+   */
+  const liveWithErrorCode = parseVpicResponse('1FTFW1ET5DFC10312', {
+    Results: [
+      {
+        Make: 'FORD',
+        Model: 'F-150',
+        ModelYear: '2013',
+        Trim: '',
+        ErrorCode: '1',
+        ErrorText: '1 - Check Digit (9th position) does not calculate properly',
+      },
+    ],
+  });
+  check(
+    'a decode is kept despite a non-zero ErrorCode, which live VINs routinely carry',
+    liveWithErrorCode.make === 'FORD' && liveWithErrorCode.model === 'F-150',
+    `got ${liveWithErrorCode.make} ${liveWithErrorCode.model}`,
+  );
+  check('and its year still comes through', liveWithErrorCode.year === 2013);
+
+  const liveGarbage = parseVpicResponse('GARBAGE123456789', {
+    Results: [
+      {
+        Make: '',
+        Model: '',
+        ModelYear: '',
+        Trim: '',
+        // Comma-joined when several codes apply, so this is not a single number.
+        ErrorCode: '6,7',
+        ErrorText: '6 - Incomplete VIN; 7 - Manufacturer is not registered with NHTSA',
+      },
+    ],
+  });
+  check(
+    'an undecodable VIN yields nothing to prefill, which is what triggers the manual form',
+    liveGarbage.make === undefined && liveGarbage.model === undefined && liveGarbage.year === undefined,
+  );
+
   // Every one of these is a shape we might actually receive if the API changes.
   for (const [label, payload] of [
     ['an empty body', {}],

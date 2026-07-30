@@ -1,5 +1,6 @@
 import { createApp } from './app.js';
 import { assertProductionSafe, authMode } from './auth/config.js';
+import { askIsConfigured } from './services/askClaude.js';
 import { activeDriver, assertSchemaPresent, closeDb, describeTarget, getDb } from './db/index.js';
 import { env } from './env.js';
 
@@ -32,6 +33,13 @@ const server = app.listen(env.PORT, () => {
   } else {
     console.log(`Auth: DEV MODE -- every request acts as ${env.DEV_USER_EMAIL}`);
     console.log('  Set SUPABASE_URL and SUPABASE_ANON_KEY to require real sign-in.');
+  }
+
+  if (askIsConfigured()) {
+    console.log('Ask CA: Claude (answers grounded in the owner\'s own car)');
+  } else {
+    console.log('Ask CA: canned replies -- no model call');
+    console.log('  Set ANTHROPIC_API_KEY to answer with Claude.');
   }
 });
 

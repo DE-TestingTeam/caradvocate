@@ -1,26 +1,26 @@
 import * as React from 'react';
 import { Composer } from '@/components/ask/Composer';
 import { MessageBubble, TypingBubble } from '@/components/ask/MessageBubble';
-import { Skeleton } from '@/components/ui/skeleton';
-import { ErrorState } from '@/components/ErrorState';
 import { useVehicle } from '@/components/layout/RequireVehicle';
-import { getChatHistory, sendChatMessage } from '@/lib/api';
+import { sendChatMessage } from '@/lib/api';
 import { vehicleName } from '@/lib/format';
-import { useApi } from '@/lib/useApi';
 import type { ChatMessage } from '@caradvocate/shared';
 
+/**
+ * Ask CA.
+ *
+ * The conversation lives here and nowhere else. Nothing is fetched on mount and nothing
+ * is stored server-side, so leaving this screen ends the conversation -- which is the
+ * intent, and the reason there is no history request and no loading skeleton. The
+ * subtitle says so, because an owner who assumes their transcript is being kept would
+ * be surprised by the opposite.
+ */
 export function AskCAPage() {
   const vehicle = useVehicle();
-  const history = useApi(getChatHistory, []);
-  const [messages, setMessages] = React.useState<ChatMessage[] | undefined>();
+  const [messages, setMessages] = React.useState<ChatMessage[]>([]);
   const [pending, setPending] = React.useState(false);
   const [sendError, setSendError] = React.useState<string>();
   const bottomRef = React.useRef<HTMLDivElement>(null);
-
-  // Seed local state once from the api, then own it locally so sends feel instant.
-  React.useEffect(() => {
-    if (history.data && !messages) setMessages(history.data);
-  }, [history.data, messages]);
 
   React.useEffect(() => {
     // Guarded: scrollIntoView is missing in some non-browser test environments.
@@ -29,17 +29,19 @@ export function AskCAPage() {
 
   async function handleSend(text: string) {
     const optimistic: ChatMessage = { id: `local_${Date.now()}`, role: 'user', text };
-    setMessages((prev) => [...(prev ?? []), optimistic]);
+    // Captured before the optimistic turn is added, so the question is not sent twice.
+    const history = messages.map((message) => ({ role: message.role, text: message.text }));
+
+    setMessages((prev) => [...prev, optimistic]);
     setPending(true);
     setSendError(undefined);
 
     try {
-      const { user, assistant } = await sendChatMessage(text);
-      // Swap the optimistic message for the persisted one so ids are real.
-      setMessages((prev) => [...(prev ?? []).filter((m) => m.id !== optimistic.id), user, assistant]);
+      const { user, assistant } = await sendChatMessage(text, history);
+      setMessages((prev) => [...prev.filter((m) => m.id !== optimistic.id), user, assistant]);
     } catch (cause) {
       // Roll the optimistic message back rather than leaving an unanswered question.
-      setMessages((prev) => (prev ?? []).filter((m) => m.id !== optimistic.id));
+      setMessages((prev) => prev.filter((m) => m.id !== optimistic.id));
       setSendError(cause instanceof Error ? cause.message : 'Message could not be sent.');
     } finally {
       setPending(false);
@@ -56,15 +58,18 @@ export function AskCAPage() {
       </div>
 
       <div className="flex-1 space-y-4 overflow-y-auto py-4">
-        {history.error && <ErrorState message={history.error.message} />}
-        {messages && !history.error ? (
-          messages.map((message) => <MessageBubble key={message.id} message={message} />)
-        ) : history.error ? null : (
-          <div className="space-y-4">
-            <Skeleton className="ml-auto h-20 w-3/4 rounded-lg" />
-            <Skeleton className="h-32 w-[90%] rounded-lg" />
-            <Skeleton className="ml-auto h-16 w-2/3 rounded-lg" />
+        {messages.length === 0 && !pending ? (
+          <div className="flex h-full flex-col items-center justify-center px-6 text-center">
+            <p className="text-sm font-medium">
+              {`Ask about a noise, a warning light, or a quote you have been given.`}
+            </p>
+            <p className="mt-2 max-w-sm text-sm text-muted-foreground">
+              Answers use your car&rsquo;s own recalls, owner-reported problems and service
+              history. This conversation is not saved &mdash; it clears when you leave.
+            </p>
           </div>
+        ) : (
+          messages.map((message) => <MessageBubble key={message.id} message={message} />)
         )}
         {pending && <TypingBubble />}
         {sendError && (
@@ -76,7 +81,7 @@ export function AskCAPage() {
       </div>
 
       <div className="shrink-0">
-        <Composer onSend={handleSend} disabled={pending || !messages} />
+        <Composer onSend={handleSend} disabled={pending} />
       </div>
     </div>
   );

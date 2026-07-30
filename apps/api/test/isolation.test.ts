@@ -34,14 +34,11 @@ export async function run(): Promise<void> {
     !alexHistory.body.some((r: any) => r.description.includes('Dana private')),
   );
 
-  const alexChat = await request('GET', '/api/chat');
-  const danaChat = await request('GET', '/api/chat', { as: DANA });
-  check('Alex sees 4 chat messages', alexChat.body.length === 4);
-  check('Dana sees only her 1 message', danaChat.body.length === 1, `got ${danaChat.body.length}`);
-  check(
-    "Dana's message never appears in Alex's transcript",
-    !alexChat.body.some((m: any) => m.text.includes('Dana private')),
-  );
+  // Chat needs no isolation test: conversations are never stored, so there is no row
+  // that could be read by the wrong account. Removing the table removed the risk
+  // rather than mitigating it -- see apps/api/src/routes/chat.ts.
+  const chatHistory = await request('GET', '/api/chat');
+  check('no stored conversation exists to be read across accounts', chatHistory.status === 404, `got ${chatHistory.status}`);
 
   const alexAccount = await request('GET', '/api/account');
   const danaAccount = await request('GET', '/api/account', { as: DANA });

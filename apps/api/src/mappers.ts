@@ -8,12 +8,13 @@
  */
 import type {
   Account,
+  AssistFitment,
   Assessment,
-  ChatMessage,
   KnownIssue,
   MileageAtFailure,
   Recall,
   RepairCatalogItem,
+  SafetyRating,
   ServiceRecord,
   Vehicle,
 } from '@caradvocate/shared';
@@ -115,6 +116,50 @@ export function toRecall(row: Row<typeof t.modelRecalls>, repaired?: boolean): R
   };
 }
 
+/**
+ * One NCAP-tested variant.
+ *
+ * Every rating is dropped rather than zeroed when NHTSA never ran the test, because
+ * the wire contract uses absence to mean "untested" and a zero would render as a
+ * zero-star car. `rolloverPossibility` arrives from `numeric` as a string.
+ *
+ * The fitment columns are plain `text` in the database -- adding a value should not
+ * need a migration -- so an unrecognised one is dropped here rather than passed
+ * through as a string the client's union does not admit.
+ */
+export function toSafetyRating(row: Row<typeof t.modelSafetyRatings>): SafetyRating {
+  return {
+    id: row.id,
+    description: row.description,
+    overall: row.overallRating ?? undefined,
+    frontCrash: row.frontCrashRating ?? undefined,
+    sideCrash: row.sideCrashRating ?? undefined,
+    rollover: row.rolloverRating ?? undefined,
+    rolloverPossibility: readPossibility(row.rolloverPossibility),
+    forwardCollisionWarning: fitment(row.forwardCollisionWarning),
+    laneDepartureWarning: fitment(row.laneDepartureWarning),
+    electronicStabilityControl: fitment(row.electronicStabilityControl),
+  };
+}
+
+/** `numeric` round-trips as a string; anything unparseable is no reading at all. */
+function readPossibility(value: string | null): number | undefined {
+  if (value === null) return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+/**
+ * Narrows a stored fitment string to the contract's union.
+ *
+ * The column is plain `text` so adding a value needs no migration, which means an
+ * unrecognised one is possible; it is dropped rather than passed through as a string
+ * the client's union does not admit.
+ */
+function fitment(value: string | null): AssistFitment | undefined {
+  return value === 'standard' || value === 'optional' || value === 'no' ? value : undefined;
+}
+
 export function toServiceRecord(row: Row<typeof t.serviceRecords>): ServiceRecord {
   return {
     id: row.id,
@@ -184,20 +229,6 @@ export function toAssessment(
   }
 
   return assessment;
-}
-
-export function toChatMessage(row: Row<typeof t.chatMessages>): ChatMessage {
-  const message: ChatMessage = { id: row.id, role: row.role, text: row.text };
-
-  if (row.urgencyLevel && row.urgencyText) {
-    message.urgency = { level: row.urgencyLevel, text: row.urgencyText };
-  }
-
-  if (row.ctaLabel && row.ctaAction === 'start_assessment') {
-    message.cta = { label: row.ctaLabel, action: 'start_assessment' };
-  }
-
-  return message;
 }
 
 export function toAccount(

@@ -91,6 +91,23 @@ Since your Supabase plan is a team one, give each developer their own project or
 branch rather than sharing one database. `npm run db:setup` rebuilds any of them
 in seconds.
 
+### `db:seed` will not delete real accounts
+
+Seeding truncates `users`, so run against a database somebody has actually signed up
+to it deletes their account, their car, their recall answers and their service history.
+That happened once here, which is why `seed()` now refuses when it finds any account
+linked to a Supabase identity, naming the accounts at risk:
+
+```
+Refusing to seed …: it holds 1 real signed-up account(s).
+  - someone@example.com
+```
+
+The demo users have `supabaseUserId` null by design, so reseeding a demo database is
+unaffected. `SEED_WIPE_REAL_ACCOUNTS=1` overrides the guard, and exists so that the
+answer to it is never "comment it out". `apps/api/test/schema.test.ts` asserts the
+refusal, that it names the account, and that the account is still there afterwards.
+
 Any other Postgres works the same way — Postgres.app, Homebrew, a Docker
 container you run yourself. Point `DATABASE_URL` at it, leave
 `DIRECT_DATABASE_URL` empty, and TLS stays off for localhost.
@@ -406,11 +423,73 @@ reports "no aggregate row", load the car in the app once so complaints sync firs
 
 ### Shared feed machinery
 
-Recalls and complaints are both model-keyed NHTSA feeds with identical freshness
-needs, so `apps/api/src/services/modelFeed.ts` owns the policy once — the
-week-long trust window, the 15-minute retry cooldown, the case normalising, and
-one `model_feed_syncs` table keyed by feed name. A third feed should need only a
-fetcher and a table.
+Recalls, complaints and crash-test ratings are all model-keyed NHTSA feeds with
+identical freshness needs, so `apps/api/src/services/modelFeed.ts` owns the policy
+once — the week-long trust window, the 15-minute retry cooldown, the case
+normalising, and one `model_feed_syncs` table keyed by feed name.
+
+Crash-test ratings were the third feed and cost exactly a fetcher and a table, which
+is the evidence the split was drawn in the right place. A fourth (investigations)
+should cost the same.
+
+## Crash test ratings
+
+NHTSA's free Safety Ratings (NCAP) API, keyed by year/make/model:
+
+```
+curl 'https://api.nhtsa.gov/SafetyRatings/modelyear/2019/make/honda/model/civic'
+curl 'https://api.nhtsa.gov/SafetyRatings/VehicleId/14009'
+```
+
+Two steps, because the first returns only ids and descriptions. Both are mirrored
+into `model_safety_ratings`, one row per tested variant.
+
+### This feed names models differently from the other two
+
+The detail worth knowing before touching this code. NCAP embeds the body style in the
+model name, so a 2019 Ford lists as `F-150 SUPER CREW`, `F-150 SUPERCAB`, `F-250 CREW
+CAB` and so on. An exact lookup for the `F-150` a VIN decode gives us returns
+`Count: 0` — the car looks untested when it has been tested ten times over.
+
+So `safetyRatings.ts` tries the exact name first and only widens if that finds
+nothing: list the make's tested models, keep those that begin with ours, fetch each.
+The ordering matters — `CIVIC` matches exactly and must not be widened into a scan.
+
+Prefix, not substring, or `MUSTANG GT350R` would answer a query for `GT`. Matching is
+case-insensitive because NHTSA's own labels are not clean: the live feed contains
+`F-150 SUPER CREW DiESEL`, with a lowercase i.
+
+Measured against the live service: a 2019 Civic matches exactly and yields 2 variants;
+an F-150 widens to 10; a Transit to 9. The caps (12 model names, 24 variants) exist so
+a one-character model name cannot turn a page load into a catalogue scan — `F` alone
+matches 12 — and truncation is logged rather than silent.
+
+### Variants are not averaged
+
+NHTSA crash-tests each body style and drivetrain separately, and they genuinely
+differ: the 2019 F-150's Super Crew scores 5 stars overall where the Regular Cab
+scores 4, and the diesel variants have a rollover rating but no overall one. Averaging
+them would produce a rating for a truck nobody drives, so each is a row and the
+endpoint returns them worst-first — the same reasoning that sorts recalls by severity.
+
+### "Not Rated" is not zero stars
+
+Every rating column is nullable and every wire field optional, because NHTSA publishes
+`"Not Rated"` for tests it never ran — most pre-2011 vehicles carry it on every field,
+and a 2011 Audi A3 comes back untested on all four. A model that rendered that as a
+zero-star car would tell an owner their car failed a test nobody performed.
+
+`RolloverPossibility` needs the same care in the other direction: NHTSA sends `0.0`
+for unrated variants, which reads as "cannot roll over" if passed through. It is
+withheld unless the rollover test actually ran.
+
+Driver-aid fitment (`Standard` / `Optional` / `No`) is carried because it is actionable
+in a way stars are not. `No` is kept as a value rather than dropped: "this model never
+offered lane-keep" is a finding, and collapsing it into absent would make it
+indistinguishable from the older cars where NHTSA recorded nothing.
+
+Fitment describes the *tested* variant, so the Ask CA block tells the model to have the
+owner check their own trim rather than asserting their car has it.
 
 ## The real open question: benchmark pricing
 
@@ -427,17 +506,105 @@ is ready for it: benchmarks are global reference data, and assessments snapshot
 their figures at creation time so refreshing pricing never rewrites history a
 user has already seen.
 
-Ask CA is stubbed the same way — `apps/api/src/services/chatReplies.ts` cycles
-canned replies with no model call. The `ChatMessage` contract already carries the
-urgency callout and CTA the UI renders, so swapping in a real model is a
-drop-in.
+## Ask CA
+
+Set `ANTHROPIC_API_KEY` and Ask CA answers with Claude, grounded in the owner's own
+car. Leave it unset and it falls back to the canned replies in
+`apps/api/src/services/chatReplies.ts` — the same configuration-decides-the-mode
+shape as the auth dev bypass, so a fresh clone still runs with nothing to set up. The
+API says which mode it is in at startup.
+
+```
+ANTHROPIC_API_KEY=sk-ant-...
+```
+
+### Conversations are not stored
+
+Leaving the Ask CA screen ends the conversation, and the way that is guaranteed is that
+nothing is ever written down. There is no chat table and no `GET /api/chat`: the page
+holds the turns in React state and sends them with the next question, so a close, a
+refresh or a crash all clear it equally.
+
+The alternative — persist, then delete on exit — fails exactly when it matters. A closed
+tab, a refresh, a lost connection and a crash all skip the cleanup, and every miss leaves
+rows that come back as history next visit. The failure mode of the cleanup is the feature
+not happening, so the cleanup was removed along with the thing it had to clean up.
+Cross-user leakage also stopped being possible rather than being defended against, which
+is why `isolation.test.ts` no longer needs a chat case.
+
+The tradeoff, stated plainly: history now arrives from the client, so an owner could hand
+the model turns it never produced. That only lets them mislead themselves about their own
+car — the grounding facts are still read from the database on every request — and the
+request schema caps the conversation so an oversized body is rejected rather than
+trimmed.
+
+### The grounding is the feature
+
+A model with no context can only recite general advice. `services/vehicleContext.ts`
+assembles what this app actually knows about *this* car — recalls and whether the
+owner marked them repaired, complaint counts with casualties and failure-mileage
+ranges, a couple of owners' own words, computed upkeep status, and logged service
+history with odometer readings. Asked about spongy brakes, the model can then say six
+owners of this model reported brake problems clustering around 26,000 miles, one
+involving a crash, and that the owner's own brake service was 8,000 miles ago.
+
+**Provenance travels with every fact.** Each section states where it came from and
+what it cannot support: recalls are official NHTSA findings but per-model, so nobody
+can say whether *this* car was repaired; complaints are unverified first-hand
+accounts, not confirmed faults; upkeep intervals are the owner's, not the
+manufacturer's; service history is only what was logged here. Stripping that to save
+tokens would remove exactly what stops the model overclaiming.
+
+### Keeping it honest
+
+A language model is the largest invention risk in this codebase, so the guardrails are
+structural rather than merely requested:
+
+- **The reply shape is a JSON schema**, so `urgency` and the CTA are values the UI
+  already renders rather than prose to parse. The **CTA label is filled in
+  server-side** — the model only chooses *whether* to offer it, so the wording cannot
+  drift.
+- **The parser drops what it cannot render**: an urgency level outside
+  low/medium/high, an urgency with no explanation, an unrecognised CTA action. A reply
+  that cannot be read throws rather than showing the owner raw JSON.
+- **A failed call is admitted, not papered over.** If the model call fails, the owner
+  gets a sentence saying the question was not answered — not a canned reply passed off
+  as a real one. That is the whole point of the app applied to itself.
+- **`stop_reason: "refusal"` is checked before reading content**, and
+  `fallbacks: "default"` re-runs a declined request on Anthropic's recommended
+  fallback.
+- The system prompt forbids inventing recalls, prices, labour times, intervals or
+  valuations; forbids stating a manufacturer's schedule the app does not have; and
+  requires leading with a stop-driving recall regardless of what was asked.
+
+Cost and latency notes: the instructions are byte-stable and cached, per-car facts go
+in the messages so the cached prefix survives, `effort` is `medium` for an interactive
+turn, and `max_tokens` has headroom because on Claude Opus 5 it caps thinking *and*
+text together.
+
+The live call has been exercised against a real 2011 Pathfinder: answers cite campaign
+numbers correctly, honour the owner's own repaired/not-repaired answer, refuse to supply
+a manufacturer service interval, decline to name a fair price while the benchmarks are
+placeholders, and attribute complaints as unverified owner reports. First call ~24s
+(cache write), subsequent ~10s.
+
+One prompt rule exists only because of that run. Seven answers out of seven appended the
+same open recall, including to "what is my car worth" — each mention defensible alone,
+the aggregate a nag people learn to scroll past. The prompt now allows an unrepaired
+recall to be raised unprompted once per conversation, with the stop-driving advisory
+still overriding every turn. This is prompt behaviour, so no hermetic test covers it; if
+that line is edited, re-run a three-turn conversation and check the recall is not
+re-appended.
+
+`apps/api/test/askca.test.ts` never touches the network: `setAskerForTesting` is the
+seam, and it covers the facts block, the parser and the failure paths.
 
 ## Tests
 
 ```bash
 npm test           # typecheck + API suite + end-to-end
-npm run test:api   # 395 checks, no database required
-npm run test:e2e   # 77 checks, full stack
+npm run test:api   # 543 checks, no database required
+npm run test:e2e   # 84 checks, full stack
 ```
 
 Neither suite touches Supabase, or needs any database running. Both use
@@ -454,6 +621,10 @@ surfacing on deploy, and CI never consumes a connection slot or needs a secret.
 | `apps/api/test/connection.test.ts` | TLS and pooler rules for Supabase connection strings, which cannot be checked against a live project from CI |
 | `apps/api/test/auth.test.ts` | Token verification against a locally generated keypair, and profile provisioning on first sign-in |
 | `apps/api/test/onboarding.test.ts` | Vehicle creation, the no-vehicle empty state, and defensive VIN response parsing |
+| `apps/api/test/recalls.test.ts` | NHTSA recall parsing (day-first dates, the `parkOutSide` spelling), the mirror, and the owner's own answer |
+| `apps/api/test/complaints.test.ts` | Complaint aggregation, month-first dates, and mileage-at-failure percentiles |
+| `apps/api/test/safetyRatings.test.ts` | NCAP parsing — above all that `"Not Rated"` becomes absent rather than zero stars — and the mirror |
+| `apps/api/test/askca.test.ts` | The grounding block's provenance and "unknown" wording, the reply parser, and the route's failure paths |
 | `scripts/e2e.mts` | The real production web bundle driven in jsdom against the real Express app on a real database |
 
 The e2e suite is the one that catches contract drift between the two halves —
@@ -464,7 +635,7 @@ execute ES modules, and polyfills `fetch`, `ResizeObserver` and
 
 ## Database
 
-15 tables in three groups. The distinction is enforced by convention and tested
+20 tables in three groups. The distinction is enforced by convention and tested
 by the isolation suite:
 
 - **User-owned roots** carry `user_id`: `vehicles`, `service_records`,
@@ -475,9 +646,12 @@ by the isolation suite:
   Denormalising `user_id` onto children would create a second source of truth
   that can disagree with the first.
 - **Global reference data** has no owner: `repairs`, `repair_benchmarks`,
-  `benchmark_parts`, `benchmark_labor_tasks`, `model_known_issues`. "Known Issues
-  for Your Model" is keyed by year/make/model, because the answer is the same for
-  every owner of the same car.
+  `benchmark_parts`, `benchmark_labor_tasks`, `model_known_issues`,
+  `model_recalls`, `model_owner_reports`, `model_owner_report_quotes`,
+  `model_safety_ratings`, `model_feed_syncs`. All are keyed by year/make/model,
+  because the answer is the same for every owner of the same car. The one
+  exception is `vehicle_recall_status`, which is user-owned: NHTSA reports recalls
+  per model and cannot know whether *this* car was repaired.
 
 Money is stored as integer whole dollars. Labor hours are `numeric(4,2)` and are
 converted to numbers in `apps/api/src/mappers.ts` — Drizzle returns `numeric` as
@@ -510,13 +684,16 @@ All routes require an authenticated user except `GET /api/health` and
 | `GET` | `/api/vehicle/decode/:vin` | VIN lookup. 404 means "use manual entry" |
 | `GET` | `/api/vehicle/maintenance` | |
 | `GET` | `/api/vehicle/known-issues` | Global, keyed by the caller's model |
+| `GET` | `/api/vehicle/recalls` | Global. `checked: false` means NHTSA was never reached — not an all-clear |
+| `PUT` `DELETE` | `/api/vehicle/recalls/:campaign` | The owner's own answer. 404 if the campaign is not this model's |
+| `GET` | `/api/vehicle/safety` | Global. One row per NCAP-tested variant, worst-rated first |
 | `GET` `POST` | `/api/service-records` | |
 | `DELETE` | `/api/service-records/:id` | |
 | `GET` `POST` | `/api/assessments` | `POST` snapshots the benchmark |
 | `GET` | `/api/assessments/:id` | 404 for another tenant's id |
 | `POST` | `/api/assessments/:id/complete` | Also writes a service record, in one transaction |
 | `GET` | `/api/repairs` | Only repairs that have a benchmark |
-| `GET` `POST` | `/api/chat` | |
+| `POST` | `/api/chat` | Stateless: the client sends the turns so far, nothing is stored |
 | `GET` `PATCH` | `/api/account` | |
 
 Errors always use one envelope, typed as `ApiErrorBody` in the shared package:

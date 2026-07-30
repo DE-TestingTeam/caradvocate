@@ -135,8 +135,25 @@ export const updateVehicleSchema = z
   .partial()
   .refine((body) => Object.keys(body).length > 0, 'Provide at least one field to update');
 
+/**
+ * Ask CA conversations are not stored, so the client sends the turns so far along with
+ * the question -- see routes/chat.ts for why nothing is persisted.
+ *
+ * The cap is here rather than only server-side so an oversized body is rejected as a
+ * validation error instead of being silently trimmed.
+ */
 export const sendChatMessageSchema = z.object({
   text: z.string().trim().min(1, 'Message cannot be empty').max(2000),
+  history: z
+    .array(
+      z.object({
+        role: z.enum(['user', 'assistant']),
+        text: z.string().min(1).max(2000),
+      }),
+    )
+    .max(40)
+    .optional()
+    .default([]),
 });
 
 export type NewVehicleInput = z.infer<typeof newVehicleSchema>;

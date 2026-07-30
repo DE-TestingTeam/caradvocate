@@ -12,8 +12,10 @@
  */
 import { setComplaintFetcherForTesting } from '../src/services/complaintSync.js';
 import { setRecallFetcherForTesting } from '../src/services/recallSync.js';
+import { setSafetyRatingFetcherForTesting } from '../src/services/safetyRatingSync.js';
 
 export function goOffline(): void {
   setRecallFetcherForTesting(async () => undefined);
   setComplaintFetcherForTesting(async () => undefined);
+  setSafetyRatingFetcherForTesting(async () => undefined);
 }

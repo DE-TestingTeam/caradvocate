@@ -1,12 +1,45 @@
 /** Schema-level guarantees that must hold regardless of route code. */
 import { eq, sql } from 'drizzle-orm';
 import * as t from '../src/db/schema.js';
+import { seed } from '../src/db/seed.js';
 import { createTestDb } from './harness.js';
+import type { Database } from '../src/db/index.js';
 import { check, section } from './assert.js';
 
 export async function run(): Promise<void> {
   section('schema');
   const { db, close } = await createTestDb();
+
+  /* ------------------------------- the seed must not delete real accounts */
+
+  // This is here because it happened: a seed run against a database holding a real
+  // signed-up account deleted the account, the owner's car and their recall answers.
+  await db.insert(t.users).values({
+    email: 'real.person@example.com',
+    name: 'Real Person',
+    // What makes an account real: it is linked to a Supabase identity. The demo users
+    // have this null, which is why reseeding a demo database still works.
+    supabaseUserId: '40ac3e6f-2907-450b-a148-9efc71cbea8e',
+    memberSince: '2026-01-01',
+  });
+
+  let refused: string | undefined;
+  try {
+    await seed(db as unknown as Database);
+  } catch (error) {
+    refused = error instanceof Error ? error.message : String(error);
+  }
+
+  check('seeding refuses to run when a real account exists', refused !== undefined);
+  check('and names the account at risk', refused?.includes('real.person@example.com') === true);
+  check('and says what would be lost', refused?.includes('truncates users') === true);
+  check('and offers the deliberate override', refused?.includes('SEED_WIPE_REAL_ACCOUNTS=1') === true);
+
+  const survived = await db.select().from(t.users).where(eq(t.users.email, 'real.person@example.com'));
+  check('the real account is still there afterwards', survived.length === 1);
+
+  // Cleaned up so the assertions below see the seeded state, not this one.
+  await db.delete(t.users).where(eq(t.users.email, 'real.person@example.com'));
 
   const users = await db.select().from(t.users);
   check('seeds exactly two users', users.length === 2, `got ${users.length}`);

@@ -11,6 +11,7 @@ import {
   vinSchema,
   type KnownIssueReport,
   type RecallReport,
+  type SafetyRatingReport,
 } from '@caradvocate/shared';
 import {
   maintenanceItems,
@@ -21,13 +22,14 @@ import {
   vehicleValuePoints,
   vehicles,
 } from '../db/schema.js';
-import { toKnownIssue, toKnownIssueFromReports, toRecall, toVehicle } from '../mappers.js';
+import { toKnownIssue, toKnownIssueFromReports, toRecall, toSafetyRating, toVehicle } from '../mappers.js';
 import { validateBody } from '../middleware/validate.js';
 import { userIdOf } from '../middleware/currentUser.js';
 import { getOwnerReports } from '../services/complaintSync.js';
 import { byUrgency, toMaintenanceItem } from '../services/maintenanceDue.js';
 import { modelMatches } from '../services/modelFeed.js';
 import { getModelRecalls } from '../services/recallSync.js';
+import { getModelSafetyRatings } from '../services/safetyRatingSync.js';
 import { decodeVin } from '../services/vinDecode.js';
 import { HttpError } from '../lib/httpError.js';
 import { requireOwnVehicle, stringParam } from './helpers.js';
@@ -332,6 +334,27 @@ async function requireCampaignForVehicle(
   if (!match) throw HttpError.notFound('That recall does not apply to this vehicle');
   return parsed.data;
 }
+
+/**
+ * NHTSA crash-test ratings for the caller's model, mirrored locally.
+ *
+ * One row per tested variant, worst-rated first -- NHTSA tests body styles and
+ * drivetrains separately and this endpoint does not average them, because a 4x2 and a
+ * 4x4 can differ by a star and the mean describes neither.
+ *
+ * `checked` carries the same weight as on the recalls endpoint: an untested car and
+ * an unreachable NHTSA both yield an empty list, and only one is a fact about the car.
+ */
+vehicleRouter.get('/safety', async (req, res) => {
+  const vehicle = await requireOwnVehicle(req);
+  const { variants, synced } = await getModelSafetyRatings(req.db, {
+    year: vehicle.year,
+    make: vehicle.make,
+    model: vehicle.model,
+  });
+
+  res.json({ variants: variants.map(toSafetyRating), checked: synced } satisfies SafetyRatingReport);
+});
 
 /** Beyond this the list stops informing and starts overwhelming. */
 const MAX_REPORTED_ISSUES = 8;

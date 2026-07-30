@@ -135,6 +135,58 @@ export interface RecallReport {
 }
 
 /**
+ * Whether NHTSA recorded a driver-assist feature as fitted.
+ *
+ * `no` means NHTSA recorded the feature as not offered on this variant, which is a
+ * finding about the model, not a gap in our data. Absent means NHTSA said nothing --
+ * common on older vehicles, where these columns predate the programme.
+ */
+export type AssistFitment = 'standard' | 'optional' | 'no';
+
+/**
+ * One NCAP-tested variant of the owner's model.
+ *
+ * NHTSA crash-tests body styles and drivetrains separately, so one year/make/model
+ * routinely has several of these -- a 2019 Civic has a 2-door and a 4-door, a 2019
+ * F-150 has five cab configurations. They are kept apart rather than averaged: a
+ * 4x2 and a 4x4 can differ by a star on rollover, and an average would describe a
+ * truck nobody drives.
+ *
+ * Every rating is optional because NHTSA publishes `"Not Rated"` for tests it never
+ * ran, and a car nobody crash-tested must not come back as a zero-star car.
+ */
+export interface SafetyRating {
+  id: string;
+  /** NHTSA's own label for the tested variant, e.g. "2019 Ford F-150 Super Crew PU/CC 4x4". */
+  description: string;
+  /** 1-5 stars. Absent where NHTSA reported "Not Rated". */
+  overall?: number;
+  frontCrash?: number;
+  sideCrash?: number;
+  rollover?: number;
+  /**
+   * Modelled chance of rollover in a single-vehicle crash, 0-1. Absent when the
+   * rollover test was not run -- NHTSA sends 0.0 for that case, which would read as
+   * "cannot roll over" if passed through.
+   */
+  rolloverPossibility?: number;
+  forwardCollisionWarning?: AssistFitment;
+  laneDepartureWarning?: AssistFitment;
+  electronicStabilityControl?: AssistFitment;
+}
+
+/**
+ * Crash-test ratings plus whether the upstream check has ever succeeded.
+ *
+ * Same reasoning as RecallReport: an untested car and an unreachable NHTSA both
+ * produce an empty list, and only one of them is a fact about the car.
+ */
+export interface SafetyRatingReport {
+  variants: SafetyRating[];
+  checked: boolean;
+}
+
+/**
  * Where a known issue came from, which decides how much weight it carries.
  *
  * `curated` entries are written by us. `owner_reports` are aggregated from

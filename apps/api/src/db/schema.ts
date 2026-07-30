@@ -6,7 +6,7 @@
  * Tables fall into two groups:
  *
  *   1. User-owned aggregate roots carry `userId` directly: vehicles,
- *      serviceRecords, assessments, chatMessages, userFeatures. Every query
+ *      serviceRecords, assessments, userFeatures. Every query
  *      against these MUST filter on userId.
  *
  *   2. Children of those roots (vehicleValuePoints, maintenanceItems,
@@ -46,7 +46,6 @@ export const severityEnum = pgEnum('severity', ['low', 'medium', 'high']);
 // See maintenanceItems below and services/maintenanceDue.ts.
 export const quoteVerdictEnum = pgEnum('quote_verdict', ['fair', 'overpriced']);
 export const serviceSourceEnum = pgEnum('service_record_source', ['manual', 'repair_cost_checker']);
-export const chatRoleEnum = pgEnum('chat_role', ['user', 'assistant']);
 export const featureStatusEnum = pgEnum('feature_status', ['Included', 'Active']);
 export const planEnum = pgEnum('plan', ['free', 'paid']);
 
@@ -361,6 +360,57 @@ export const modelOwnerReportQuotes = pgTable(
 );
 
 /**
+ * NHTSA NCAP crash-test ratings, one row per tested variant of a model.
+ *
+ * The grain is the variant, not the model, because NHTSA tests body styles and
+ * drivetrains separately -- a 2019 F-150 has five cab configurations with different
+ * rollover results. Averaging them would produce a rating for a truck nobody drives.
+ *
+ * `year`/`make`/`model` hold *our* lookup key rather than NHTSA's label, so a
+ * vehicle whose model is "F-150" finds its rows. NHTSA's own variant name lives in
+ * `description`, and `ncapVehicleId` is its stable identity for the variant -- the
+ * same role `campaignNumber` plays for recalls.
+ *
+ * Every star rating is nullable because NHTSA publishes "Not Rated" for tests it
+ * never ran. A null here means untested; it must never render as zero stars.
+ */
+export const modelSafetyRatings = pgTable(
+  'model_safety_ratings',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    year: integer('year').notNull(),
+    make: text('make').notNull(),
+    model: text('model').notNull(),
+    /** NHTSA's VehicleId for this tested variant. Stable, and unique per model. */
+    ncapVehicleId: integer('ncap_vehicle_id').notNull(),
+    /** NHTSA's label, e.g. "2019 Ford F-150 Super Crew PU/CC 4x4". */
+    description: text('description').notNull(),
+    overallRating: integer('overall_rating'),
+    frontCrashRating: integer('front_crash_rating'),
+    sideCrashRating: integer('side_crash_rating'),
+    rolloverRating: integer('rollover_rating'),
+    /**
+     * Modelled rollover chance, 0-1. Null when the test was not run: NHTSA sends
+     * 0.0 in that case, which would otherwise read as "cannot roll over".
+     */
+    rolloverPossibility: numeric('rollover_possibility', { precision: 4, scale: 3 }),
+    /** 'standard' | 'optional' | 'no'. Null when NHTSA recorded nothing. */
+    forwardCollisionWarning: text('forward_collision_warning'),
+    laneDepartureWarning: text('lane_departure_warning'),
+    electronicStabilityControl: text('electronic_stability_control'),
+  },
+  (table) => ({
+    byModel: index('model_safety_ratings_model_idx').on(table.year, table.make, table.model),
+    variantPerModel: uniqueIndex('model_safety_ratings_variant_unique').on(
+      table.year,
+      table.make,
+      table.model,
+      table.ncapVehicleId,
+    ),
+  }),
+);
+
+/**
  * When each model was last checked against each upstream NHTSA feed.
  *
  * Kept separate from the mirrored rows because "nothing found" and "never checked"
@@ -613,25 +663,11 @@ export const assessmentLaborTasks = pgTable(
 
 /* ------------------------------------------------------------------- chat */
 
-export const chatMessages = pgTable(
-  'chat_messages',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    userId: uuid('user_id')
-      .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
-    role: chatRoleEnum('role').notNull(),
-    text: text('text').notNull(),
-    urgencyLevel: severityEnum('urgency_level'),
-    urgencyText: text('urgency_text'),
-    ctaLabel: text('cta_label'),
-    ctaAction: text('cta_action'),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => ({
-    byUser: index('chat_messages_user_created_idx').on(table.userId, table.createdAt),
-  }),
-);
+/*
+ * There is no chat table, on purpose. An Ask CA conversation clears when the owner
+ * leaves the screen, so it is never written down -- see routes/chat.ts for why storing
+ * it and deleting on exit is the less reliable way to get that behaviour.
+ */
 
 /* -------------------------------------------------------------- relations */
 
@@ -640,7 +676,6 @@ export const usersRelations = relations(users, ({ many }) => ({
   features: many(userFeatures),
   serviceRecords: many(serviceRecords),
   assessments: many(assessments),
-  chatMessages: many(chatMessages),
 }));
 
 export const vehiclesRelations = relations(vehicles, ({ one, many }) => ({
@@ -702,6 +737,3 @@ export const userFeaturesRelations = relations(userFeatures, ({ one }) => ({
   owner: one(users, { fields: [userFeatures.userId], references: [users.id] }),
 }));
 
-export const chatMessagesRelations = relations(chatMessages, ({ one }) => ({
-  owner: one(users, { fields: [chatMessages.userId], references: [users.id] }),
-}));

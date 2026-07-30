@@ -36,6 +36,14 @@ const envSchema = z.object({
   /** Legacy shared-secret projects (HS256). Prefer JWKS where available. */
   SUPABASE_JWT_SECRET: z.string().min(16).optional(),
 
+  /* -------------------------------------------------------------- Ask CA ----
+   * Set this and Ask CA answers with Claude, grounded in the owner's own car.
+   * With it unset, Ask CA falls back to canned replies -- the same
+   * configuration-decides-the-mode shape as the auth dev bypass above, so a
+   * fresh clone still runs with nothing to configure.
+   */
+  ANTHROPIC_API_KEY: z.string().min(1).optional(),
+
   /**
    * DEV ONLY. When Supabase is not configured, every request is attributed to
    * this user so the app is usable without signing in.
