@@ -30,4 +30,9 @@ export class HttpError extends Error {
   static paymentRequired(message = 'This feature has not been unlocked'): HttpError {
     return new HttpError('payment_required', message);
   }
+
+  /** Too many requests. 429, and the message is shown to the owner, so it says what to do. */
+  static rateLimited(message: string): HttpError {
+    return new HttpError('rate_limited', message);
+  }
 }

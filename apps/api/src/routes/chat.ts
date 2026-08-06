@@ -23,8 +23,9 @@ import { randomUUID } from 'node:crypto';
 import { Router, type Response } from 'express';
 import { sendChatMessageSchema } from '@caradvocate/shared';
 import type { ChatMessage } from '@caradvocate/shared';
+import { askLimit } from '../middleware/askLimit.js';
 import { validateBody } from '../middleware/validate.js';
-import { askCarAdvocate, askIsConfigured, type AskReply, type AskTiming } from '../services/askClaude.js';
+import { askCarAdvocate, askIsConfigured, TIMED_OUT, type AskReply, type AskTiming } from '../services/askClaude.js';
 import { nextReply } from '../services/chatReplies.js';
 import { buildVehicleContext } from '../services/vehicleContext.js';
 import { requireOwnVehicle } from './helpers.js';
@@ -41,11 +42,14 @@ const HISTORY_MESSAGES = 10;
 /** What the owner sees when the model could not be reached. Never a canned answer in disguise. */
 const FAILED = 'Something went wrong reaching the assistant, so this question has not been answered. Try again in a moment.';
 
+/** Distinct from FAILED: nothing is broken, it just did not finish, and retrying is reasonable. */
+const TOO_SLOW = 'That took too long to answer, so it has been stopped. Try asking again — shorter questions come back faster.';
+
 /**
  * Answers one question. Nothing is written to the database. Claude answers when
  * ANTHROPIC_API_KEY is set (services/askClaude.ts); without a key, canned replies.
  */
-chatRouter.post('/', validateBody(sendChatMessageSchema), async (req, res) => {
+chatRouter.post('/', askLimit, validateBody(sendChatMessageSchema), async (req, res) => {
   const { text, history } = req.body;
 
   // Oldest messages drop first: a follow-up refers to what was just said.
@@ -89,15 +93,24 @@ chatRouter.post('/', validateBody(sendChatMessageSchema), async (req, res) => {
       console.error(`Ask CA failed: ${cause instanceof Error ? cause.message : String(cause)}`);
       // A `delta` preview may already be on screen. Sending the final message replaces it, which
       // is why the client renders from `message` and never from the deltas it has accumulated.
-      sendMessage(res, text, {
-        role: 'assistant',
-        text: cause instanceof Error && cause.message.includes('declined') ? cause.message : FAILED,
-      });
+      sendMessage(res, text, { role: 'assistant', text: failureText(cause) });
     }
   }
 
   res.end();
 });
+
+/**
+ * Which sentence the owner gets. A safety-filter refusal already explains itself and says to
+ * rephrase, so it is passed through as-is; a timeout is worth distinguishing from a breakage
+ * because the advice differs; everything else is the same honest admission that no answer came.
+ */
+function failureText(cause: unknown): string {
+  if (!(cause instanceof Error)) return FAILED;
+  if (cause.message === TIMED_OUT) return TOO_SLOW;
+  if (cause.message.includes('declined')) return cause.message;
+  return FAILED;
+}
 
 /**
  * Opens the event stream. `no-transform` and the nginx hint keep an intermediary from buffering

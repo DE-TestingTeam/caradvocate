@@ -58,6 +58,23 @@ const EFFORT = 'medium' as const;
  */
 const THINKING = { type: 'disabled' } as const;
 
+/**
+ * A hard ceiling on one answer, ours rather than the SDK's.
+ *
+ * The SDK defaults to a ten-minute timeout and retries twice, so a genuinely stuck call could
+ * leave someone watching a typing indicator for half an hour. Measured answers land around 5s
+ * with the slowest observed near 17s, so 45s is far outside normal and only fires on a hang.
+ *
+ * Enforced by aborting the stream rather than by the SDK's own `timeout`, because this has to
+ * cover retries too: an SDK-level timeout applies per attempt, and three attempts of 45s is not
+ * a 45s ceiling. Surfaced as its own error so the owner is told it took too long, rather than
+ * getting the silence reserved for someone who closed the tab.
+ */
+const DEADLINE_MS = 45_000;
+
+/** Recognised by routes/chat.ts, which turns it into something the owner can act on. */
+export const TIMED_OUT = 'Ask CA took too long to answer';
+
 export interface AskInput {
   /** The owner's question. */
   question: string;
@@ -129,7 +146,7 @@ THE REPLY FIELDS
 - text: your answer.
 - urgency: set this ONLY when the facts you were given support it AND this turn is actually about the car. A greeting, a thank-you or an acknowledgement gets null however overdue their upkeep is — an urgency banner on "hi" is noise, and noise is what stops the real one being read. Otherwise: an unrepaired stop-driving recall is high. A repeatedly-reported safety component, or an overdue upkeep job, is medium. Something to mention at the next service is low. Set it to null when nothing in the facts justifies one — an invented urgency level is worse than none.
 - cta: set to {"action": "start_assessment"} whenever the owner asks what a repair should cost, whether a quote they have is fair, or anything else about what they will pay — including when they do not yet know which repair it is. Otherwise null, and never on a greeting.
-- sources: which parts of the facts block this answer actually rested on, so the owner can see where it came from. List a kind only if dropping that section would have changed your answer — not everything you were handed, and not everything you glanced at. An answer about a recall is ["recalls"], possibly with "vehicle"; one that compares their mileage against what owners report is ["vehicle", "owner_reports"]. A greeting, a thank-you, or anything you answered from general knowledge is [] — claiming their service history informed "hi" is a small lie that makes the whole line worthless. You choose kinds only; the app writes what the owner reads.`;
+- sources: which parts of the facts block this answer actually rested on, so the owner can see where it came from. List a kind if you used anything from that section — a count you quoted, a date, a status, a campaign number, or a fact you leaned on without naming. If removing that section would have changed a single sentence, list it. Do not list a section you merely had available and did not use. An answer about a recall is ["recalls"], possibly with "vehicle"; one that compares their mileage against what owners report is ["vehicle", "owner_reports"]. A greeting, a thank-you, or anything you answered from general knowledge is [] — claiming their service history informed "hi" is a small lie that makes the whole line worthless. You choose kinds only; the app writes what the owner reads.`;
 
 /**
  * The reply shape, enforced by the API rather than parsed out of prose. `urgency` and
@@ -251,6 +268,12 @@ export async function askCarAdvocate(input: AskInput): Promise<{ reply: AskReply
   const abort = () => stream.abort();
   input.signal?.addEventListener('abort', abort, { once: true });
 
+  let timedOut = false;
+  const deadline = setTimeout(() => {
+    timedOut = true;
+    stream.abort();
+  }, DEADLINE_MS);
+
   if (input.onTextDelta) {
     const decode = createAnswerPreview();
     // Deltas are the reply JSON, not prose: `text` is the schema's first property, so its
@@ -264,7 +287,12 @@ export async function askCarAdvocate(input: AskInput): Promise<{ reply: AskReply
   let response;
   try {
     response = await stream.finalMessage();
+  } catch (cause) {
+    // An abort reads as a generic request error, so the reason has to come from our own flag.
+    if (timedOut) throw new Error(TIMED_OUT);
+    throw cause;
   } finally {
+    clearTimeout(deadline);
     input.signal?.removeEventListener('abort', abort);
   }
 
@@ -310,6 +338,14 @@ function parseReply(content: { type: string; text?: string }[], available: ChatS
   const record = parsed as Record<string, unknown>;
   const answer = typeof record.text === 'string' ? record.text.trim() : '';
   if (!answer) throw new Error('Ask CA returned a reply with no answer in it');
+
+  // Seen once: a reply that stopped mid-sentence at 47 tokens with stop_reason `end_turn`, far
+  // short of max_tokens, and not reproduced in eight repeats of the same question. Too thin a
+  // signal to guard against -- a punctuation rule would reject legitimate answers -- but logging
+  // it turns "someone saw it once" into a frequency, which is what a fix would need.
+  if (!/[.!?"')\]]\s*$/.test(answer)) {
+    console.warn(`Ask CA: reply may be cut off, ends "${answer.slice(-40)}"`);
+  }
 
   const reply: AskReply = { role: 'assistant', text: answer };
 

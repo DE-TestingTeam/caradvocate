@@ -495,18 +495,32 @@ settings. It costs eight model calls and writes nothing.
 committed since "Implement paywall for Repair Cost Checker". Worth committing in pieces
 while the reasoning is fresh.
 
-**One migration is written but not applied.** `0014` drops the unused crash-test table
-(see below). It has not been run against any database yet.
+**Migrations are applied on the shared database.** Checked directly on 6 August: `0013`
+(year/make/model on `repair_benchmarks`), `0014` (the crash-test table is gone) and `0015`
+(`vehicles.maintenance_schedule_checked_at`) are all present. The database reports 17 applied
+migrations against the 16 in this branch, and holds four tables this branch does not define
+(`extraction_runs`, `factory_schedule_items`, `schedule_review_queue`, `vehicle_generations`),
+so **the shared database is ahead of this branch** — someone is deploying migrations from
+another one. Worth knowing before generating a new migration here.
 
-**The database migration must be applied before this code is deployed.** Migration `0013`
-adds year/make/model to the pricing table. Deploying the code against an unmigrated
-database breaks every assessment. Run `db:migrate`, then `db:pricing` — until the second
-one runs, the app serves old invented figures under a real-looking label.
+**`db:pricing` still has to be run after `0013`.** The migration itself is applied (above),
+but until `db:pricing` runs against a database, the app serves old invented figures under a
+real-looking label. **Needs checking:** whether it has been run since `0013` landed.
 
-**Database lockdown scripts exist but have to be run by hand.** `apps/api/sql/rls-lockdown.sql`
-closes a second door into the Supabase database that is open by default — with it open,
-anyone holding the public key can read every table directly. **Needs checking:** whether
-this has been run against the live project. The code cannot tell.
+**⚠️ Row-level security is off, and this is now confirmed rather than suspected.** Checked
+directly on 6 August: **0 of 26 tables** in the shared database have RLS enabled, and no
+policies exist. `apps/api/sql/rls-lockdown.sql` has never been run there.
+
+This is not a theoretical gap. The Supabase anon key is public by design — it ships in the
+browser bundle — and with RLS off it is enough to read every table directly, bypassing the API
+entirely: `users`, `service_records`, `vehicles`, `paywall_intents`, all of it. The database
+currently holds real accounts, not just the seeded demo ones. Every per-user filter in the API
+is correct and none of it matters while the second door is open.
+
+Applying `rls-lockdown.sql` and `rls-policies.sql` is the fix, and it needs doing before anyone
+outside the team uses this. It is a live-database change that could break reads if the policies
+and the API's access pattern disagree, so it wants a deliberate run and a check afterwards
+rather than being folded into a code deploy.
 
 ### Gaps in the agreed feature list
 
@@ -542,6 +556,13 @@ feature list in §3; they are noted because the README and the original spec men
   rather than licensed book times in the meantime.
 - **Deleting an account deletes its paywall taps too.** Export that data before honouring
   a deletion request or the experiment loses the result.
+- **Ask CA is throttled per owner**: one answer in flight at a time and 20 questions per five
+  minutes, because it is the only endpoint that spends money per request. The counters are held
+  in memory, so they reset on restart and are per-process — a cost guard, not a security
+  boundary, and a real deployment wants them in Postgres or Redis.
+- **An answer is abandoned after 45 seconds.** Measured answers land around 5 seconds and the
+  slowest observed was 17, so the ceiling only fires on a genuine hang; without it the SDK would
+  wait ten minutes and retry twice.
 - **Ask CA conversations are never stored**, which is right for privacy but means there is
   no record of what people actually ask. The browser now keeps a transcript for the life of the
   tab so navigation does not lose it, but nothing reaches the server or the account, so this is
