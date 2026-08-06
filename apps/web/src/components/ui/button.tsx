@@ -11,7 +11,16 @@ const buttonVariants = cva(
         default: 'bg-primary text-primary-foreground hover:bg-primary/90',
         destructive: 'bg-destructive text-destructive-foreground hover:bg-destructive/90',
         outline: 'border border-input bg-background hover:bg-accent hover:text-accent-foreground',
-        secondary: 'bg-secondary text-secondary-foreground hover:bg-secondary/80',
+        /**
+         * The second tier: a real action, but not the one the screen is for. Brand colour in
+         * the border and the text, nothing in the fill, so it reads as part of the same system
+         * as `default` without competing with it.
+         *
+         * `border` at the same 1px as every other variant -- a thicker border here would make
+         * the button a pixel taller than the one beside it. Distinct from `outline`, which is
+         * neutral grey and belongs to Cancel and anything that is not ours to brand.
+         */
+        secondary: 'border border-primary bg-transparent text-primary hover:bg-primary/10',
         ghost: 'hover:bg-accent hover:text-accent-foreground',
         link: 'text-primary underline-offset-4 hover:underline',
       },

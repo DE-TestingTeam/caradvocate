@@ -81,8 +81,8 @@ export function AssessmentNoPricingPage() {
         <Button asChild size="lg" className="w-full">
           <Link to="/assessments/new">Pick a different repair</Link>
         </Button>
-        {/* The way out, beneath the way forward -- only one of the two can be the green one. */}
-        <Button asChild size="lg" variant="outline" className="w-full">
+        {/* The way out, beneath the way forward: outlined, so only one of the two is filled. */}
+        <Button asChild size="lg" variant="secondary" className="w-full">
           <Link to="/assessments">Back to Repair Assessment</Link>
         </Button>
       </div>
