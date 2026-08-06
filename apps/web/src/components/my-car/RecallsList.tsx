@@ -75,7 +75,13 @@ export function RecallsList({
           {(recall.summary || recall.remedy) && (
             <Accordion type="single" collapsible>
               <AccordionItem value="detail" className="border-0">
-                <AccordionTrigger className="py-2 text-sm">What to do about it</AccordionTrigger>
+                {/*
+                  `border-b-0` for the same reason the benchmark cards pass it: the trigger's
+                  own rule is meant for a top-level accordion, and here the "Had this done?"
+                  row below opens with a border-t. Collapsed, the content between them is
+                  zero-height, so the two rules landed 8px apart and read as a double line.
+                */}
+                <AccordionTrigger className="border-b-0 py-2 text-sm">What to do about it</AccordionTrigger>
                 <AccordionContent className="space-y-3 pb-1 text-sm">
                   {recall.summary && <Detail label="What is wrong">{formatNhtsaProse(recall.summary)}</Detail>}
                   {recall.remedy && <Detail label="Remedy">{formatNhtsaProse(recall.remedy)}</Detail>}

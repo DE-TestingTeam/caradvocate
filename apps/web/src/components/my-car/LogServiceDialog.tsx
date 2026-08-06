@@ -92,7 +92,7 @@ export function LogServiceDialog({
           maintenance section -- so it must not render a trigger of its own. */}
       {!isControlled && (
         <DialogTrigger asChild>
-          <Button variant="outline" className="w-full sm:w-auto">
+          <Button className="w-full sm:w-auto">
             <Plus className="h-4 w-4" />
             Log a service
           </Button>
@@ -172,6 +172,10 @@ export function LogServiceDialog({
             </div>
           )}
 
+          {/*
+            Only Save is green. Two green buttons in a footer is no primary action at all, and a
+            green Delete reads as the safe choice, which is the opposite of what it does.
+          */}
           <DialogFooter className="sm:justify-between">
             {isEditing ? (
               <Button type="button" variant="outline" disabled={saving} onClick={handleDelete}>

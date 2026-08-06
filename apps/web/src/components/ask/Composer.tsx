@@ -16,7 +16,21 @@ interface ComposerProps {
 
 /** Beyond this the box stops growing and scrolls, so the transcript never gets squeezed out. */
 const MAX_ROWS = 6;
+
+/**
+ * The measurements the auto-grow depends on, stated rather than inferred.
+ *
+ * `leading-5` is set explicitly on the textarea so this stays true: the font size changes at
+ * `md` (16px on phones to avoid iOS zooming the page on focus, 14px above), and the line height
+ * would otherwise change with it, leaving the closed height different on either side of the
+ * breakpoint.
+ */
 const LINE_HEIGHT_PX = 20;
+/** py-2 top and bottom, plus the 1px border on each edge. */
+const VERTICAL_CHROME_PX = 18;
+/** Matches Button size="icon" (h-10), so the box and the send button are the same height. */
+const MIN_HEIGHT_PX = 40;
+const MAX_HEIGHT_PX = MAX_ROWS * LINE_HEIGHT_PX + VERTICAL_CHROME_PX;
 
 /**
  * NOTE: no wireframe for the multi-line behaviour. A single-line input was fine for "brakes
@@ -37,8 +51,10 @@ export function Composer({ value, onChange, onSend, disabled = false }: Composer
   React.useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
+    // Reset first, or scrollHeight only ever ratchets upwards and the box never shrinks back.
     el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, MAX_ROWS * LINE_HEIGHT_PX + 18)}px`;
+    const fitted = Math.min(Math.max(el.scrollHeight, MIN_HEIGHT_PX), MAX_HEIGHT_PX);
+    el.style.height = `${fitted}px`;
   }, [value]);
 
   function submit() {
@@ -72,10 +88,13 @@ export function Composer({ value, onChange, onSend, disabled = false }: Composer
         aria-label="Message"
         autoComplete="off"
         className={cn(
-          'flex w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-base',
+          'flex w-full resize-none rounded-md border border-input bg-background px-3 py-2',
+          // Font size drops at md; line height deliberately does not, so the closed height is
+          // the same on both sides of the breakpoint and keeps matching the send button.
+          'text-base leading-5 md:text-sm',
           'ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none',
           'focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
-          'disabled:cursor-not-allowed disabled:opacity-50 md:text-sm',
+          'disabled:cursor-not-allowed disabled:opacity-50',
         )}
       />
       <Button type="submit" size="icon" disabled={!trimmed || disabled} aria-label="Send message" className="shrink-0">

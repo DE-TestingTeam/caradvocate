@@ -100,7 +100,7 @@ export function AssessmentDetailPage() {
             Repair completed
           </div>
         ) : (
-          <Button size="lg" variant="outline" className="w-full" onClick={() => setCompleting(true)}>
+          <Button size="lg" className="w-full" onClick={() => setCompleting(true)}>
             Mark repair as completed
           </Button>
         )}

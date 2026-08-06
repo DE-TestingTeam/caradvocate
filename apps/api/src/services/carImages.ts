@@ -19,10 +19,24 @@ import { env } from '../env.js';
 const SIGNED_URLS = 'https://carimagesapi.com/api/v1/signed-urls';
 const TIMEOUT_MS = 6000;
 
-/** The largest size before `full`; every vehicle tried comes back at 1125x750 anyway. */
+/**
+ * Measured, not assumed: `width` IS honoured, in tiers rather than exactly. 400 returns
+ * 375x250, 600 and 800 both return the same middle tier, and 1200 returns 1125x750. This asks
+ * for the largest because the photo runs full width on a phone, where a 1125px asset is about
+ * what a 2x screen wants; on a laptop it sits at half the column and is oversized, which costs
+ * bytes rather than correctness.
+ */
 const IMAGE_WIDTH = 1200;
 
-/** The only format the free plan serves. Paid plans add transparent PNG and JPG. */
+/**
+ * webp, and it already carries an alpha channel -- the returned image is RGBA with a fully
+ * transparent background, so the car sits on the page rather than in a box. Verified against
+ * the live endpoint rather than inferred: the corner pixel comes back (0,0,0,0).
+ *
+ * The account is on a paid plan, so PNG and JPG are available too, but neither is worth taking.
+ * PNG is the same picture with the same transparency at 632KB against 141KB, and JPG cannot
+ * hold an alpha channel at all.
+ */
 const IMAGE_FORMAT = 'webp';
 
 export interface ImageLookup {

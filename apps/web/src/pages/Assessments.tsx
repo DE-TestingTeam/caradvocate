@@ -23,7 +23,7 @@ export function AssessmentsPage() {
         subtitle="Check if a repair is necessary and get benchmark pricing"
       />
 
-      <Button asChild variant="secondary" size="lg" className="w-full border">
+      <Button asChild size="lg" className="w-full">
         <Link to="/assessments/new">
           <Plus className="h-4 w-4" />
           New assessment

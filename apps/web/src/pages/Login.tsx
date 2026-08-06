@@ -105,6 +105,10 @@ export function LoginPage() {
             <div className="h-px flex-1 bg-border" />
           </div>
 
+          {/*
+            Stays neutral. Google's sign-in branding expects a white or grey button, and putting
+            our own colour on someone else's identity provider misrepresents whose it is.
+          */}
           <Button
             type="button"
             variant="outline"
