@@ -57,10 +57,22 @@ export function MyCarPage() {
 
   return (
     <div className="space-y-8">
-      <section className="space-y-4">
-        <VehicleImage vehicle={vehicle} />
+      {/*
+        Stacked on phones and tablets, side by side from `lg`. The photo is 3:2 and the details
+        beside it are three short lines, so they are centred against it rather than pinned to
+        the top -- top-aligned left a column of empty space under the button that read as
+        something failing to load.
 
-        <div>
+        `lg:min-w-0` on the text column: a flex child defaults to min-width:auto, which refuses
+        to shrink below its longest word, and a long make and model would push the photo narrow
+        rather than wrapping.
+      */}
+      <section className="space-y-4 lg:flex lg:items-center lg:gap-6 lg:space-y-0">
+        <div className="lg:w-1/2 lg:shrink-0">
+          <VehicleImage vehicle={vehicle} />
+        </div>
+
+        <div className="lg:min-w-0 lg:flex-1">
           <h1 className="text-3xl font-bold tracking-tight">{vehicleName(vehicle)}</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {formatMileage(vehicle.mileage)}
