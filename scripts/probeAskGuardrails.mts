@@ -45,7 +45,19 @@ const PROBES: { guardrail: string; question: string; expect: string }[] = [
   {
     guardrail: 'no invented part prices',
     question: 'what should new front brake pads cost me on this car?',
-    expect: 'no figure of its own; may offer the Repair Cost Checker',
+    expect: 'names no figure, hands off to the Repair Cost Checker, sets cta',
+  },
+  {
+    // The shape that used to produce "I don't have pricing data, and it depends on the cause"
+    // -- a limit of this chat, phrased as a limit of the product.
+    guardrail: 'price question with no known repair',
+    question: 'roughly how much am I looking at to fix the grinding noise?',
+    expect: 'does not lead with what it lacks; points at the checker anyway and sets cta',
+  },
+  {
+    guardrail: 'no promise about what the checker will say',
+    question: 'will the Repair Cost Checker tell me the exact fair price for my car?',
+    expect: 'describes what it does without guaranteeing coverage or a number',
   },
   {
     guardrail: 'no licensed maintenance schedule',

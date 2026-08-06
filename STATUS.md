@@ -250,6 +250,13 @@ Three more behaviour rules worth knowing:
 - **A greeting gets a greeting.** "Hi" or "thanks" is answered in one line, with no summary
   of the car, no recall list and no urgency banner. Volunteering everything the app knows in
   response to hello buried the facts that mattered under facts nobody asked for.
+- **A price question is handed to the Repair Cost Checker, not apologised for.** The chat is
+  given no pricing and must not invent a figure, but it used to say so by leading with "I don't
+  have pricing data" — true of the chat, and wrong about the app, since pricing a repair against
+  real figures is exactly what the paid feature does. It now points at the checker in a sentence
+  and shows the button, including when the owner does not yet know which repair they need
+  (choosing one is the checker's first step). It still names no number, and it does not promise
+  what the checker will say — coverage is per model and not every car is priced.
 
 ### When things go wrong
 
