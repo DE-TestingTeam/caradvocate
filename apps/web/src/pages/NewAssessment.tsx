@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { QuoteStep, type QuoteChoice } from '@/components/assessments/QuoteStep';
 import { RepairPicker } from '@/components/assessments/RepairPicker';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -10,13 +10,38 @@ import { createAssessment, getRepairCatalog } from '@/lib/api';
 import { ApiError } from '@/lib/http';
 import { invalidateAll, useApi } from '@/lib/useApi';
 
+/**
+ * Step one and two of the Repair Cost Checker.
+ *
+ * `?repair=` and `?quote=` prefill the form, and Ask CA sets them when a cost question named a
+ * repair it could match (see MessageBubble). They are INITIAL VALUES ONLY: every field stays
+ * editable, nothing is submitted for the owner, and a repair id the catalogue does not contain
+ * is ignored rather than shown as a selection that cannot be seen. Arriving here from the nav
+ * with no parameters is unchanged.
+ */
 export function NewAssessmentPage() {
   const navigate = useNavigate();
   const catalog = useApi(getRepairCatalog);
+  const [params] = useSearchParams();
+
+  const suggestedRepair = params.get('repair') ?? undefined;
+  const suggestedQuote = params.get('quote') ?? '';
 
   const [repairId, setRepairId] = React.useState<string>();
-  const [choice, setChoice] = React.useState<QuoteChoice>();
-  const [amount, setAmount] = React.useState('');
+  const [choice, setChoice] = React.useState<QuoteChoice | undefined>(suggestedQuote ? 'yes' : undefined);
+  const [amount, setAmount] = React.useState(/^\d+$/.test(suggestedQuote) ? suggestedQuote : '');
+  const [prefilled, setPrefilled] = React.useState(false);
+
+  // Applied once the catalogue is known, so a stale or invented id from the URL cannot select a
+  // repair the picker has no row for. Guarded on `prefilled` rather than on `repairId` being
+  // unset, so clearing the selection afterwards does not silently re-apply it.
+  React.useEffect(() => {
+    if (prefilled || !catalog.data || !suggestedRepair) return;
+    setPrefilled(true);
+    if (catalog.data.repairs.some((repair) => repair.id === suggestedRepair)) {
+      setRepairId(suggestedRepair);
+    }
+  }, [catalog.data, prefilled, suggestedRepair]);
   const [fileName, setFileName] = React.useState<string>();
   const [submitting, setSubmitting] = React.useState(false);
 
@@ -64,6 +89,14 @@ export function NewAssessmentPage() {
     <div>
       <PageHeader title="New Repair Assessment" backTo="/assessments" backLabel="Back to Repair Assessment" />
       <Separator className="mb-6" />
+
+      {repairId && suggestedRepair === repairId && (
+        // NOTE: no wireframe. Says where the selection came from, so an owner who did not expect
+        // a prefilled form knows why it is filled and that changing it is expected.
+        <p className="mb-6 rounded-md border bg-muted/50 p-3 text-sm text-muted-foreground">
+          Filled in from your conversation with CA. Change anything that is not right.
+        </p>
+      )}
 
       <section className="space-y-3">
         <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">

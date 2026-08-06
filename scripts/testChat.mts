@@ -289,7 +289,7 @@ if (askIsConfigured()) {
   check('sources are a subset of what the facts block held', (sources ?? []).every((s) => availableKinds.has(s.kind)));
 
   // The filter itself: withhold two kinds and aim a question squarely at them.
-  const narrowed = { text: context.text, sources: context.sources.filter((s) => s.kind === 'vehicle') };
+  const narrowed = { ...context, sources: context.sources.filter((s) => s.kind === 'vehicle') };
   const { reply } = await askCarAdvocate({
     question: 'based on my service history and my upkeep schedule, what am I neglecting?',
     vehicleContext: narrowed,
@@ -297,6 +297,36 @@ if (askIsConfigured()) {
   });
   const cited: string[] = (reply.sources ?? []).map((s) => s.kind);
   check('a source the block did not hold is dropped', cited.every((k) => k === 'vehicle'), `cited ${cited.join(', ') || 'nothing'}`);
+
+  // The CTA prefill: a named repair must resolve to a real catalogue id, and an invented one
+  // must resolve to nothing rather than to a guess.
+  const priced = await askCarAdvocate({
+    question: 'the shop quoted me $640 for a new alternator, is that fair?',
+    vehicleContext: context,
+    history: [],
+  });
+  const prefill = priced.reply.cta?.prefill;
+  check('a cost question offers the checker', priced.reply.cta !== undefined);
+  check(
+    'the prefilled repair is a real catalogue id',
+    prefill === undefined || context.repairs.some((r) => r.id === prefill.repairId && r.name === prefill.repairName),
+    JSON.stringify(prefill),
+  );
+  check(
+    'a quote the owner stated is carried across',
+    prefill?.quoteAmount === 640,
+    String(prefill?.quoteAmount),
+  );
+
+  // An empty catalogue is the strongest form of the filter: nothing can be resolved, so nothing
+  // may be prefilled, however confidently the model names something.
+  const noCatalogue = { ...context, repairs: [] };
+  const unresolvable = await askCarAdvocate({
+    question: 'how much should new brake pads cost?',
+    vehicleContext: noCatalogue,
+    history: [],
+  });
+  check('with no catalogue, nothing is prefilled', unresolvable.reply.cta?.prefill === undefined);
 
   const greeting = await askCarAdvocate({ question: 'hi', vehicleContext: context, history: [] });
   check('a greeting cites no sources', (greeting.reply.sources ?? []).length === 0, (greeting.reply.sources ?? []).map((s) => s.kind).join(', '));

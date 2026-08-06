@@ -282,12 +282,29 @@ export interface ChatSource {
   label: string;
 }
 
+/**
+ * What the Repair Cost Checker should open with when the owner taps through from a chat answer.
+ *
+ * A head start, never a decision: everything here lands as the form's initial state and stays
+ * editable. `repairId` is resolved by the API against the owner's own catalogue -- the assistant
+ * names a repair, it does not choose an id -- so a value that arrives here is one the picker can
+ * actually show. `quoteAmount` is only ever a figure the owner themselves stated; nothing here
+ * is the assistant's estimate of what anything costs.
+ */
+export interface ChatCtaPrefill {
+  repairId: string;
+  /** The catalogue's own wording, so the button and the picker cannot disagree. */
+  repairName: string;
+  /** Whole dollars, echoed back from what the owner said they were quoted. */
+  quoteAmount?: number;
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   text: string;
   urgency?: { level: Severity; text: string };
-  cta?: { label: string; action: 'start_assessment' };
+  cta?: { label: string; action: 'start_assessment'; prefill?: ChatCtaPrefill };
   /** Omitted when the answer drew on nothing -- a greeting has no sources. */
   sources?: ChatSource[];
 }

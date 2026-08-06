@@ -264,6 +264,16 @@ Three more behaviour rules worth knowing:
 - **A greeting gets a greeting.** "Hi" or "thanks" is answered in one line, with no summary
   of the car, no recall list and no urgency banner. Volunteering everything the app knows in
   response to hello buried the facts that mattered under facts nobody asked for.
+- **A price question arrives at the Repair Cost Checker with the form already filled in.** When
+  the question is clearly about one of the twelve jobs the checker covers, the button carries
+  that repair through and preselects it, and if the owner mentioned what they were quoted
+  ("they want $640") that lands in the quote box too. Everything is editable, the button says
+  what it is about to open with, and the form says where the values came from. The assistant
+  only ever *names* a repair — the API matches that name against the owner's own catalogue and
+  supplies the id, so a name it invented prefills nothing rather than selecting the wrong job.
+  The quote is only ever the owner's own figure repeated back; the assistant has no pricing and
+  never puts an estimate there. A job the checker does not cover gets told so rather than being
+  sent to a form that cannot help.
 - **A price question is handed to the Repair Cost Checker, not apologised for.** The chat is
   given no pricing and must not invent a figure, but it used to say so by leading with "I don't
   have pricing data" — true of the chat, and wrong about the app, since pricing a repair against
