@@ -25,6 +25,7 @@ import type {
   Vehicle,
   VehicleImage,
 } from '@caradvocate/shared';
+import { CHAT_HISTORY_LIMIT } from '@caradvocate/shared';
 import { http } from './http';
 
 /* ---------------------------------------------------------------- vehicle */
@@ -166,8 +167,9 @@ export function getRepairCatalog(): Promise<RepairCatalogReport> {
 /* ------------------------------------------------------------------- chat */
 
 /**
- * Sends a question along with the conversation so far. There is no getChatHistory: nothing
- * is stored. The conversation lives in the Ask CA page's state and goes when the page does.
+ * Sends a question along with the conversation so far. There is no getChatHistory: the server
+ * stores nothing. The browser keeps the transcript for the life of the tab -- see
+ * lib/chatTranscript.ts -- which is why the history sent below has to be capped.
  */
 export interface ChatTurn {
   user: ChatMessage;
@@ -193,7 +195,10 @@ export async function sendChatMessage(
 
   await http.stream(
     '/chat',
-    { text, history },
+    // Sliced, not sent whole. The transcript survives the tab now, so it outgrows what the API
+    // accepts; sending all of it would fail validation and keep failing on every later message.
+    // Oldest go first -- a follow-up refers to what was just said.
+    { text, history: history.slice(-CHAT_HISTORY_LIMIT) },
     (event, data) => {
       if (event === 'delta') {
         preview += (data as { text: string }).text;

@@ -138,6 +138,17 @@ export const updateVehicleSchema = z
  * The cap is here rather than only server-side so an oversized body is rejected as a
  * validation error instead of being silently trimmed.
  */
+/**
+ * How many prior messages a request may carry. Exported because the client has to slice to it
+ * before sending: the browser now keeps a transcript for the life of the tab, so a long
+ * conversation will sail past this cap, and a rejected request would break the chat for good
+ * rather than just for one message.
+ *
+ * The API only reads the last few of these -- see HISTORY_MESSAGES in routes/chat.ts. This is
+ * the ceiling on what may arrive, not what gets used.
+ */
+export const CHAT_HISTORY_LIMIT = 40;
+
 export const sendChatMessageSchema = z.object({
   text: z.string().trim().min(1, 'Message cannot be empty').max(2000),
   history: z
@@ -147,7 +158,7 @@ export const sendChatMessageSchema = z.object({
         text: z.string().min(1).max(2000),
       }),
     )
-    .max(40)
+    .max(CHAT_HISTORY_LIMIT)
     .optional()
     .default([]),
 });
