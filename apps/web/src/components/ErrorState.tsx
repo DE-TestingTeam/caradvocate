@@ -16,7 +16,7 @@ export function ErrorState({ message, className }: { message?: string; className
         <p className="text-sm text-muted-foreground">
           {message ?? 'Could not load this. The API may not be running.'}
         </p>
-        <Button size="sm" onClick={() => invalidateAll()}>
+        <Button variant="secondary" size="sm" onClick={() => invalidateAll()}>
           <RefreshCw className="h-4 w-4" />
           Try again
         </Button>

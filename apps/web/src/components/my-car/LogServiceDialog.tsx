@@ -92,7 +92,7 @@ export function LogServiceDialog({
           maintenance section -- so it must not render a trigger of its own. */}
       {!isControlled && (
         <DialogTrigger asChild>
-          <Button className="w-full sm:w-auto">
+          <Button variant="secondary" className="w-full sm:w-auto">
             <Plus className="h-4 w-4" />
             Log a service
           </Button>

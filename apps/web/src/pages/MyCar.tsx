@@ -86,7 +86,7 @@ export function MyCarPage() {
             The hash lands on the vehicle card instead of the top of the page, since arriving at
             a profile form after tapping "Edit" under a car reads as the wrong page.
           */}
-          <Button asChild size="sm" className="mt-3">
+          <Button asChild variant="secondary" size="sm" className="mt-3">
             <Link to="/account#vehicle">
               <Pencil className="h-4 w-4" />
               Edit car details
