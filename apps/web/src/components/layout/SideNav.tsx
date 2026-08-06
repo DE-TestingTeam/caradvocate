@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { Car, ClipboardList, LogOut, MessageSquare, PanelLeftClose, PanelLeftOpen, UserRound } from 'lucide-react';
 import { Link, NavLink } from 'react-router-dom';
+import crMonogram from '@/assets/cr-monogram.png';
 import { useAuth } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 
@@ -57,11 +58,24 @@ export function SideNav() {
       <div className={cn('flex h-14 shrink-0 items-center border-b', expanded ? 'px-4' : 'justify-center')}>
         <Link
           to="/my-car"
-          className="truncate text-lg font-bold tracking-tight"
+          className="flex min-w-0 items-center gap-2"
           title="CarAdvocate"
         >
-          {/* Collapsed shows the initials rather than a clipped word. */}
-          {expanded ? 'CarAdvocate' : 'CA'}
+          {/*
+            Supplied artwork, uncropped in the original: the mark occupies about 1621x989 of a
+            2000px square, so sizing the file as-is would render it a third the height it looks.
+            The asset here is trimmed to the mark and sized by height, which is why it is `h-6
+            w-auto` rather than a square.
+
+            `alt=""` on purpose. Expanded it sits beside the word it stands for, and collapsed
+            the word is still there for screen readers below -- announcing "Consumer Reports"
+            twice, or once as a logo and once as a name, is noise either way.
+          */}
+          <img src={crMonogram} alt="" className="h-6 w-auto shrink-0" />
+          {/* Collapsed, the mark is the whole lockup; the name stays for screen readers. */}
+          <span className={cn('truncate text-lg font-bold tracking-tight', !expanded && 'sr-only')}>
+            CarAdvocate
+          </span>
         </Link>
       </div>
 
