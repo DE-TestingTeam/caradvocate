@@ -43,7 +43,11 @@ const HISTORY_LIMIT = 8;
 export async function buildVehicleContext(db: Database, vehicle: Vehicle): Promise<string> {
   const model: ModelKey = { year: vehicle.year, make: vehicle.make, model: vehicle.model };
 
-  const [recalls, reports, jobs, history] = await Promise.all([
+  // All six in one round of queries. This runs on every Ask CA message, so a chain of awaits
+  // here is latency the owner waits through before the model has even been called. Quotes are
+  // fetched unconditionally rather than after checking whether there are any complaints: the
+  // query is cheap, and gating it on an earlier result is what made it sequential.
+  const [recalls, reports, jobs, history, ownerStatus, quotes] = await Promise.all([
     getModelRecalls(db, model),
     getOwnerReports(db, model),
     loadMaintenanceItems(db, vehicle),
@@ -53,15 +57,11 @@ export async function buildVehicleContext(db: Database, vehicle: Vehicle): Promi
       .where(eq(serviceRecords.vehicleId, vehicle.id))
       .orderBy(desc(serviceRecords.serviceDate))
       .limit(HISTORY_LIMIT),
+    db.select().from(vehicleRecallStatus).where(eq(vehicleRecallStatus.vehicleId, vehicle.id)),
+    loadQuotes(db, model),
   ]);
 
-  const ownerStatus = await db
-    .select()
-    .from(vehicleRecallStatus)
-    .where(eq(vehicleRecallStatus.vehicleId, vehicle.id));
   const repairedBy = new Map(ownerStatus.map((row) => [row.campaignNumber, row.repaired]));
-
-  const quotes = reports.reports.length ? await loadQuotes(db, model) : new Map<string, string[]>();
 
   const sections = [
     `THE CAR

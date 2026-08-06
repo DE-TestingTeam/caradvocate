@@ -8,11 +8,17 @@
  * going beyond it; the reply shape is constrained by a JSON schema, so `urgency` and the
  * CTA are values the UI already renders; and the CTA label is filled in here.
  *
+ * The reply streams so the owner is not watching a spinner, but streaming deliberately does not
+ * weaken any of that: the deltas are a preview, and the object this module returns -- schema-
+ * constrained, then re-checked by parseReply -- is what the app renders. Validation sits on the
+ * return value precisely so the fast path cannot become the unchecked path.
+ *
  * No ANTHROPIC_API_KEY means Ask CA stays on canned replies and says so at startup.
  */
 import Anthropic from '@anthropic-ai/sdk';
 import type { ChatMessage, Severity } from '@caradvocate/shared';
 import { env } from '../env.js';
+import { createAnswerPreview } from './answerPreview.js';
 
 /** The one CTA the UI knows how to render. Fixed here so the model cannot reword it. */
 const CTA_LABEL = 'CHECK REPAIR COSTS';
@@ -24,10 +30,24 @@ const CTA_LABEL = 'CHECK REPAIR COSTS';
 const MAX_TOKENS = 8000;
 
 /**
- * `medium` rather than the default `high`: the facts are handed to the model rather than
- * discovered, and latency is felt by someone waiting on a chat bubble.
+ * `low` rather than the default `high`. Sonnet 5 runs adaptive thinking whether or not we ask
+ * for it, so every turn -- including "hi" -- pays a reasoning pass before a two-sentence answer.
+ * Nothing here is discovered: the facts are handed over, the output is a short paragraph, and
+ * someone is watching a chat bubble. `low` is the documented setting for exactly that shape.
+ *
+ * The tradeoff is that Sonnet 5 follows instructions most literally at low effort, which is why
+ * the system prompt above says when NOT to volunteer things rather than relying on judgement.
+ * If answers to genuinely hard questions start looking shallow, raise this to `medium` before
+ * adding prose to compensate.
  */
-const EFFORT = 'medium' as const;
+const EFFORT = 'low' as const;
+
+/**
+ * Thinking is on by default on Sonnet 5; stated here so the cost is visible at the call site
+ * rather than implied by its absence. `omitted` because nothing renders a reasoning summary --
+ * asking for one would buy latency we have no use for.
+ */
+const THINKING = { type: 'adaptive', display: 'omitted' } as const;
 
 export interface AskInput {
   /** The owner's question. */
@@ -36,6 +56,22 @@ export interface AskInput {
   vehicleContext: string;
   /** Prior turns, oldest first, so follow-ups make sense. */
   history: { role: 'user' | 'assistant'; text: string }[];
+  /**
+   * Called with each newly decoded fragment of the reply's `text` field, for display while the
+   * model is still writing. A PREVIEW ONLY -- see askCarAdvocate.
+   */
+  onTextDelta?: (delta: string) => void;
+  /** Aborts the upstream call when the owner closes the tab mid-answer. */
+  signal?: AbortSignal;
+}
+
+/** What the model actually cost and how long it took. Logged by the caller, never shown. */
+export interface AskTiming {
+  ms: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
 }
 
 export type AskReply = Omit<ChatMessage, 'id'>;
@@ -51,7 +87,7 @@ export function askIsConfigured(): boolean {
  */
 const SYSTEM_PROMPT = `You are CarAdvocate's assistant. You help a car owner work out two things: whether a repair is actually necessary, and whether the price they were quoted is fair. You are on their side, not the shop's.
 
-You will be given a block of facts about this specific car. Those facts are the only thing you know about it.
+You will be given a block of facts about this specific car. Those facts are the only thing you know about it. They are reference material, not a request: having them does not mean the owner wants to hear them.
 
 WHAT YOU MUST NOT DO
 - Do not invent recalls, campaign numbers, part prices, labour times, service intervals, or resale values. If a number is not in the facts you were given, you do not have it.
@@ -64,19 +100,20 @@ HOW TO USE THE FACTS
 - Recalls are official findings by NHTSA, issued per year/make/model, and repaired free at a dealer. NHTSA cannot tell whether THIS car was already repaired — only the owner's own answer does. If a recall's status is unknown, say it may already have been done and that a dealer can confirm from the VIN.
 - Owner complaints are unverified first-hand reports. Cite them as "N owners of this model reported…", never as proof this car is affected. Where a reported mileage range is given and the odometer is known, comparing the two is genuinely useful — say plainly that it is a pattern across owners, not a prediction.
 - Upkeep status is arithmetic on intervals the OWNER set and services they logged. Service history is only what they entered; work done elsewhere is missing.
-- If a recall carries NHTSA's stop-driving or park-outside advisory and the owner has not said it was repaired, lead with it whatever they asked about. That outranks the question.
+- If a recall carries NHTSA's stop-driving or park-outside advisory and the owner has not said it was repaired, lead with it whatever they said — including a greeting or an unrelated remark. This is the one thing that outranks answering what was asked, because the car should not be moving. No other fact in the block gets this treatment.
 
 STYLE
 - Be brief. This renders in a chat bubble: two or three sentences is usually right, and never more than a short paragraph. Answer the question asked and stop.
 - Plain language. The reader is not a mechanic.
 - Say what you do not know in a sentence, and say what would settle it (a dealer VIN check, an inspection, the campaign number).
 - Do not open with pleasantries or restate the question.
-- Raise an unrepaired recall unprompted at most ONCE per conversation. If it already appears earlier in this conversation, the owner has been told — do not append it again. Tacking the same recall onto every answer teaches them to ignore it, which is the opposite of what it is for. The stop-driving or park-outside exception above still overrides this: repeat that one every time until they say it was repaired.
+- Not every message is a question. If the owner greets you, thanks you, acknowledges an answer, or says anything that is not asking for help, reply in one short line and stop — greet them back, or invite the question. Do NOT summarise their car, list its recalls, mention what other owners report, or raise their upkeep. They have not asked. Answering "hi" with a briefing buries the facts that matter under facts they did not want, and teaches them to skim past you. Wait for the real question. Only the stop-driving or park-outside advisory above overrides this.
+- Raise an unrepaired recall unprompted at most ONCE per conversation, and only on a turn where you are genuinely answering a question about the car — never in reply to a greeting or an acknowledgement. If it already appears earlier in this conversation, the owner has been told — do not append it again. Tacking the same recall onto every answer teaches them to ignore it, which is the opposite of what it is for. The stop-driving or park-outside exception above still overrides this: repeat that one every time until they say it was repaired.
 
 THE REPLY FIELDS
 - text: your answer.
-- urgency: set this ONLY when the facts you were given support it. A stop-driving recall is high. A repeatedly-reported safety component, or an overdue upkeep job, is medium. Something to mention at the next service is low. Set it to null when nothing in the facts justifies one — an invented urgency level is worse than none.
-- cta: set to {"action": "start_assessment"} when the owner is asking what a repair should cost or whether a quote is fair, and the Repair Cost Checker would help. Otherwise null. Note its price benchmarks are currently placeholder figures, so do not quote a specific fair price yourself.`;
+- urgency: set this ONLY when the facts you were given support it AND this turn is actually about the car. A greeting, a thank-you or an acknowledgement gets null however overdue their upkeep is — an urgency banner on "hi" is noise, and noise is what stops the real one being read. Otherwise: an unrepaired stop-driving recall is high. A repeatedly-reported safety component, or an overdue upkeep job, is medium. Something to mention at the next service is low. Set it to null when nothing in the facts justifies one — an invented urgency level is worse than none.
+- cta: set to {"action": "start_assessment"} when the owner is asking what a repair should cost or whether a quote is fair, and the Repair Cost Checker would help. Otherwise null, and never on a greeting. Do not quote a fair price yourself: you were given no pricing at all, and the rule against inventing part prices and labour times applies here.`;
 
 /**
  * The reply shape, enforced by the API rather than parsed out of prose. `urgency` and
@@ -125,13 +162,24 @@ function anthropic(): Anthropic {
   return client;
 }
 
-/** Answers one question, or throws. The caller decides what a failure means -- see routes/chat.ts. */
-export async function askCarAdvocate(input: AskInput): Promise<AskReply> {
+/**
+ * Answers one question, or throws. The caller decides what a failure means -- see routes/chat.ts.
+ *
+ * Streams, but the stream is not the answer. `onTextDelta` exists so the owner sees words
+ * appearing instead of a spinner; what the app renders is always the object returned here,
+ * which has been through the schema and then through parseReply. A partial preview from a turn
+ * that ends in a refusal, a `max_tokens` stop or a dropped connection is therefore never the
+ * final word -- the caller replaces it. Keeping validation on the return value and not on the
+ * deltas is what lets this be fast without loosening anything.
+ */
+export async function askCarAdvocate(input: AskInput): Promise<{ reply: AskReply; timing: AskTiming }> {
   if (!env.ANTHROPIC_API_KEY) throw new Error('Ask CA is not configured (no ANTHROPIC_API_KEY)');
 
-  const response = await anthropic().beta.messages.create({
+  const startedAt = Date.now();
+  const stream = anthropic().messages.stream({
     model: 'claude-sonnet-5',
     max_tokens: MAX_TOKENS,
+    thinking: THINKING,
     // No server-side `fallbacks`: it is documented only for the models carrying elevated
     // safety classifiers (Opus 5, Fable 5), and an unsupported parameter would 400 every
     // request. A refusal surfaces as one, which the stop_reason check below handles.
@@ -156,23 +204,57 @@ export async function askCarAdvocate(input: AskInput): Promise<AskReply> {
         content: [
           {
             type: 'text' as const,
-            text: `Here are the facts about my car.\n\n${input.vehicleContext}`,
+            text: `Reference material: the facts about my car. This is background, not a question — do not reply to it.\n\n${input.vehicleContext}`,
             cache_control: { type: 'ephemeral' as const },
           },
         ],
       },
-      { role: 'assistant', content: 'Understood. I will answer using only those facts.' },
+      {
+        role: 'assistant',
+        content: 'Understood. I will use only those facts, and I will wait for your question.',
+      },
       ...input.history.map((turn) => ({ role: turn.role, content: turn.text })),
       { role: 'user' as const, content: input.question },
     ],
   });
+
+  // The owner closed the tab: stop paying for an answer nobody will read.
+  const abort = () => stream.abort();
+  input.signal?.addEventListener('abort', abort, { once: true });
+
+  if (input.onTextDelta) {
+    const decode = createAnswerPreview();
+    // Deltas are the reply JSON, not prose: `text` is the schema's first property, so its
+    // value arrives first and decodes into something worth showing.
+    stream.on('text', (delta) => {
+      const plain = decode(delta);
+      if (plain) input.onTextDelta?.(plain);
+    });
+  }
+
+  let response;
+  try {
+    response = await stream.finalMessage();
+  } finally {
+    input.signal?.removeEventListener('abort', abort);
+  }
 
   // Before reading content: a refusal returns HTTP 200 with empty or partial content.
   if (response.stop_reason === 'refusal') {
     throw new Error('That question was declined by a safety filter. Try rephrasing it.');
   }
 
-  return parseReply(response.content);
+  const usage = response.usage;
+  return {
+    reply: parseReply(response.content),
+    timing: {
+      ms: Date.now() - startedAt,
+      inputTokens: usage.input_tokens,
+      outputTokens: usage.output_tokens,
+      cacheReadTokens: usage.cache_read_input_tokens ?? 0,
+      cacheWriteTokens: usage.cache_creation_input_tokens ?? 0,
+    },
+  };
 }
 
 /**

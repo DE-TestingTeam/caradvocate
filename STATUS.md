@@ -211,6 +211,13 @@ three fields:
 **7. The browser renders it** as a chat bubble, plus an urgency banner and a button if
 those were set. The button goes to the Repair Cost Checker.
 
+**The answer appears as it is written.** The reply streams, so words appear a few at a time
+rather than the screen sitting on a typing indicator until the whole answer is ready. What
+you see while it is being written is a *preview* and the app throws it away: the finished
+reply — the one that went through the checks in the next section — replaces it, and only
+that one can carry an urgency banner or the button. Closing the tab mid-answer stops the
+request rather than leaving it running.
+
 ### What stops it making things up
 
 This is the part the product depends on, and it is enforced in four places rather than
@@ -227,13 +234,22 @@ just asked for:
    values the app knows how to display.
 4. **The button's wording is set by our code, not the AI**, so it always matches what the
    app renders.
+5. **Streaming does not skip any of that.** The words that appear while the answer is being
+   written are unchecked model output, and the app treats them as such — it renders them and
+   then discards them when the checked reply arrives. The checks sit on the finished reply,
+   not on the stream, so the fast path cannot become the unchecked path.
 
-Two more behaviour rules worth knowing:
+Three more behaviour rules worth knowing:
 
 - If a recall carries NHTSA's *stop driving* or *park outside* warning and you have not
-  said it was repaired, the AI leads with it regardless of what you asked.
-- Otherwise it raises an unrepaired recall **once per conversation**. Repeating it every
-  time teaches people to ignore it.
+  said it was repaired, the AI leads with it regardless of what you asked — including if
+  all you said was "hi". This is the one thing allowed to interrupt, because the car should
+  not be moving.
+- Otherwise it raises an unrepaired recall **once per conversation**, and only when actually
+  answering a question about the car. Repeating it every time teaches people to ignore it.
+- **A greeting gets a greeting.** "Hi" or "thanks" is answered in one line, with no summary
+  of the car, no recall list and no urgency banner. Volunteering everything the app knows in
+  response to hello buried the facts that mattered under facts nobody asked for.
 
 ### When things go wrong
 
@@ -250,9 +266,26 @@ Two more behaviour rules worth knowing:
 
 **Confirmed** from the code and its comments: the system prompt and the facts block are
 both cached, so a follow-up question in the same conversation only pays full price for
-the new question. Reasoning effort is set to `medium` rather than the default `high`,
-because the facts are handed over rather than discovered and someone is watching a chat
-bubble.
+the new question. Reasoning effort is set to `low` rather than the default `high`, because
+the facts are handed over rather than discovered, the answer is a short paragraph, and
+someone is watching a chat bubble. The model reasons before every answer whether or not we
+ask it to, so this is the main dial on how long "hi" takes.
+
+Three things were done together to make answers arrive sooner, and it is worth knowing which
+did what:
+
+- **Effort dropped from `medium` to `low`** — cuts the reasoning pass that runs before every
+  answer, including on a greeting.
+- **Streaming** — does not make the answer faster, but stops the owner waiting on a spinner
+  until all of it is ready.
+- **The facts block is now built in one round of database queries** instead of three in
+  sequence. That was pure waiting, on every single message.
+
+**Needs checking:** nobody has measured the result yet. Each answer now logs its duration and
+token usage (`Ask CA: 1234ms in=… out=… cacheRead=… cacheWrite=…`), which is the only
+instrumentation on the path — there is no telemetry and no test suite. Watch `cacheRead`: if
+it stays near zero across a conversation, the cached prefix is being invalidated and every
+follow-up is being charged in full.
 
 ---
 
@@ -367,7 +400,8 @@ The shape of it:
 - `/api/vehicle` — your car, VIN decode, maintenance jobs, recalls and your answers to
   them, photo, known issues
 - `/api/service-records` — log, edit, delete service history
-- `/api/chat` — Ask CA (POST only; nothing is stored, so there is no GET)
+- `/api/chat` — Ask CA (POST only; nothing is stored, so there is no GET). The one endpoint
+  that streams its reply rather than returning it in one piece
 - `/api/assessments` — the Repair Cost Checker (**paywalled**)
 - `/api/repairs` — which repairs we can price for your car
 - `/api/paywall` — the price on screen, and recording an unlock

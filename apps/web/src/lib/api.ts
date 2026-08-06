@@ -169,11 +169,46 @@ export function getRepairCatalog(): Promise<RepairCatalogReport> {
  * Sends a question along with the conversation so far. There is no getChatHistory: nothing
  * is stored. The conversation lives in the Ask CA page's state and goes when the page does.
  */
-export function sendChatMessage(
+export interface ChatTurn {
+  user: ChatMessage;
+  assistant: ChatMessage;
+}
+
+/**
+ * Asks one question and resolves with the finished turn.
+ *
+ * `onPreview` is called with the answer so far while it is still being written. It is
+ * unvalidated model output and exists only so the screen is not blank -- render it, but throw it
+ * away when this resolves. The resolved turn is the one the API validated, and it is the only
+ * thing carrying urgency and the CTA.
+ */
+export async function sendChatMessage(
   text: string,
   history: { role: 'user' | 'assistant'; text: string }[],
-): Promise<{ user: ChatMessage; assistant: ChatMessage }> {
-  return http.post<{ user: ChatMessage; assistant: ChatMessage }>('/chat', { text, history });
+  onPreview?: (answerSoFar: string) => void,
+  signal?: AbortSignal,
+): Promise<ChatTurn> {
+  let turn: ChatTurn | undefined;
+  let preview = '';
+
+  await http.stream(
+    '/chat',
+    { text, history },
+    (event, data) => {
+      if (event === 'delta') {
+        preview += (data as { text: string }).text;
+        onPreview?.(preview);
+      } else if (event === 'message') {
+        turn = data as ChatTurn;
+      }
+    },
+    signal,
+  );
+
+  // The endpoint sends `message` on every path, including refusals and failures. Missing it
+  // means the stream died early -- surfaced as an error rather than left as a stale preview.
+  if (!turn) throw new Error('The answer did not arrive in full. Try again.');
+  return turn;
 }
 
 /* ---------------------------------------------------------------- account */

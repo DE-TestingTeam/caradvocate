@@ -61,7 +61,12 @@ async function main(): Promise<void> {
       model: MODEL,
       system: [{ type: 'text', text: systemPrompt }],
       messages: [
-        { role: 'user', content: `Here are the facts about my car.\n\n${context}` },
+        // Keep in step with the preamble in askClaude.ts, or the measurement drifts from the
+        // prompt it claims to measure.
+        {
+          role: 'user',
+          content: `Reference material: the facts about my car. This is background, not a question — do not reply to it.\n\n${context}`,
+        },
         { role: 'assistant', content: 'Understood. I will answer using only those facts.' },
         { role: 'user', content: 'Is this repair actually necessary?' },
       ],
