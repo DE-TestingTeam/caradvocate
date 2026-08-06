@@ -1,0 +1,45 @@
+/**
+ * Averta, the brand typeface.
+ *
+ * Three cuts, not the eighteen the family ships. Averta comes as Extrathin through Black in
+ * roman and italic; the app references exactly three weights and no italics, and shipping the
+ * rest would be about 2.5MB of font nobody asks for. Adding a weight means converting one more
+ * file -- see the note on WOFF2 below -- not changing anything here structurally.
+ *
+ * WOFF2 rather than the supplied OTF: same outlines, roughly half the bytes (65KB against
+ * 139KB per cut), and universally supported. Converted with fontTools from the originals in
+ * Averta.zip, which is kept out of the build.
+ *
+ * `font-display: swap` on purpose. The alternative, `block`, hides text for up to three seconds
+ * while the font loads, and this app's first screen is someone's car facts -- text they should
+ * be able to read immediately even if it reflows a moment later.
+ *
+ * AVERTA HAS NO 500 WEIGHT. It steps 400 (Regular) straight to 600 (Semibold). Tailwind's
+ * `font-medium` is 500, and CSS resolves an unavailable 500 *downwards* first, so every
+ * `font-medium` in the app would quietly render at body weight. tailwind.config.js remaps the
+ * `medium` utility to 600 so that cannot happen -- read the note there before adding a weight.
+ */
+
+@font-face {
+  font-family: 'Averta';
+  src: url('./averta-400.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Averta';
+  src: url('./averta-600.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Averta';
+  src: url('./averta-700.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
