@@ -16,9 +16,10 @@
  * No ANTHROPIC_API_KEY means Ask CA stays on canned replies and says so at startup.
  */
 import Anthropic from '@anthropic-ai/sdk';
-import type { ChatMessage, Severity } from '@caradvocate/shared';
+import type { ChatMessage, ChatSource, ChatSourceKind, Severity } from '@caradvocate/shared';
 import { env } from '../env.js';
 import { createAnswerPreview } from './answerPreview.js';
+import type { VehicleContext } from './vehicleContext.js';
 
 /** The one CTA the UI knows how to render. Fixed here so the model cannot reword it. */
 const CTA_LABEL = 'CHECK REPAIR COSTS';
@@ -61,7 +62,7 @@ export interface AskInput {
   /** The owner's question. */
   question: string;
   /** Their car, its recalls, complaints, upkeep and history -- see vehicleContext.ts. */
-  vehicleContext: string;
+  vehicleContext: VehicleContext;
   /** Prior turns, oldest first, so follow-ups make sense. */
   history: { role: 'user' | 'assistant'; text: string }[];
   /**
@@ -127,7 +128,8 @@ WHEN THEY ASK ABOUT PRICE
 THE REPLY FIELDS
 - text: your answer.
 - urgency: set this ONLY when the facts you were given support it AND this turn is actually about the car. A greeting, a thank-you or an acknowledgement gets null however overdue their upkeep is — an urgency banner on "hi" is noise, and noise is what stops the real one being read. Otherwise: an unrepaired stop-driving recall is high. A repeatedly-reported safety component, or an overdue upkeep job, is medium. Something to mention at the next service is low. Set it to null when nothing in the facts justifies one — an invented urgency level is worse than none.
-- cta: set to {"action": "start_assessment"} whenever the owner asks what a repair should cost, whether a quote they have is fair, or anything else about what they will pay — including when they do not yet know which repair it is. Otherwise null, and never on a greeting.`;
+- cta: set to {"action": "start_assessment"} whenever the owner asks what a repair should cost, whether a quote they have is fair, or anything else about what they will pay — including when they do not yet know which repair it is. Otherwise null, and never on a greeting.
+- sources: which parts of the facts block this answer actually rested on, so the owner can see where it came from. List a kind only if dropping that section would have changed your answer — not everything you were handed, and not everything you glanced at. An answer about a recall is ["recalls"], possibly with "vehicle"; one that compares their mileage against what owners report is ["vehicle", "owner_reports"]. A greeting, a thank-you, or anything you answered from general knowledge is [] — claiming their service history informed "hi" is a small lie that makes the whole line worthless. You choose kinds only; the app writes what the owner reads.`;
 
 /**
  * The reply shape, enforced by the API rather than parsed out of prose. `urgency` and
@@ -163,8 +165,21 @@ const REPLY_SCHEMA = {
         { type: 'null' },
       ],
     },
+    /**
+     * Kinds only. The model says which parts of the block it leaned on; it never writes the
+     * wording or the counts the owner reads, and anything the block did not contain is dropped
+     * in parseReply. An enum rather than free text so an unknown source cannot be expressed.
+     */
+    sources: {
+      type: 'array',
+      description: 'Which kinds of fact this answer actually drew on. Empty when it drew on none.',
+      items: {
+        type: 'string',
+        enum: ['vehicle', 'recalls', 'owner_reports', 'upkeep', 'service_history'],
+      },
+    },
   },
-  required: ['text', 'urgency', 'cta'],
+  required: ['text', 'urgency', 'cta', 'sources'],
   additionalProperties: false,
 } as const;
 
@@ -218,7 +233,7 @@ export async function askCarAdvocate(input: AskInput): Promise<{ reply: AskReply
         content: [
           {
             type: 'text' as const,
-            text: `Reference material: the facts about my car. This is background, not a question — do not reply to it.\n\n${input.vehicleContext}`,
+            text: `Reference material: the facts about my car. This is background, not a question — do not reply to it.\n\n${input.vehicleContext.text}`,
             cache_control: { type: 'ephemeral' as const },
           },
         ],
@@ -260,7 +275,7 @@ export async function askCarAdvocate(input: AskInput): Promise<{ reply: AskReply
 
   const usage = response.usage;
   return {
-    reply: parseReply(response.content),
+    reply: parseReply(response.content, input.vehicleContext.sources),
     timing: {
       ms: Date.now() - startedAt,
       inputTokens: usage.input_tokens,
@@ -275,7 +290,7 @@ export async function askCarAdvocate(input: AskInput): Promise<{ reply: AskReply
  * Pulls the reply out of the response blocks. Defensive despite the schema: a `max_tokens`
  * stop or a thinking block means the text is not `content[0]`.
  */
-function parseReply(content: { type: string; text?: string }[]): AskReply {
+function parseReply(content: { type: string; text?: string }[], available: ChatSource[]): AskReply {
   const text = content
     .filter((block) => block.type === 'text' && typeof block.text === 'string')
     .map((block) => block.text as string)
@@ -309,7 +324,25 @@ function parseReply(content: { type: string; text?: string }[]): AskReply {
     reply.cta = { label: CTA_LABEL, action: 'start_assessment' };
   }
 
+  const sources = resolveSources(record.sources, available);
+  if (sources.length > 0) reply.sources = sources;
+
   return reply;
+}
+
+/**
+ * Turns the kinds the model named into the lines the owner reads.
+ *
+ * Every kind is looked up in what the facts block actually held, so a kind the block did not
+ * contain is dropped rather than shown -- the model cannot cite data it was never given, even
+ * if it says it did. Order comes from `available`, not from the model, so the row is stable
+ * across turns. Deduplicated because a repeated kind is a duplicate line, not two sources.
+ */
+function resolveSources(claimed: unknown, available: ChatSource[]): ChatSource[] {
+  if (!Array.isArray(claimed)) return [];
+
+  const named = new Set(claimed.filter((kind): kind is ChatSourceKind => typeof kind === 'string'));
+  return available.filter((source) => named.has(source.kind));
 }
 
 function isSeverity(value: unknown): value is Severity {

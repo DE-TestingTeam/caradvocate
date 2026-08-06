@@ -27,6 +27,8 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
         </div>
         <p className="whitespace-pre-wrap text-sm leading-relaxed">{message.text}</p>
 
+        {message.sources && message.sources.length > 0 && <SourceSummary sources={message.sources} />}
+
         {message.urgency && <UrgencyCallout level={message.urgency.level} text={message.urgency.text} />}
 
         {message.cta && (
@@ -36,6 +38,31 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
           </Button>
         )}
       </Card>
+    </div>
+  );
+}
+
+/**
+ * What the answer was grounded in, under the answer itself.
+ *
+ * The product's claim is that Ask CA does not invent things, and until now the owner had to
+ * take that on trust. These labels and their counts are written by the API from the facts it
+ * actually assembled -- the model only picks which of them applied -- so the line cannot cite
+ * something the app did not have.
+ *
+ * NOTE: no wireframe for this. Deliberately quiet: it is reassurance for anyone who looks, not
+ * something to read before the answer, so it sits below the text at the smallest legible size.
+ */
+function SourceSummary({ sources }: { sources: NonNullable<ChatMessage['sources']> }) {
+  return (
+    <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-1 border-t pt-2.5 text-[11px] text-muted-foreground">
+      <span className="font-medium uppercase tracking-wide">Based on</span>
+      {sources.map((source, index) => (
+        <span key={source.kind}>
+          {source.label}
+          {index < sources.length - 1 && <span aria-hidden="true"> ·</span>}
+        </span>
+      ))}
     </div>
   );
 }

@@ -263,12 +263,33 @@ export interface Assessment {
   completedCost?: number;
 }
 
+/**
+ * Which kinds of fact an answer drew on. A closed set, because the whole point is that the
+ * assistant cannot name a source the app did not give it -- see ChatSource.
+ */
+export type ChatSourceKind = 'vehicle' | 'recalls' | 'owner_reports' | 'upkeep' | 'service_history';
+
+/**
+ * One line of the "Based on" summary under an answer.
+ *
+ * The model picks the `kind`s it leaned on; the API writes the `label` from the facts it
+ * actually assembled, and drops any kind that was not in that block. So the label can state a
+ * real count ("125 owner reports for this model") without the model ever having authored a
+ * number -- the same split as the CTA label, for the same reason.
+ */
+export interface ChatSource {
+  kind: ChatSourceKind;
+  label: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   text: string;
   urgency?: { level: Severity; text: string };
   cta?: { label: string; action: 'start_assessment' };
+  /** Omitted when the answer drew on nothing -- a greeting has no sources. */
+  sources?: ChatSource[];
 }
 
 export interface AccountFeature {

@@ -8,7 +8,7 @@
  * what stops it overclaiming.
  */
 import { desc, eq } from 'drizzle-orm';
-import type { MaintenanceItem } from '@caradvocate/shared';
+import type { ChatSource, MaintenanceItem } from '@caradvocate/shared';
 import type { Database } from '../db/index.js';
 import {
   modelOwnerReportQuotes,
@@ -40,7 +40,19 @@ const COMPONENTS_IN_PROMPT = 8;
 /** Recent history only -- an owner's full service record can run to dozens of rows. */
 const HISTORY_LIMIT = 8;
 
-export async function buildVehicleContext(db: Database, vehicle: Vehicle): Promise<string> {
+/**
+ * The facts block, plus what is actually in it.
+ *
+ * `sources` is the authoritative list of what the answer *could* have drawn on, labelled with
+ * real counts. Ask CA picks from it; it cannot add to it. Built here rather than in askClaude
+ * because this is the only place that knows what the block ended up containing.
+ */
+export interface VehicleContext {
+  text: string;
+  sources: ChatSource[];
+}
+
+export async function buildVehicleContext(db: Database, vehicle: Vehicle): Promise<VehicleContext> {
   const model: ModelKey = { year: vehicle.year, make: vehicle.make, model: vehicle.model };
 
   // All six in one round of queries. This runs on every Ask CA message, so a chain of awaits
@@ -75,7 +87,65 @@ VIN on file: ${vehicle.vin ? 'yes' : 'no'}`,
     historySection(history),
   ];
 
-  return sections.join('\n\n');
+  return {
+    text: sections.join('\n\n'),
+    sources: describeSources(vehicle, recalls, reports, jobs, history.length),
+  };
+}
+
+/**
+ * What the block actually ended up holding, in a fixed order so the row under an answer does
+ * not reshuffle between turns.
+ *
+ * A section that could not be loaded is deliberately absent rather than listed as unknown: this
+ * summarises what an answer stood on, and "NHTSA could not be reached" is not something an
+ * answer stood on. The facts block still says so in words, which is where it belongs.
+ */
+function describeSources(
+  vehicle: Vehicle,
+  recalls: Awaited<ReturnType<typeof getModelRecalls>>,
+  reports: Awaited<ReturnType<typeof getOwnerReports>>,
+  jobs: MaintenanceItem[],
+  historyCount: number,
+): ChatSource[] {
+  const sources: ChatSource[] = [
+    { kind: 'vehicle', label: `Your ${vehicle.year} ${vehicle.make} ${vehicle.model}` },
+  ];
+
+  if (recalls.synced && recalls.recalls.length > 0) {
+    sources.push({
+      kind: 'recalls',
+      label: `${plural(recalls.recalls.length, 'NHTSA recall')} for this model`,
+    });
+  }
+
+  if (reports.synced && reports.reports.length > 0) {
+    // Summed over the components the block actually described, not every component on file,
+    // so the number the owner reads matches what the answer could have used.
+    const shown = reports.reports.slice(0, COMPONENTS_IN_PROMPT);
+    const total = shown.reduce((sum, row) => sum + row.reportCount, 0);
+    sources.push({
+      kind: 'owner_reports',
+      label: `${total.toLocaleString('en-US')} owner reports for this model`,
+    });
+  }
+
+  if (jobs.length > 0) {
+    sources.push({ kind: 'upkeep', label: `Your upkeep schedule (${jobs.length} jobs)` });
+  }
+
+  if (historyCount > 0) {
+    sources.push({
+      kind: 'service_history',
+      label: `Your last ${plural(historyCount, 'logged service')}`,
+    });
+  }
+
+  return sources;
+}
+
+function plural(count: number, noun: string): string {
+  return `${count.toLocaleString('en-US')} ${noun}${count === 1 ? '' : 's'}`;
 }
 
 function recallSection(

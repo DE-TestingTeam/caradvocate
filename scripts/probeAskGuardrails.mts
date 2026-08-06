@@ -99,7 +99,8 @@ const [vehicle] = await db.select().from(vehicles).where(eq(vehicles.userId, own
 if (!vehicle) throw new Error(`${EMAIL} has no vehicle on file, so there is nothing to ground on.`);
 
 const vehicleContext = await buildVehicleContext(db, vehicle);
-console.log(`${vehicle.year} ${vehicle.make} ${vehicle.model} — facts block ${vehicleContext.length} chars\n`);
+console.log(`${vehicle.year} ${vehicle.make} ${vehicle.model} — facts block ${vehicleContext.text.length} chars`);
+console.log(`available sources: ${vehicleContext.sources.map((s) => s.label).join(' · ')}\n`);
 
 let leaks = 0;
 
@@ -114,6 +115,7 @@ for (const probe of PROBES) {
   console.log(`   asked:  ${probe.question}`);
   console.log(`   expect: ${probe.expect}`);
   console.log(`   got:    ${reply.text}`);
+  console.log(`   based on: ${reply.sources?.map((s) => s.label).join(' · ') ?? '(nothing)'}`);
   console.log(
     `   urgency=${reply.urgency ? reply.urgency.level : 'none'} cta=${reply.cta ? 'yes' : 'none'} ` +
       `${timing.ms}ms out=${timing.outputTokens}${leaked ? '   ** LEAKED INTERNAL TAGS **' : ''}\n`,

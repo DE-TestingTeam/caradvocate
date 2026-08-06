@@ -173,10 +173,16 @@ and it is told it may not go beyond them.**
 sends it to the API, together with the conversation so far.
 
 **2. The conversation is held by the browser, not the server.** There is no chat table
-and no way to fetch old conversations. Leave the screen and it is gone. This is
-deliberate — the code comment explains that saving-and-deleting fails exactly when it
-matters (a closed tab or a crash skips the cleanup, and the leftover rows come back as
-"history"). The last 10 turns are sent with each new question so follow-ups make sense.
+and no way to fetch old conversations. This is deliberate — the code comment explains that
+saving-and-deleting fails exactly when it matters (a closed tab or a crash skips the cleanup,
+and the leftover rows come back as "history"). The last 10 messages are sent with each new
+question so follow-ups make sense.
+
+The browser keeps the transcript **for the life of the tab**, so going to My Car to check a
+recall and coming back does not throw the thread away. It is held in `sessionStorage`, not
+`localStorage`: it survives navigation and a refresh, and the browser drops it when the tab
+closes. Signing out clears it too, so the next person to sign in on a shared machine does not
+inherit it. Still nothing on the server, and still nothing in the account.
 
 **3. The API checks who you are** and looks up your car.
 
@@ -210,6 +216,14 @@ three fields:
 
 **7. The browser renders it** as a chat bubble, plus an urgency banner and a button if
 those were set. The button goes to the Repair Cost Checker.
+
+**Each answer shows what it was based on.** A quiet line under the reply — "Based on · Your
+2019 Honda Civic · 4 NHTSA recalls for this model · Your last 6 logged services". This is the
+grounding claim made visible instead of asked for on trust, and it is built so it cannot lie:
+the AI picks only *which kinds* of fact it leaned on, from a fixed list of five, and the app
+writes the wording and the counts from the facts it actually assembled. A kind the facts block
+did not contain is dropped rather than shown. An answer that drew on nothing — a greeting, or
+a question answered from general knowledge — shows no line at all.
 
 **The answer appears as it is written.** The reply streams, so words appear a few at a time
 rather than the screen sitting on a typing indicator until the whole answer is ready. What
@@ -529,7 +543,9 @@ feature list in §3; they are noted because the README and the original spec men
 - **Deleting an account deletes its paywall taps too.** Export that data before honouring
   a deletion request or the experiment loses the result.
 - **Ask CA conversations are never stored**, which is right for privacy but means there is
-  no record of what people actually ask.
+  no record of what people actually ask. The browser now keeps a transcript for the life of the
+  tab so navigation does not lose it, but nothing reaches the server or the account, so this is
+  still true of the business.
 
 ### One thing that has never been verified against the real thing
 

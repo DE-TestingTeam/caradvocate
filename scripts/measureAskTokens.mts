@@ -91,7 +91,7 @@ async function main(): Promise<void> {
   const deltas: number[] = [];
 
   for (const vehicle of rows) {
-    const context = await buildVehicleContext(db, vehicle);
+    const { text: context } = await buildVehicleContext(db, vehicle);
     const trimmedContext = withoutSafety(context);
     const [full, trimmed] = await Promise.all([count(context), count(trimmedContext)]);
 
