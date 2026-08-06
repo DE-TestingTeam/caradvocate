@@ -65,12 +65,16 @@ npm run db:seed        # reference data + two demo users (TRUNCATES users)
 npm run db:pricing     # refresh reference pricing only — safe on a live database
 npm run ingest:mileage # complaint mileage from NHTSA's bulk file (needs unzip)
 npm run probe:ask      # ask the real model at each Ask CA guardrail and print the answers
+npm run test:chat      # the Ask CA test plan: validation, throttle, wire, storage, decoder
 ```
 
 There is no test suite, so the paywall gate, the per-user data filters and anything
-reading an upstream feed have to be exercised by hand. Ask CA's guardrails are prompt rules
-and cannot be checked by a build at all — `npm run probe:ask` pushes at each one and prints
-what the model said, which is the closest thing to a regression test this feature has. `packages/shared` is consumed as
+reading an upstream feed have to be exercised by hand. Ask CA is the exception: `npm run
+test:chat` asserts its 46 cases and exits non-zero on failure, and `npm run probe:ask` pushes
+at each prompt guardrail and prints what the model said for a person to read. Run `test:chat`
+both ways — plain, and with `ANTHROPIC_API_KEY=` — since the canned-reply path is a separate
+branch of the code. Neither covers anything that needs a rendered page; `test:chat` lists what
+it leaves to a browser at the end of every run. `packages/shared` is consumed as
 build output; `install`, `dev` and `build` compile it first.
 
 ## Things that will bite
@@ -83,7 +87,9 @@ That happened once here, so it now refuses when it finds a real Supabase-linked 
 
 **Migrations and code ship together.** `0013` must be applied before this code, then
 `db:pricing` — until it runs, the app serves old invented figures under a real-looking
-name. `0014` is written but unapplied and is a `DROP TABLE`.
+name. On the shared database `0013`–`0015` are already applied, and that database is *ahead*
+of this branch (17 migrations to this branch's 16, plus four tables not defined here), so check
+before generating a new one — see STATUS §9.
 
 **`PAYWALL_PRICE_CENTS` defaults to a placeholder**, and it is the figure the
 experiment's result is denominated in. Set it before any cohort sees it.

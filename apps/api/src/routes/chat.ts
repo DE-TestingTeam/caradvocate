@@ -49,11 +49,21 @@ const TOO_SLOW = 'That took too long to answer, so it has been stopped. Try aski
  * Answers one question. Nothing is written to the database. Claude answers when
  * ANTHROPIC_API_KEY is set (services/askClaude.ts); without a key, canned replies.
  */
-chatRouter.post('/', askLimit, validateBody(sendChatMessageSchema), async (req, res) => {
+// Validation first, then the throttle. The throttle exists to bound what the model costs, and a
+// malformed request never reaches the model -- charging it against the owner's allowance would
+// let a buggy client lock them out of a feature it never actually spent anything on.
+chatRouter.post('/', validateBody(sendChatMessageSchema), askLimit, async (req, res) => {
   const { text, history } = req.body;
 
   // Oldest messages drop first: a follow-up refers to what was just said.
   const recent = history.slice(-HISTORY_MESSAGES);
+
+  // Above the stream, and above the canned branch, on purpose. A missing vehicle is a setup
+  // problem and deserves the error envelope rather than being dressed up as an assistant
+  // failure -- and that has to hold whether or not a key is configured. It used to be checked
+  // only on the configured path, so a developer running without a key and without a car got
+  // confident canned answers about a vehicle that did not exist.
+  const vehicle = await requireOwnVehicle(req);
 
   if (!askIsConfigured()) {
     // Which canned reply comes next is read off the conversation in hand, not a stored count.
@@ -62,10 +72,6 @@ chatRouter.post('/', askLimit, validateBody(sendChatMessageSchema), async (req, 
     sendMessage(res, text, reply);
     return res.end();
   }
-
-  // Above the stream on purpose: a missing vehicle is a setup problem, and it deserves the
-  // error envelope rather than being dressed up as an assistant failure.
-  const vehicle = await requireOwnVehicle(req);
 
   const aborted = new AbortController();
   // 'close' also fires on a normal finish, so only abort while an answer is still in flight.

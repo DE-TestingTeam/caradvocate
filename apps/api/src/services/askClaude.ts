@@ -16,10 +16,10 @@
  * No ANTHROPIC_API_KEY means Ask CA stays on canned replies and says so at startup.
  */
 import Anthropic from '@anthropic-ai/sdk';
-import type { ChatMessage, ChatSource, ChatSourceKind, Severity } from '@caradvocate/shared';
+import type { ChatCtaPrefill, ChatMessage, ChatSource, ChatSourceKind, Severity } from '@caradvocate/shared';
 import { env } from '../env.js';
 import { createAnswerPreview } from './answerPreview.js';
-import type { VehicleContext } from './vehicleContext.js';
+import type { CatalogueEntry, VehicleContext } from './vehicleContext.js';
 
 /** The one CTA the UI knows how to render. Fixed here so the model cannot reword it. */
 const CTA_LABEL = 'CHECK REPAIR COSTS';
@@ -145,7 +145,9 @@ WHEN THEY ASK ABOUT PRICE
 THE REPLY FIELDS
 - text: your answer.
 - urgency: set this ONLY when the facts you were given support it AND this turn is actually about the car. A greeting, a thank-you or an acknowledgement gets null however overdue their upkeep is — an urgency banner on "hi" is noise, and noise is what stops the real one being read. Otherwise: an unrepaired stop-driving recall is high. A repeatedly-reported safety component, or an overdue upkeep job, is medium. Something to mention at the next service is low. Set it to null when nothing in the facts justifies one — an invented urgency level is worse than none.
-- cta: set to {"action": "start_assessment"} whenever the owner asks what a repair should cost, whether a quote they have is fair, or anything else about what they will pay — including when they do not yet know which repair it is. Otherwise null, and never on a greeting.
+- cta: set to {"action": "start_assessment"} whenever the owner asks what a repair should cost, whether a quote they have is fair, or anything else about what they will pay — including when they do not yet know which repair it is. Otherwise null, and never on a greeting. One exception: when they name a job that is plainly NOT in REPAIRS THE COST CHECKER COVERS, leave it null and say the checker does not cover that one. Sending them to a form that cannot help is worse than telling them so.
+- cta.repair: when the question is clearly about one of the jobs in REPAIRS THE COST CHECKER COVERS, copy that entry's name EXACTLY as written there, so the checker opens with it already chosen. Character for character — a name you have adjusted or invented will not be recognised and the owner lands on an empty form. Null when the question is not about a specific job on that list, or when you are unsure which of two it is: guessing wrong is worse than leaving it, because a wrong preselection is something they have to notice before they can undo it.
+- cta.quotedAmount: the whole dollars the owner said they were quoted, if they said a figure — "they want $640" is 640. Null otherwise. This is only ever THEIR number repeated back into a box they can edit. Never put your own estimate here: you have no pricing, and a number you produced appearing in the form as though they had given it is the worst version of inventing one.
 - sources: which parts of the facts block this answer actually rested on, so the owner can see where it came from. List a kind if you used anything from that section — a count you quoted, a date, a status, a campaign number, or a fact you leaned on without naming. If removing that section would have changed a single sentence, list it. Do not list a section you merely had available and did not use. An answer about a recall is ["recalls"], possibly with "vehicle"; one that compares their mileage against what owners report is ["vehicle", "owner_reports"]. A greeting, a thank-you, or anything you answered from general knowledge is [] — claiming their service history informed "hi" is a small lie that makes the whole line worthless. You choose kinds only; the app writes what the owner reads.`;
 
 /**
@@ -175,8 +177,18 @@ const REPLY_SCHEMA = {
       anyOf: [
         {
           type: 'object',
-          properties: { action: { type: 'string', enum: ['start_assessment'] } },
-          required: ['action'],
+          properties: {
+            action: { type: 'string', enum: ['start_assessment'] },
+            repair: {
+              anyOf: [{ type: 'string' }, { type: 'null' }],
+              description: 'Exact repair name copied from the catalogue, when the question is clearly about one of them.',
+            },
+            quotedAmount: {
+              anyOf: [{ type: 'number' }, { type: 'null' }],
+              description: 'Whole dollars the owner said they were quoted, if they said one.',
+            },
+          },
+          required: ['action', 'repair', 'quotedAmount'],
           additionalProperties: false,
         },
         { type: 'null' },
@@ -303,7 +315,7 @@ export async function askCarAdvocate(input: AskInput): Promise<{ reply: AskReply
 
   const usage = response.usage;
   return {
-    reply: parseReply(response.content, input.vehicleContext.sources),
+    reply: parseReply(response.content, input.vehicleContext.sources, input.vehicleContext.repairs),
     timing: {
       ms: Date.now() - startedAt,
       inputTokens: usage.input_tokens,
@@ -318,7 +330,11 @@ export async function askCarAdvocate(input: AskInput): Promise<{ reply: AskReply
  * Pulls the reply out of the response blocks. Defensive despite the schema: a `max_tokens`
  * stop or a thinking block means the text is not `content[0]`.
  */
-function parseReply(content: { type: string; text?: string }[], available: ChatSource[]): AskReply {
+function parseReply(
+  content: { type: string; text?: string }[],
+  available: ChatSource[],
+  catalogue: CatalogueEntry[],
+): AskReply {
   const text = content
     .filter((block) => block.type === 'text' && typeof block.text === 'string')
     .map((block) => block.text as string)
@@ -354,10 +370,12 @@ function parseReply(content: { type: string; text?: string }[], available: ChatS
     reply.urgency = { level: urgency.level, text: urgency.text.trim() };
   }
 
-  const cta = record.cta as { action?: unknown } | null | undefined;
+  const cta = record.cta as { action?: unknown; repair?: unknown; quotedAmount?: unknown } | null | undefined;
   if (cta && cta.action === 'start_assessment') {
     // Label supplied here, not by the model, so it matches what the UI renders.
     reply.cta = { label: CTA_LABEL, action: 'start_assessment' };
+    const prefill = resolvePrefill(cta.repair, cta.quotedAmount, catalogue);
+    if (prefill) reply.cta.prefill = prefill;
   }
 
   const sources = resolveSources(record.sources, available);
@@ -379,6 +397,40 @@ function resolveSources(claimed: unknown, available: ChatSource[]): ChatSource[]
 
   const named = new Set(claimed.filter((kind): kind is ChatSourceKind => typeof kind === 'string'));
   return available.filter((source) => named.has(source.kind));
+}
+
+/**
+ * Turns a named repair into something the Repair Cost Checker can actually open with.
+ *
+ * The model names a repair; this finds it in the owner's own catalogue and supplies the id and
+ * the catalogue's own wording. A name that does not match is dropped rather than guessed at --
+ * fuzzy matching would eventually preselect the wrong job, and a wrong preselection is worse
+ * than none, because the owner has to notice it before they can undo it.
+ *
+ * The quote is bounded rather than trusted. It is meant to be the owner's own figure repeated
+ * back, so anything that is not a plausible whole-dollar amount is dropped; the upper bound is
+ * a sanity check, not a business rule, because a misread landing in the form would look exactly
+ * like the app inventing a price. It is editable either way.
+ */
+function resolvePrefill(
+  named: unknown,
+  quoted: unknown,
+  catalogue: CatalogueEntry[],
+): ChatCtaPrefill | undefined {
+  if (typeof named !== 'string' || !named.trim()) return undefined;
+
+  const wanted = named.trim().toLowerCase();
+  const match = catalogue.find((entry) => entry.name.toLowerCase() === wanted);
+  if (!match) return undefined;
+
+  const prefill: ChatCtaPrefill = { repairId: match.id, repairName: match.name };
+
+  if (typeof quoted === 'number' && Number.isFinite(quoted)) {
+    const dollars = Math.round(quoted);
+    if (dollars > 0 && dollars <= 100_000) prefill.quoteAmount = dollars;
+  }
+
+  return prefill;
 }
 
 function isSeverity(value: unknown): value is Severity {

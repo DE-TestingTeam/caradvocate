@@ -7,12 +7,13 @@
  * recall from an unverified complaint; stripping it to save tokens would remove exactly
  * what stops it overclaiming.
  */
-import { desc, eq } from 'drizzle-orm';
+import { asc, desc, eq } from 'drizzle-orm';
 import type { ChatSource, MaintenanceItem } from '@caradvocate/shared';
 import type { Database } from '../db/index.js';
 import {
   modelOwnerReportQuotes,
   modelOwnerReports,
+  repairs,
   serviceRecords,
   vehicleRecallStatus,
   vehicles,
@@ -21,6 +22,7 @@ import { getOwnerReports } from './complaintSync.js';
 import { loadMaintenanceItems } from './maintenanceDue.js';
 import { modelMatches, type ModelKey } from './modelFeed.js';
 import { getModelRecalls } from './recallSync.js';
+import { pricedRepairIds } from './repairPricingSync.js';
 
 type Vehicle = typeof vehicles.$inferSelect;
 
@@ -50,6 +52,19 @@ const HISTORY_LIMIT = 8;
 export interface VehicleContext {
   text: string;
   sources: ChatSource[];
+  /**
+   * The repair catalogue as this owner would see it. Carried so a CTA can be resolved: the
+   * assistant names a repair, and parseReply matches that name against this list to get an id.
+   * It never receives an id and so cannot invent one.
+   */
+  repairs: CatalogueEntry[];
+}
+
+export interface CatalogueEntry {
+  id: string;
+  name: string;
+  /** Whether we hold pricing for this repair on THIS car. Never substituted from another. */
+  priced: boolean;
 }
 
 export async function buildVehicleContext(db: Database, vehicle: Vehicle): Promise<VehicleContext> {
@@ -59,7 +74,7 @@ export async function buildVehicleContext(db: Database, vehicle: Vehicle): Promi
   // here is latency the owner waits through before the model has even been called. Quotes are
   // fetched unconditionally rather than after checking whether there are any complaints: the
   // query is cheap, and gating it on an earlier result is what made it sequential.
-  const [recalls, reports, jobs, history, ownerStatus, quotes] = await Promise.all([
+  const [recalls, reports, jobs, history, ownerStatus, quotes, catalogue, priced] = await Promise.all([
     getModelRecalls(db, model),
     getOwnerReports(db, model),
     loadMaintenanceItems(db, vehicle),
@@ -71,6 +86,11 @@ export async function buildVehicleContext(db: Database, vehicle: Vehicle): Promi
       .limit(HISTORY_LIMIT),
     db.select().from(vehicleRecallStatus).where(eq(vehicleRecallStatus.vehicleId, vehicle.id)),
     loadQuotes(db, model),
+    db.select().from(repairs).orderBy(asc(repairs.position)),
+    // Read, not synced. GET /api/repairs calls ensureRepairPricing and may reach the vendor;
+    // doing that here would put a third-party request on the path of every chat message. An
+    // owner who has not opened the checker yet simply sees nothing marked as priced.
+    pricedRepairIds(db, model),
   ]);
 
   const repairedBy = new Map(ownerStatus.map((row) => [row.campaignNumber, row.repaired]));
@@ -85,12 +105,33 @@ VIN on file: ${vehicle.vin ? 'yes' : 'no'}`,
     knownIssuesSection(reports, quotes),
     maintenanceSection(jobs),
     historySection(history),
+    repairSection(catalogue, priced),
   ];
 
   return {
     text: sections.join('\n\n'),
     sources: describeSources(vehicle, recalls, reports, jobs, history.length),
+    repairs: catalogue.map((row) => ({ id: row.id, name: row.name, priced: priced.has(row.id) })),
   };
+}
+
+/**
+ * The repairs the Repair Cost Checker offers, so a cost question can be handed over with the
+ * right one already chosen rather than dropping the owner on an empty form.
+ *
+ * Names only, no figures: the checker holds the pricing and this block deliberately does not,
+ * which is what keeps "I cannot quote you a number" true. The priced flag is here so the
+ * assistant can be honest about coverage without promising an outcome.
+ */
+function repairSection(catalogue: (typeof repairs.$inferSelect)[], priced: Set<string>): string {
+  if (catalogue.length === 0) return 'REPAIRS THE COST CHECKER COVERS\nNone configured.';
+
+  const lines = catalogue.map(
+    (row) => `- ${row.name}${priced.has(row.id) ? '' : ' (no pricing held for this car yet)'}`,
+  );
+
+  return `REPAIRS THE COST CHECKER COVERS -- the jobs the owner can run a quote against. No prices here; the checker holds those and you do not.
+${lines.join('\n')}`;
 }
 
 /**

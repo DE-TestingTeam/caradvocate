@@ -7,6 +7,9 @@ import type { ChatMessage } from '@caradvocate/shared';
 
 export function MessageBubble({ message }: { message: ChatMessage }) {
   const navigate = useNavigate();
+  // Bound once so the click handler below narrows -- reading message.cta inside the callback
+  // widens it back to possibly-undefined.
+  const cta = message.cta;
 
   if (message.role === 'user') {
     return (
@@ -31,15 +34,43 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
 
         {message.urgency && <UrgencyCallout level={message.urgency.level} text={message.urgency.text} />}
 
-        {message.cta && (
-          <Button variant="outline" className="w-full" onClick={() => navigate('/assessments/new')}>
-            {message.cta.label}
-            <ArrowRight className="h-4 w-4" />
-          </Button>
+        {cta && (
+          <div className="space-y-1.5">
+            <Button variant="outline" className="w-full" onClick={() => navigate(assessmentHref(cta))}>
+              {cta.label}
+              <ArrowRight className="h-4 w-4" />
+            </Button>
+            {cta.prefill && (
+              // Says what the button is about to do, so a preselection is never a surprise the
+              // owner has to spot on the next screen.
+              <p className="text-center text-[11px] text-muted-foreground">
+                {`Opens with ${cta.prefill.repairName}`}
+                {cta.prefill.quoteAmount !== undefined
+                  ? ` and your $${cta.prefill.quoteAmount.toLocaleString('en-US')} quote`
+                  : ''}
+                {' — you can change it'}
+              </p>
+            )}
+          </div>
         )}
       </Card>
     </div>
   );
+}
+
+/**
+ * Where the CTA points, carrying whatever the assistant could work out about the question.
+ *
+ * Query parameters rather than router state, so the destination behaves the same whether it was
+ * reached by tapping the button, reloading, or sharing the link. The form treats them as initial
+ * values only -- see NewAssessmentPage.
+ */
+function assessmentHref(cta: NonNullable<ChatMessage['cta']>): string {
+  if (!cta.prefill) return '/assessments/new';
+
+  const params = new URLSearchParams({ repair: cta.prefill.repairId });
+  if (cta.prefill.quoteAmount !== undefined) params.set('quote', String(cta.prefill.quoteAmount));
+  return `/assessments/new?${params.toString()}`;
 }
 
 /**

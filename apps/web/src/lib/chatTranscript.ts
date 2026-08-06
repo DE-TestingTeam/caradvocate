@@ -65,10 +65,22 @@ export function saveTranscript(vehicleId: string, messages: ChatMessage[]): void
   }
 }
 
-/** Drops every stored conversation. For sign-out, where none of it should follow the next user. */
+/**
+ * Drops every stored conversation. For sign-out, where none of it should follow the next user.
+ *
+ * Walks `length`/`key(i)` rather than `Object.keys(sessionStorage)`. The latter happens to work
+ * in browsers but is not the Storage API, and this is the one function whose failure is a
+ * privacy problem rather than an inconvenience -- it should not rest on an incidental
+ * behaviour. Keys are collected before anything is removed, because removing during the walk
+ * shifts every later index.
+ */
 export function clearAllTranscripts(): void {
   try {
-    const keys = Object.keys(sessionStorage).filter((key) => key.startsWith(PREFIX));
+    const keys: string[] = [];
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const key = sessionStorage.key(i);
+      if (key?.startsWith(PREFIX)) keys.push(key);
+    }
     for (const key of keys) sessionStorage.removeItem(key);
   } catch {
     // Nothing to do -- if storage is unavailable there is nothing stored to clear.

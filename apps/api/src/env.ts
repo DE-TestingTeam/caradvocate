@@ -85,6 +85,23 @@ const envSchema = z.object({
   PAYWALL_INTERVAL: z.enum(['month', 'year']).default('month'),
 });
 
-export const env = envSchema.parse(process.env);
+/**
+ * An empty variable means unset.
+ *
+ * `FOO=` in a `.env`, or `FOO= npm start`, is how people turn a feature off, and it is what a
+ * templated `.env` leaves behind for a key nobody filled in. Without this it reaches a
+ * `.min(1).optional()` and fails validation, so the API refuses to boot with "String must
+ * contain at least 1 character" -- for a variable the README describes as optional, whose
+ * documented behaviour when absent is to fall back gracefully. Dropping the key instead makes
+ * the documented behaviour the actual behaviour.
+ *
+ * Required variables are unaffected: dropping an empty DATABASE_URL still fails, and still says
+ * it is missing, which is the right error.
+ */
+function withoutBlanks(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return Object.fromEntries(Object.entries(source).filter(([, value]) => value !== ''));
+}
+
+export const env = envSchema.parse(withoutBlanks(process.env));
 
 export type Env = z.infer<typeof envSchema>;
