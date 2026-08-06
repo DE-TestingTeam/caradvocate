@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { useLocation } from 'react-router-dom';
 import { ErrorState } from '@/components/ErrorState';
 import { EditProfileDialog } from '@/components/account/EditProfileDialog';
 import { EditVehicleDialog } from '@/components/account/EditVehicleDialog';
@@ -54,6 +55,20 @@ function UnlockButton() {
 export function AccountPage() {
   const { data: account, error: accountError } = useApi(getAccount);
   const { data: vehicle, error: vehicleError } = useApi(getVehicle);
+  const { hash } = useLocation();
+
+  /**
+   * Honours `#vehicle`, which My Car's "Edit car details" links to.
+   *
+   * React Router does not scroll to a hash by itself, and even if it did, the card is a
+   * skeleton on first paint -- scrolling before the real content lands would aim at a position
+   * that is about to move. Waiting on `vehicle` means this runs once the card is its final size.
+   */
+  React.useEffect(() => {
+    if (!hash || !vehicle) return;
+    const target = document.getElementById(hash.slice(1));
+    target?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+  }, [hash, vehicle]);
 
   return (
     <div>
@@ -88,8 +103,8 @@ export function AccountPage() {
           </CardContent>
         </Card>
 
-        {/* Vehicle */}
-        <Card>
+        {/* Vehicle. `scroll-mt-6` keeps it clear of the top edge when linked to by hash. */}
+        <Card id="vehicle" className="scroll-mt-6">
           <CardContent className="space-y-4 p-4 sm:p-6">
             {vehicleError ? (
               <ErrorState message={vehicleError.message} />

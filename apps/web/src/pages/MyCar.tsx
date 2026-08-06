@@ -1,4 +1,6 @@
 import * as React from 'react';
+import { Pencil } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { ErrorState } from '@/components/ErrorState';
 import { CollapsibleSection } from '@/components/my-car/CollapsibleSection';
 import { KnownIssuesList } from '@/components/my-car/KnownIssuesList';
@@ -9,6 +11,7 @@ import { RecallsList } from '@/components/my-car/RecallsList';
 import { ServiceHistory } from '@/components/my-car/ServiceHistory';
 import { ValueCard } from '@/components/my-car/ValueCard';
 import { VehicleImage } from '@/components/my-car/VehicleImage';
+import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useVehicle } from '@/components/layout/RequireVehicle';
@@ -64,6 +67,19 @@ export function MyCarPage() {
             {/* No VIN is a normal state for a car added without one. */}
             {vehicle.vin && ` · VIN: ${maskVin(vehicle.vin)}`}
           </p>
+
+          {/*
+            Editing lives on Account, so this links there rather than opening a second copy of
+            the dialog -- two places to change a mileage is two places for them to disagree.
+            The hash lands on the vehicle card instead of the top of the page, since arriving at
+            a profile form after tapping "Edit" under a car reads as the wrong page.
+          */}
+          <Button asChild variant="outline" size="sm" className="mt-3">
+            <Link to="/account#vehicle">
+              <Pencil className="h-4 w-4" />
+              Edit car details
+            </Link>
+          </Button>
         </div>
       </section>
 
