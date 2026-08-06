@@ -483,13 +483,22 @@ startup.
 both pass. Nothing verifies behaviour, so the paywall gate, the per-user data filters and
 anything that reads an outside feed have to be checked by hand after a change.
 
-The one exception is Ask CA's guardrails, which are prompt rules and so cannot be checked by
-types or by a build at all. `npm run probe:ask` asks the real model eight questions designed to
-push at each guardrail — invent a price, state Honda's schedule, confirm a complaint as a fault,
-give a flat "safe to drive" — and prints what came back. It reports rather than asserts, because
-whether an answer respected a guardrail is a judgement a reader makes in a second and a regex
-gets wrong. Run it after any change to the prompt, the model, or the effort and thinking
-settings. It costs eight model calls and writes nothing.
+Ask CA is the exception, and has two checks of its own. Both are read-only and both cost model
+calls.
+
+`npm run test:chat` is the test plan, executable: 46 assertions across validation, access
+control, throttling, the event-stream wire format, reply integrity, the facts block, transcript
+storage and the streaming decoder. It exits non-zero on failure. Run it twice — plain, and with
+`ANTHROPIC_API_KEY=` — because the canned-reply path is a separate branch and has caught real
+bugs the configured path did not. Every case it covers, and every case it deliberately leaves to
+a browser, is listed in its header and printed at the end of each run.
+
+`npm run probe:ask` covers what assertions cannot: the prompt guardrails. It asks the real model
+ten questions built to push at each rule — invent a price, state Honda's schedule, confirm a
+complaint as a fault, give a flat "safe to drive" — and prints the answers. It reports rather
+than asserts, because whether a reply respected a guardrail is a judgement a reader makes in a
+second and a regex gets wrong. Run it after any change to the prompt, the model, or the effort
+and thinking settings.
 
 **A large amount of work is uncommitted.** Roughly 130 changed files, with nothing
 committed since "Implement paywall for Repair Cost Checker". Worth committing in pieces
