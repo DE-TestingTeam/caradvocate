@@ -25,7 +25,7 @@ export function VehicleImage({ vehicle }: { vehicle: Vehicle }) {
   // this page calls `invalidateAll` -- answering a recall question must not blank the car.
   if (photo.loading && !photo.data) {
     return (
-      <Frame>
+      <Frame className="bg-muted/40">
         <Skeleton className="h-full w-full" />
       </Frame>
     );
@@ -91,26 +91,26 @@ function PhotoDisclaimer() {
 }
 
 /**
- * 3:2, because that is what CarImages delivers -- every vehicle sampled comes back at
- * 1125x750 whatever `width` is requested, so the photo fills the frame edge to edge.
- * `object-contain` is belt and braces: a future asset with a different ratio letterboxes
- * rather than crops.
+ * 3:2, because that is the ratio CarImages delivers. `object-contain` is belt and braces: a
+ * future asset with a different ratio letterboxes rather than crops.
  *
- * Every state uses this frame, so the ratio also holds the layout steady while the photo
- * loads and the sections below do not jump.
+ * No background of its own. The photo has a transparent background and is meant to sit on the
+ * page, so the fill belongs to the states that actually need one -- the skeleton and the
+ * placeholder -- rather than to every state including the one it spoils.
+ *
+ * Every state uses this frame, so the ratio holds the layout steady while the photo loads and
+ * the sections below do not jump.
  */
 function Frame({ className, children }: { className?: string; children: React.ReactNode }) {
   return (
-    <div className={cn('aspect-[3/2] w-full overflow-hidden rounded-lg bg-muted/40', className)}>
-      {children}
-    </div>
+    <div className={cn('aspect-[3/2] w-full overflow-hidden rounded-lg', className)}>{children}</div>
   );
 }
 
 /** What My Car shows when CarImages has nothing, or is not configured at all. */
 function Unavailable() {
   return (
-    <Frame className="flex flex-col items-center justify-center gap-3 border-2 border-dashed">
+    <Frame className="flex flex-col items-center justify-center gap-3 border-2 border-dashed bg-muted/40">
       <ImageOff className="h-8 w-8 text-muted-foreground" strokeWidth={1.5} />
       <span className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
         No photo for this model
