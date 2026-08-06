@@ -6,9 +6,11 @@
  *
  * THIS IS NOT A PHOTO OF THEIR CAR. CarImages serves one photo per *generation* -- not the
  * owner's trim or colour, and for a model it has nothing for, a generic stand-in it gives us
- * no way to identify. The caption says so on screen rather than leaving it implied.
+ * no way to identify. The app says so rather than leaving it implied -- now behind an "i" on
+ * the photo instead of a line of caption under it, so the header is not carrying a sentence of
+ * small print. See PhotoDisclaimer for why that is hover *and* tap rather than hover alone.
  */
-import { ImageOff } from 'lucide-react';
+import { ImageOff, Info } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { getVehicleImage } from '@/lib/api';
 import { vehicleName } from '@/lib/format';
@@ -33,7 +35,7 @@ export function VehicleImage({ vehicle }: { vehicle: Vehicle }) {
   if (!url) return <Unavailable />;
 
   return (
-    <figure className="space-y-1.5">
+    <figure className="relative">
       <Frame>
         <img
           src={url}
@@ -44,10 +46,47 @@ export function VehicleImage({ vehicle }: { vehicle: Vehicle }) {
           decoding="async"
         />
       </Frame>
-      <figcaption className="text-xs text-muted-foreground">
-        A representative photo of this year and trim line — not a photo of your car.
-      </figcaption>
+      {/* Outside Frame, which clips its own overflow -- the panel would be cut off inside it. */}
+      <PhotoDisclaimer />
     </figure>
+  );
+}
+
+/**
+ * The "not your car" caveat, behind an "i" on the corner of the photo.
+ *
+ * Hover is not enough on its own. This is the one thing on the page correcting an assumption
+ * the photo actively invites, and a touch screen has no hover -- so a hover-only tooltip would
+ * hide it from every phone, which is most of them. It opens on hover, on keyboard focus and on
+ * tap: the panel is tied to `focus-within`, and tapping the button focuses it.
+ *
+ * Hand-rolled rather than a Radix tooltip for the same reason. Radix's tooltip deliberately
+ * never opens on touch, and its popover needs a dependency and a click to dismiss. This has one
+ * fixed position under a corner that cannot collide with anything, so there is nothing to
+ * install and nothing to position.
+ *
+ * `aria-describedby` rather than a label: the caveat describes the photo, and a screen reader
+ * should reach it without the button having to be found and activated first.
+ */
+function PhotoDisclaimer() {
+  return (
+    <span className="group absolute right-2 top-2">
+      <button
+        type="button"
+        aria-label="About this photo"
+        aria-describedby="photo-disclaimer"
+        className="flex h-7 w-7 items-center justify-center rounded-full bg-background/80 text-muted-foreground shadow-sm backdrop-blur transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <Info className="h-4 w-4" aria-hidden="true" />
+      </button>
+      <span
+        id="photo-disclaimer"
+        role="tooltip"
+        className="pointer-events-none invisible absolute right-0 top-9 z-10 w-56 rounded-md border bg-popover p-2.5 text-xs leading-relaxed text-popover-foreground opacity-0 shadow-md transition-opacity group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100"
+      >
+        A representative photo of this year and trim line — not a photo of your car.
+      </span>
+    </span>
   );
 }
 
