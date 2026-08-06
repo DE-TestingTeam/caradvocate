@@ -68,7 +68,11 @@ export function AskCAPage() {
   }
 
   return (
-    <div className="flex h-[calc(100dvh-9rem)] flex-col">
+    // The composer stays put while the transcript scrolls under it, so this fills the viewport
+    // rather than growing with the conversation. 5.5rem is the shell's own vertical padding
+    // (pt-6 + pb-16). It was 9rem when a 3.5rem top bar sat above; the nav moved to the side
+    // and takes width instead, so that allowance would now just leave a gap under the composer.
+    <div className="flex h-[calc(100dvh-5.5rem)] flex-col">
       <div className="shrink-0 border-b pb-4">
         <h1 className="text-3xl font-bold tracking-tight">Ask CA</h1>
         <p className="mt-1 text-sm text-muted-foreground">
