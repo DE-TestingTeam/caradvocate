@@ -264,28 +264,39 @@ Three more behaviour rules worth knowing:
 
 ### Cost and speed
 
-**Confirmed** from the code and its comments: the system prompt and the facts block are
-both cached, so a follow-up question in the same conversation only pays full price for
-the new question. Reasoning effort is set to `low` rather than the default `high`, because
-the facts are handed over rather than discovered, the answer is a short paragraph, and
-someone is watching a chat bubble. The model reasons before every answer whether or not we
-ask it to, so this is the main dial on how long "hi" takes.
+**Confirmed**, and measured against the seeded Civic on a live database rather than reasoned
+about. The system prompt and the facts block are both cached, so a follow-up in the same
+conversation only pays full price for the new question — confirmed in the logs (7,741 tokens
+written on the first turn, read back on every turn after).
 
-Three things were done together to make answers arrive sooner, and it is worth knowing which
-did what:
+**Answers now take about 3 seconds for a greeting and 5–6 seconds for a real question.** Before
+this work a real question took a median 15 seconds, and sometimes closer to 20.
 
-- **Effort dropped from `medium` to `low`** — cuts the reasoning pass that runs before every
-  answer, including on a greeting.
-- **Streaming** — does not make the answer faster, but stops the owner waiting on a spinner
-  until all of it is ready.
-- **The facts block is now built in one round of database queries** instead of three in
-  sequence. That was pure waiting, on every single message.
+Almost all of that came from one setting, and it was not the one we expected:
 
-**Needs checking:** nobody has measured the result yet. Each answer now logs its duration and
-token usage (`Ask CA: 1234ms in=… out=… cacheRead=… cacheWrite=…`), which is the only
-instrumentation on the path — there is no telemetry and no test suite. Watch `cacheRead`: if
-it stays near zero across a conversation, the cached prefix is being invalidated and every
-follow-up is being charged in full.
+- **Extended thinking is now off.** Sonnet 5 thinks by default. On a real question that cost a
+  median 12.3 seconds before the first word appeared — ranging 5.8 to 16.8 seconds run to run —
+  against 3.1 seconds with it off. It also roughly doubled the length of every answer. On a
+  greeting it made no difference: it correctly declines to think about "hi".
+- **Reasoning effort stays at `medium`.** It was briefly dropped to `low` on the assumption that
+  effort was the cost; measurement showed it was not. `medium` is worth keeping because with
+  thinking off it grounded its answer in the owner's own recalls, complaints and service history
+  in 6 of 6 test runs where `low` managed 5 of 6, for about 180ms.
+- **Streaming** does not make an answer faster — it means the owner reads it as it is written
+  instead of watching a spinner until all of it is ready.
+- **The facts block is built in one round of database queries** instead of three in sequence.
+  Roughly 2 seconds of pure waiting on a cold cache, on every message.
+
+The tradeoff is worth naming: thinking did buy *something*. It surfaced the owner's own
+complaint and recall data slightly more often, which is why effort went up as thinking went off.
+The two are a pair — change one and the other needs re-measuring.
+
+**Needs checking:** all of the above was measured on one car (the seeded 2019 Civic) with a warm
+cache, from one location. The shape is not in doubt; the exact numbers will move. Each answer
+logs its own duration and token usage (`Ask CA: 1234ms in=… out=… cacheRead=… cacheWrite=…`),
+which is the only instrumentation on this path. Watch `cacheRead`: if it stays near zero across
+a conversation, the cached prefix is being invalidated and every follow-up is being charged in
+full.
 
 ---
 
@@ -450,6 +461,14 @@ startup.
 (every workspace plus `scripts/`) and `npm run build` are the only automatic checks, and
 both pass. Nothing verifies behaviour, so the paywall gate, the per-user data filters and
 anything that reads an outside feed have to be checked by hand after a change.
+
+The one exception is Ask CA's guardrails, which are prompt rules and so cannot be checked by
+types or by a build at all. `npm run probe:ask` asks the real model eight questions designed to
+push at each guardrail — invent a price, state Honda's schedule, confirm a complaint as a fault,
+give a flat "safe to drive" — and prints what came back. It reports rather than asserts, because
+whether an answer respected a guardrail is a judgement a reader makes in a second and a regex
+gets wrong. Run it after any change to the prompt, the model, or the effort and thinking
+settings. It costs eight model calls and writes nothing.
 
 **A large amount of work is uncommitted.** Roughly 130 changed files, with nothing
 committed since "Implement paywall for Repair Cost Checker". Worth committing in pieces

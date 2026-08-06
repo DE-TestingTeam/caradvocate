@@ -24,30 +24,38 @@ import { createAnswerPreview } from './answerPreview.js';
 const CTA_LABEL = 'CHECK REPAIR COSTS';
 
 /**
- * Turns are short, but `max_tokens` caps thinking *and* text together on Sonnet 5, and
- * thinking is on by default. Headroom so a reply is never truncated mid-sentence.
+ * Generous headroom for a short answer. It is not the binding constraint -- replies run 200-450
+ * output tokens -- but `max_tokens` caps thinking and text together on Sonnet 5, so leaving room
+ * costs nothing and means turning thinking back on cannot silently truncate a reply.
  */
 const MAX_TOKENS = 8000;
 
 /**
- * `low` rather than the default `high`. Sonnet 5 runs adaptive thinking whether or not we ask
- * for it, so every turn -- including "hi" -- pays a reasoning pass before a two-sentence answer.
- * Nothing here is discovered: the facts are handed over, the output is a short paragraph, and
- * someone is watching a chat bubble. `low` is the documented setting for exactly that shape.
+ * Measured on the seeded Civic, not guessed. With thinking off (below), `medium` grounded its
+ * answer in the owner's own recalls, complaints and service history in 6 of 6 runs where `low`
+ * managed 5 of 6, and cost about 180ms for it. Grounding is the whole product, so it wins.
  *
- * The tradeoff is that Sonnet 5 follows instructions most literally at low effort, which is why
- * the system prompt above says when NOT to volunteer things rather than relying on judgement.
- * If answers to genuinely hard questions start looking shallow, raise this to `medium` before
- * adding prose to compensate.
+ * `high` -- the API default -- has not been measured here and is not obviously worth it: the
+ * facts are handed over rather than discovered, and the target output is a short paragraph.
  */
-const EFFORT = 'low' as const;
+const EFFORT = 'medium' as const;
 
 /**
- * Thinking is on by default on Sonnet 5; stated here so the cost is visible at the call site
- * rather than implied by its absence. `omitted` because nothing renders a reasoning summary --
- * asking for one would buy latency we have no use for.
+ * Off, deliberately, and this is the single biggest thing keeping Ask CA quick.
+ *
+ * Sonnet 5 thinks by default, and on a real question that cost a median 12.3s to the first word
+ * -- ranging 5.8s to 16.8s across runs -- against 3.1s with it off. It also roughly doubled the
+ * length of every answer, against a style rule asking for two or three sentences. On a greeting
+ * it made no difference either way: adaptive correctly declines to think about "hi".
+ *
+ * What it bought was not nothing: thinking surfaced the owner's own complaint and recall data
+ * slightly more often. Raising effort to `medium` recovers that at a fraction of the cost, which
+ * is why the two settings are paired -- change one and re-measure the other.
+ *
+ * Checked before committing to this, because a model that is not thinking can get sloppy: all
+ * eight guardrails in scripts/probeAskGuardrails.mts held, and no reply leaked internal tags.
  */
-const THINKING = { type: 'adaptive', display: 'omitted' } as const;
+const THINKING = { type: 'disabled' } as const;
 
 export interface AskInput {
   /** The owner's question. */
@@ -97,7 +105,7 @@ WHAT YOU MUST NOT DO
 - Do not repeat a complaint as an established fault.
 
 HOW TO USE THE FACTS
-- Recalls are official findings by NHTSA, issued per year/make/model, and repaired free at a dealer. NHTSA cannot tell whether THIS car was already repaired — only the owner's own answer does. If a recall's status is unknown, say it may already have been done and that a dealer can confirm from the VIN.
+- Recalls are official findings by NHTSA, issued per year/make/model, and repaired free at a dealer. NHTSA cannot tell whether THIS car was already repaired — only the owner's own answer does. If a recall's status is unknown, say it may already have been done and that a dealer can confirm from the VIN. Say a recall affects "your model" or "this year and model", never "your VIN" or "your car" — you were given a list matched on year, make and model, and you have not checked a single VIN against anything. A dealer doing that check is the next step you recommend, not something you have already done.
 - Owner complaints are unverified first-hand reports. Cite them as "N owners of this model reported…", never as proof this car is affected. Where a reported mileage range is given and the odometer is known, comparing the two is genuinely useful — say plainly that it is a pattern across owners, not a prediction.
 - Upkeep status is arithmetic on intervals the OWNER set and services they logged. Service history is only what they entered; work done elsewhere is missing.
 - If a recall carries NHTSA's stop-driving or park-outside advisory and the owner has not said it was repaired, lead with it whatever they said — including a greeting or an unrelated remark. This is the one thing that outranks answering what was asked, because the car should not be moving. No other fact in the block gets this treatment.
