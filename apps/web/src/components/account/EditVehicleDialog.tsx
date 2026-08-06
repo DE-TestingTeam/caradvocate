@@ -56,7 +56,7 @@ export function EditVehicleDialog({ vehicle }: { vehicle: Vehicle }) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="outline" className="w-full">
+        <Button className="w-full">
           Edit vehicle
         </Button>
       </DialogTrigger>

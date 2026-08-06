@@ -36,7 +36,7 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
 
         {cta && (
           <div className="space-y-1.5">
-            <Button variant="outline" className="w-full" onClick={() => navigate(assessmentHref(cta))}>
+            <Button className="w-full" onClick={() => navigate(assessmentHref(cta))}>
               {cta.label}
               <ArrowRight className="h-4 w-4" />
             </Button>

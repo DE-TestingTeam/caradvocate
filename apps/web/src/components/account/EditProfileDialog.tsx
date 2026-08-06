@@ -43,7 +43,7 @@ export function EditProfileDialog({ account }: { account: Account }) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="outline" className="w-full">
+        <Button className="w-full">
           Edit profile
         </Button>
       </DialogTrigger>

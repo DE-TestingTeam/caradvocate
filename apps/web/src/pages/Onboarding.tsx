@@ -103,7 +103,7 @@ export function OnboardingPage() {
                   autoComplete="off"
                 />
               </div>
-              <Button type="button" variant="outline" disabled={!vinLooksComplete || decoding} onClick={handleDecode}>
+              <Button type="button" disabled={!vinLooksComplete || decoding} onClick={handleDecode}>
                 {decoding ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Look up'}
               </Button>
             </div>
