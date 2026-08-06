@@ -62,8 +62,13 @@ export function RepairPicker({ items, value, onChange }: RepairPickerProps) {
                   onClick={() => onChange(item.id)}
                   className={cn(
                     "flex w-full items-center justify-between gap-3 rounded-md border bg-muted/50 px-3 py-3 text-left text-sm transition-colors hover:bg-accent",
+                    // `ring-inset`, not a plain ring: an outward ring is drawn beyond the
+                    // element's box, and this list scrolls, so the left edge of it was clipped
+                    // by the overflow container while the right edge -- which has pr-1 to
+                    // spare -- survived. Same thickness, drawn inside, nothing to clip and
+                    // nothing that can disagree edge to edge.
                     selected &&
-                      "border-foreground bg-background font-medium ring-1 ring-foreground",
+                      "border-foreground bg-background font-medium ring-1 ring-inset ring-foreground",
                   )}
                 >
                   <span>{item.name}</span>

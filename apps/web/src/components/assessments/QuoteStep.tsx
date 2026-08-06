@@ -40,7 +40,7 @@ export function QuoteStep({
         className={cn(
           "w-full rounded-lg border p-4 text-left transition-colors",
           choice === "yes"
-            ? "border-2 border-foreground"
+            ? "border-foreground ring-1 ring-inset ring-foreground"
             : "bg-muted/50 hover:bg-accent",
         )}
       >
@@ -121,7 +121,7 @@ export function QuoteStep({
         className={cn(
           "w-full rounded-lg border p-4 text-left transition-colors",
           choice === "no"
-            ? "border-2 border-foreground"
+            ? "border-foreground ring-1 ring-inset ring-foreground"
             : "bg-muted/50 hover:bg-accent",
         )}
       >
