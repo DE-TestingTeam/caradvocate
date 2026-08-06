@@ -173,10 +173,16 @@ and it is told it may not go beyond them.**
 sends it to the API, together with the conversation so far.
 
 **2. The conversation is held by the browser, not the server.** There is no chat table
-and no way to fetch old conversations. Leave the screen and it is gone. This is
-deliberate — the code comment explains that saving-and-deleting fails exactly when it
-matters (a closed tab or a crash skips the cleanup, and the leftover rows come back as
-"history"). The last 10 turns are sent with each new question so follow-ups make sense.
+and no way to fetch old conversations. This is deliberate — the code comment explains that
+saving-and-deleting fails exactly when it matters (a closed tab or a crash skips the cleanup,
+and the leftover rows come back as "history"). The last 10 messages are sent with each new
+question so follow-ups make sense.
+
+The browser keeps the transcript **for the life of the tab**, so going to My Car to check a
+recall and coming back does not throw the thread away. It is held in `sessionStorage`, not
+`localStorage`: it survives navigation and a refresh, and the browser drops it when the tab
+closes. Signing out clears it too, so the next person to sign in on a shared machine does not
+inherit it. Still nothing on the server, and still nothing in the account.
 
 **3. The API checks who you are** and looks up your car.
 
@@ -211,6 +217,21 @@ three fields:
 **7. The browser renders it** as a chat bubble, plus an urgency banner and a button if
 those were set. The button goes to the Repair Cost Checker.
 
+**Each answer shows what it was based on.** A quiet line under the reply — "Based on · Your
+2019 Honda Civic · 4 NHTSA recalls for this model · Your last 6 logged services". This is the
+grounding claim made visible instead of asked for on trust, and it is built so it cannot lie:
+the AI picks only *which kinds* of fact it leaned on, from a fixed list of five, and the app
+writes the wording and the counts from the facts it actually assembled. A kind the facts block
+did not contain is dropped rather than shown. An answer that drew on nothing — a greeting, or
+a question answered from general knowledge — shows no line at all.
+
+**The answer appears as it is written.** The reply streams, so words appear a few at a time
+rather than the screen sitting on a typing indicator until the whole answer is ready. What
+you see while it is being written is a *preview* and the app throws it away: the finished
+reply — the one that went through the checks in the next section — replaces it, and only
+that one can carry an urgency banner or the button. Closing the tab mid-answer stops the
+request rather than leaving it running.
+
 ### What stops it making things up
 
 This is the part the product depends on, and it is enforced in four places rather than
@@ -227,13 +248,29 @@ just asked for:
    values the app knows how to display.
 4. **The button's wording is set by our code, not the AI**, so it always matches what the
    app renders.
+5. **Streaming does not skip any of that.** The words that appear while the answer is being
+   written are unchecked model output, and the app treats them as such — it renders them and
+   then discards them when the checked reply arrives. The checks sit on the finished reply,
+   not on the stream, so the fast path cannot become the unchecked path.
 
-Two more behaviour rules worth knowing:
+Three more behaviour rules worth knowing:
 
 - If a recall carries NHTSA's *stop driving* or *park outside* warning and you have not
-  said it was repaired, the AI leads with it regardless of what you asked.
-- Otherwise it raises an unrepaired recall **once per conversation**. Repeating it every
-  time teaches people to ignore it.
+  said it was repaired, the AI leads with it regardless of what you asked — including if
+  all you said was "hi". This is the one thing allowed to interrupt, because the car should
+  not be moving.
+- Otherwise it raises an unrepaired recall **once per conversation**, and only when actually
+  answering a question about the car. Repeating it every time teaches people to ignore it.
+- **A greeting gets a greeting.** "Hi" or "thanks" is answered in one line, with no summary
+  of the car, no recall list and no urgency banner. Volunteering everything the app knows in
+  response to hello buried the facts that mattered under facts nobody asked for.
+- **A price question is handed to the Repair Cost Checker, not apologised for.** The chat is
+  given no pricing and must not invent a figure, but it used to say so by leading with "I don't
+  have pricing data" — true of the chat, and wrong about the app, since pricing a repair against
+  real figures is exactly what the paid feature does. It now points at the checker in a sentence
+  and shows the button, including when the owner does not yet know which repair they need
+  (choosing one is the checker's first step). It still names no number, and it does not promise
+  what the checker will say — coverage is per model and not every car is priced.
 
 ### When things go wrong
 
@@ -248,11 +285,39 @@ Two more behaviour rules worth knowing:
 
 ### Cost and speed
 
-**Confirmed** from the code and its comments: the system prompt and the facts block are
-both cached, so a follow-up question in the same conversation only pays full price for
-the new question. Reasoning effort is set to `medium` rather than the default `high`,
-because the facts are handed over rather than discovered and someone is watching a chat
-bubble.
+**Confirmed**, and measured against the seeded Civic on a live database rather than reasoned
+about. The system prompt and the facts block are both cached, so a follow-up in the same
+conversation only pays full price for the new question — confirmed in the logs (7,741 tokens
+written on the first turn, read back on every turn after).
+
+**Answers now take about 3 seconds for a greeting and 5–6 seconds for a real question.** Before
+this work a real question took a median 15 seconds, and sometimes closer to 20.
+
+Almost all of that came from one setting, and it was not the one we expected:
+
+- **Extended thinking is now off.** Sonnet 5 thinks by default. On a real question that cost a
+  median 12.3 seconds before the first word appeared — ranging 5.8 to 16.8 seconds run to run —
+  against 3.1 seconds with it off. It also roughly doubled the length of every answer. On a
+  greeting it made no difference: it correctly declines to think about "hi".
+- **Reasoning effort stays at `medium`.** It was briefly dropped to `low` on the assumption that
+  effort was the cost; measurement showed it was not. `medium` is worth keeping because with
+  thinking off it grounded its answer in the owner's own recalls, complaints and service history
+  in 6 of 6 test runs where `low` managed 5 of 6, for about 180ms.
+- **Streaming** does not make an answer faster — it means the owner reads it as it is written
+  instead of watching a spinner until all of it is ready.
+- **The facts block is built in one round of database queries** instead of three in sequence.
+  Roughly 2 seconds of pure waiting on a cold cache, on every message.
+
+The tradeoff is worth naming: thinking did buy *something*. It surfaced the owner's own
+complaint and recall data slightly more often, which is why effort went up as thinking went off.
+The two are a pair — change one and the other needs re-measuring.
+
+**Needs checking:** all of the above was measured on one car (the seeded 2019 Civic) with a warm
+cache, from one location. The shape is not in doubt; the exact numbers will move. Each answer
+logs its own duration and token usage (`Ask CA: 1234ms in=… out=… cacheRead=… cacheWrite=…`),
+which is the only instrumentation on this path. Watch `cacheRead`: if it stays near zero across
+a conversation, the cached prefix is being invalidated and every follow-up is being charged in
+full.
 
 ---
 
@@ -367,7 +432,8 @@ The shape of it:
 - `/api/vehicle` — your car, VIN decode, maintenance jobs, recalls and your answers to
   them, photo, known issues
 - `/api/service-records` — log, edit, delete service history
-- `/api/chat` — Ask CA (POST only; nothing is stored, so there is no GET)
+- `/api/chat` — Ask CA (POST only; nothing is stored, so there is no GET). The one endpoint
+  that streams its reply rather than returning it in one piece
 - `/api/assessments` — the Repair Cost Checker (**paywalled**)
 - `/api/repairs` — which repairs we can price for your car
 - `/api/paywall` — the price on screen, and recording an unlock
@@ -417,22 +483,44 @@ startup.
 both pass. Nothing verifies behaviour, so the paywall gate, the per-user data filters and
 anything that reads an outside feed have to be checked by hand after a change.
 
+The one exception is Ask CA's guardrails, which are prompt rules and so cannot be checked by
+types or by a build at all. `npm run probe:ask` asks the real model eight questions designed to
+push at each guardrail — invent a price, state Honda's schedule, confirm a complaint as a fault,
+give a flat "safe to drive" — and prints what came back. It reports rather than asserts, because
+whether an answer respected a guardrail is a judgement a reader makes in a second and a regex
+gets wrong. Run it after any change to the prompt, the model, or the effort and thinking
+settings. It costs eight model calls and writes nothing.
+
 **A large amount of work is uncommitted.** Roughly 130 changed files, with nothing
 committed since "Implement paywall for Repair Cost Checker". Worth committing in pieces
 while the reasoning is fresh.
 
-**One migration is written but not applied.** `0014` drops the unused crash-test table
-(see below). It has not been run against any database yet.
+**Migrations are applied on the shared database.** Checked directly on 6 August: `0013`
+(year/make/model on `repair_benchmarks`), `0014` (the crash-test table is gone) and `0015`
+(`vehicles.maintenance_schedule_checked_at`) are all present. The database reports 17 applied
+migrations against the 16 in this branch, and holds four tables this branch does not define
+(`extraction_runs`, `factory_schedule_items`, `schedule_review_queue`, `vehicle_generations`),
+so **the shared database is ahead of this branch** — someone is deploying migrations from
+another one. Worth knowing before generating a new migration here.
 
-**The database migration must be applied before this code is deployed.** Migration `0013`
-adds year/make/model to the pricing table. Deploying the code against an unmigrated
-database breaks every assessment. Run `db:migrate`, then `db:pricing` — until the second
-one runs, the app serves old invented figures under a real-looking label.
+**`db:pricing` still has to be run after `0013`.** The migration itself is applied (above),
+but until `db:pricing` runs against a database, the app serves old invented figures under a
+real-looking label. **Needs checking:** whether it has been run since `0013` landed.
 
-**Database lockdown scripts exist but have to be run by hand.** `apps/api/sql/rls-lockdown.sql`
-closes a second door into the Supabase database that is open by default — with it open,
-anyone holding the public key can read every table directly. **Needs checking:** whether
-this has been run against the live project. The code cannot tell.
+**⚠️ Row-level security is off, and this is now confirmed rather than suspected.** Checked
+directly on 6 August: **0 of 26 tables** in the shared database have RLS enabled, and no
+policies exist. `apps/api/sql/rls-lockdown.sql` has never been run there.
+
+This is not a theoretical gap. The Supabase anon key is public by design — it ships in the
+browser bundle — and with RLS off it is enough to read every table directly, bypassing the API
+entirely: `users`, `service_records`, `vehicles`, `paywall_intents`, all of it. The database
+currently holds real accounts, not just the seeded demo ones. Every per-user filter in the API
+is correct and none of it matters while the second door is open.
+
+Applying `rls-lockdown.sql` and `rls-policies.sql` is the fix, and it needs doing before anyone
+outside the team uses this. It is a live-database change that could break reads if the policies
+and the API's access pattern disagree, so it wants a deliberate run and a check afterwards
+rather than being folded into a code deploy.
 
 ### Gaps in the agreed feature list
 
@@ -468,8 +556,17 @@ feature list in §3; they are noted because the README and the original spec men
   rather than licensed book times in the meantime.
 - **Deleting an account deletes its paywall taps too.** Export that data before honouring
   a deletion request or the experiment loses the result.
+- **Ask CA is throttled per owner**: one answer in flight at a time and 20 questions per five
+  minutes, because it is the only endpoint that spends money per request. The counters are held
+  in memory, so they reset on restart and are per-process — a cost guard, not a security
+  boundary, and a real deployment wants them in Postgres or Redis.
+- **An answer is abandoned after 45 seconds.** Measured answers land around 5 seconds and the
+  slowest observed was 17, so the ceiling only fires on a genuine hang; without it the SDK would
+  wait ten minutes and retry twice.
 - **Ask CA conversations are never stored**, which is right for privacy but means there is
-  no record of what people actually ask.
+  no record of what people actually ask. The browser now keeps a transcript for the life of the
+  tab so navigation does not lose it, but nothing reaches the server or the account, so this is
+  still true of the business.
 
 ### One thing that has never been verified against the real thing
 

@@ -3,6 +3,7 @@ import type { Session } from '@supabase/supabase-js';
 import { getAuthConfig, type AuthConfig } from './authConfig';
 import { getSupabase } from './supabaseClient';
 import { setAccessTokenGetter } from './http';
+import { clearAllTranscripts } from './chatTranscript';
 
 interface AuthState {
   /** undefined until the server has told us which Supabase project to sign in against. */
@@ -107,6 +108,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       signOut: async () => {
         const supabase = await getSupabase();
         await supabase?.auth.signOut();
+        // Ask CA transcripts live in this tab's storage, not on the server, so signing out has
+        // to clear them here or the next person to sign in on this machine inherits them.
+        clearAllTranscripts();
         setSession(null);
       },
     };

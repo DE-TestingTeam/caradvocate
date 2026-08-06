@@ -64,10 +64,13 @@ npm run db:migrate     # apply migrations via DIRECT_DATABASE_URL
 npm run db:seed        # reference data + two demo users (TRUNCATES users)
 npm run db:pricing     # refresh reference pricing only — safe on a live database
 npm run ingest:mileage # complaint mileage from NHTSA's bulk file (needs unzip)
+npm run probe:ask      # ask the real model at each Ask CA guardrail and print the answers
 ```
 
 There is no test suite, so the paywall gate, the per-user data filters and anything
-reading an upstream feed have to be exercised by hand. `packages/shared` is consumed as
+reading an upstream feed have to be exercised by hand. Ask CA's guardrails are prompt rules
+and cannot be checked by a build at all — `npm run probe:ask` pushes at each one and prints
+what the model said, which is the closest thing to a regression test this feature has. `packages/shared` is consumed as
 build output; `install`, `dev` and `build` compile it first.
 
 ## Things that will bite
