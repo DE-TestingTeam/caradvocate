@@ -17,28 +17,13 @@ import { todayIso } from '@/lib/format';
 import { useWrite } from '@/lib/useWrite';
 import type { MaintenanceItem, ServiceRecord } from '@caradvocate/shared';
 
-/**
- * Logs a service, or corrects one.
- *
- * NOTE: no wireframe for this dialog. Two fields go beyond the obvious, and both
- * exist so maintenance can work at all:
- *
- *   - **Mileage.** Without the odometer at the time, no interval can be measured. It
- *     stays optional because someone entering an old receipt may genuinely not know,
- *     but the hint says why it matters rather than leaving them to guess.
- *   - **Counts as.** Links the record to an upkeep job explicitly. Matching on the
- *     description instead would be inference that is wrong just often enough to tell
- *     someone their brakes are fine when they are not.
- */
 export function LogServiceDialog({
   jobs,
   record,
   open: controlledOpen,
   onOpenChange,
 }: {
-  /** The car's upkeep jobs, offered as "counts as" options. */
   jobs: MaintenanceItem[];
-  /** Present when correcting an existing record rather than adding one. */
   record?: ServiceRecord;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;

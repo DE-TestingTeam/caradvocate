@@ -5,18 +5,12 @@ import { getSupabase } from './supabaseClient';
 import { setAccessTokenGetter } from './http';
 
 interface AuthState {
-  /** undefined while we are still asking the server which mode we are in. */
+  /** undefined until the server has told us which Supabase project to sign in against. */
   config: AuthConfig | undefined;
   session: Session | null;
   loading: boolean;
-  /** True when the user may use the app: signed in, or dev mode. */
+  /** True only with a live session. There is no bypass -- see apps/api/src/auth/resolvers.ts. */
   authenticated: boolean;
-  /**
-   * True when there is a real session to end. False in dev mode, where requests
-   * are attributed to a fixed user and no sign-out is possible. Callers should
-   * test this rather than inspecting `config.mode` themselves.
-   */
-  canSignOut: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
@@ -25,6 +19,7 @@ interface AuthState {
 
 const AuthContext = React.createContext<AuthState | undefined>(undefined);
 
+/** Throws outside <AuthProvider>, so a component can treat the returned state as always present. */
 export function useAuth(): AuthState {
   const context = React.useContext(AuthContext);
   if (!context) throw new Error('useAuth must be used inside <AuthProvider>');
@@ -51,12 +46,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const resolved = await getAuthConfig();
       if (!active) return;
       setConfig(resolved);
-
-      if (resolved.mode === 'dev') {
-        // No sign-in required; the API attributes requests to the dev user.
-        setLoading(false);
-        return;
-      }
 
       const supabase = await getSupabase();
       if (!active || !supabase) {
@@ -92,8 +81,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       config,
       session,
       loading,
-      authenticated: config?.mode === 'dev' || session !== null,
-      canSignOut: config?.mode === 'supabase',
+      authenticated: session !== null,
 
       signIn: async (email, password) => {
         const supabase = await requireClient();

@@ -1,26 +1,14 @@
 /**
- * The paywall in front of the Repair Cost Checker.
+ * The paywall in front of the Repair Cost Checker. Nobody is charged: the tap is recorded as a
+ * willingness-to-pay signal and the feature opens. See apps/api/src/services/paywall.ts.
  *
- * Nobody is charged. Tapping unlock records the tap as a willingness-to-pay signal
- * and opens the feature straight away -- see apps/api/src/services/paywall.ts.
+ * The copy is worded for measurement, since the number is only worth having if a tap means "I
+ * would pay this". So the price and cadence are stated before the button, the button says what
+ * it costs rather than "Continue", and nothing above it says "free" or "trial" -- nobody
+ * hesitates over a free thing, so nobody's tap would tell us anything.
  *
- * ======================= WHY THE COPY IS WORDED THIS WAY =====================
- * This screen is the measurement instrument, and the number it produces is only
- * worth having if the tap means "I would pay this". So:
- *
- *   - The price and cadence are stated plainly, before the button.
- *   - The button says what it costs, not "Continue" -- a tap on an ambiguous
- *     button is not evidence of anything.
- *   - It does NOT say "free", "trial", "no charge" or "just testing" anywhere
- *     above the button. That would be honest about the billing and useless as a
- *     measurement: nobody hesitates over a free thing, so nobody's tap would tell
- *     us what they would pay.
- *
- * The line under the button is where the truth goes: they are told, before
- * anything is asked of them, that no payment is taken. That keeps the screen
- * non-deceptive -- no card details are requested, nothing is charged, and the
- * disclosure is on the same screen as the price rather than buried after the tap.
- * ============================================================================
+ * The line under the button is where the truth goes: no payment is taken, disclosed on the same
+ * screen as the price rather than after the tap, and no card details are ever requested.
  */
 import { Check, Lock } from 'lucide-react';
 import { Button } from '@/components/ui/button';

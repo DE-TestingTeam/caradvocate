@@ -16,7 +16,6 @@ import { updateAccount } from '@/lib/api';
 import { invalidateAll } from '@/lib/useApi';
 import type { Account } from '@caradvocate/shared';
 
-/** NOTE: not in the wireframes -- fields mirror what the Profile card displays. */
 export function EditProfileDialog({ account }: { account: Account }) {
   const [open, setOpen] = React.useState(false);
   const [name, setName] = React.useState(account.name);

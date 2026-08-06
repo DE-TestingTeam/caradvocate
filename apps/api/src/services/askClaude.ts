@@ -1,21 +1,14 @@
 /**
  * Ask CA, answered by Claude and grounded in the owner's own car.
  *
- * The whole product claim is that it does not invent things: no fabricated
- * valuations, no guessed service intervals, no all-clear it cannot support. A
- * language model is by far the biggest invention risk introduced so far, so most of
- * what follows is structure that makes overclaiming hard rather than merely
- * discouraged:
+ * The product claim is that it does not invent things, and a language model is the
+ * biggest invention risk here, so the structure makes overclaiming hard rather than
+ * merely discouraged: every fact the model may use arrives in the vehicle context block
+ * with its provenance attached (see vehicleContext.ts) and the system prompt forbids
+ * going beyond it; the reply shape is constrained by a JSON schema, so `urgency` and the
+ * CTA are values the UI already renders; and the CTA label is filled in here.
  *
- *   - Every fact the model may use arrives in the vehicle context block, with its
- *     provenance attached (see vehicleContext.ts). The system prompt forbids going
- *     beyond it.
- *   - The reply shape is constrained by a JSON schema, so `urgency` and the CTA are
- *     values the UI already renders rather than prose we have to parse.
- *   - The CTA label is filled in here, not by the model, so it cannot drift.
- *
- * Configuration decides the mode, as with the auth dev bypass: no ANTHROPIC_API_KEY
- * means Ask CA stays on canned replies and the API says so at startup.
+ * No ANTHROPIC_API_KEY means Ask CA stays on canned replies and says so at startup.
  */
 import Anthropic from '@anthropic-ai/sdk';
 import type { ChatMessage, Severity } from '@caradvocate/shared';
@@ -25,16 +18,14 @@ import { env } from '../env.js';
 const CTA_LABEL = 'CHECK REPAIR COSTS';
 
 /**
- * Short conversational turns, but `max_tokens` caps thinking *and* text together on
- * Claude Opus 5 -- and thinking is on by default. Sized for headroom so a reply is
- * never truncated mid-sentence; a chat answer will use a fraction of it.
+ * Turns are short, but `max_tokens` caps thinking *and* text together on Sonnet 5, and
+ * thinking is on by default. Headroom so a reply is never truncated mid-sentence.
  */
 const MAX_TOKENS = 8000;
 
 /**
- * `medium` rather than the default `high`: this is an interactive turn where the
- * facts are handed to the model rather than discovered, and latency is felt by
- * someone waiting on a chat bubble. Raise it if answers get shallow.
+ * `medium` rather than the default `high`: the facts are handed to the model rather than
+ * discovered, and latency is felt by someone waiting on a chat bubble.
  */
 const EFFORT = 'medium' as const;
 
@@ -49,30 +40,14 @@ export interface AskInput {
 
 export type AskReply = Omit<ChatMessage, 'id'>;
 
-/** Test seam, mirroring setRecallFetcherForTesting. The suite must never call the API. */
-type Asker = (input: AskInput) => Promise<AskReply>;
-
-let asker: Asker | undefined;
-
-export function setAskerForTesting(next: Asker | undefined): void {
-  asker = next;
-}
-
-/**
- * True when Ask CA can answer at all.
- *
- * An installed test asker counts: without this the suite could never reach the real
- * code path, because the route checks this before calling out and no key is set in
- * tests. "Configured" means "can produce an answer", not "has a key".
- */
+/** True when Ask CA can answer at all. Without this, the canned replies stand in. */
 export function askIsConfigured(): boolean {
-  return Boolean(asker) || Boolean(env.ANTHROPIC_API_KEY);
+  return Boolean(env.ANTHROPIC_API_KEY);
 }
 
 /**
- * The instructions, kept byte-stable so the cached prefix survives across every
- * request and every user. Nothing per-car goes in here -- that would put volatile
- * content in front of the cache and invalidate it on every turn.
+ * Kept byte-stable so the cached prefix survives across every request and user. Nothing
+ * per-car goes in here -- volatile content in front of the cache invalidates every turn.
  */
 const SYSTEM_PROMPT = `You are CarAdvocate's assistant. You help a car owner work out two things: whether a repair is actually necessary, and whether the price they were quoted is fair. You are on their side, not the shop's.
 
@@ -104,11 +79,9 @@ THE REPLY FIELDS
 - cta: set to {"action": "start_assessment"} when the owner is asking what a repair should cost or whether a quote is fair, and the Repair Cost Checker would help. Otherwise null. Note its price benchmarks are currently placeholder figures, so do not quote a specific fair price yourself.`;
 
 /**
- * The reply shape, enforced by the API rather than parsed out of prose.
- *
- * `urgency` and `cta` are nullable-and-required rather than optional: a strict schema
- * needs every key present, and an explicit null is a clearer signal than an absent
- * field for "nothing here justifies one".
+ * The reply shape, enforced by the API rather than parsed out of prose. `urgency` and
+ * `cta` are nullable-and-required rather than optional: a strict schema needs every key
+ * present, and an explicit null says "nothing justifies one" more clearly than absence.
  */
 const REPLY_SCHEMA = {
   type: 'object',
@@ -147,41 +120,46 @@ const REPLY_SCHEMA = {
 let client: Anthropic | undefined;
 
 function anthropic(): Anthropic {
-  // Constructed lazily and reused, so the key is read once and a request that never
-  // reaches Ask CA does not need one.
+  // Lazy and reused, so a request that never reaches Ask CA does not need a key.
   client ??= new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
   return client;
 }
 
-/**
- * Answers one question, or throws.
- *
- * The caller decides what a failure means for the conversation -- see routes/chat.ts,
- * which would rather record an honest "could not answer" than leave a question with
- * no reply at all.
- */
+/** Answers one question, or throws. The caller decides what a failure means -- see routes/chat.ts. */
 export async function askCarAdvocate(input: AskInput): Promise<AskReply> {
-  if (asker) return asker(input);
   if (!env.ANTHROPIC_API_KEY) throw new Error('Ask CA is not configured (no ANTHROPIC_API_KEY)');
 
   const response = await anthropic().beta.messages.create({
-    model: 'claude-opus-5',
+    model: 'claude-sonnet-5',
     max_tokens: MAX_TOKENS,
-    // Recommended for Opus 5: a safety classifier can decline a request, and this
-    // re-runs it on Anthropic's recommended fallback rather than returning nothing.
-    betas: ['server-side-fallback-2026-07-01'],
-    fallbacks: 'default',
+    // No server-side `fallbacks`: it is documented only for the models carrying elevated
+    // safety classifiers (Opus 5, Fable 5), and an unsupported parameter would 400 every
+    // request. A refusal surfaces as one, which the stop_reason check below handles.
     output_config: {
       effort: EFFORT,
       format: { type: 'json_schema', schema: REPLY_SCHEMA },
     },
-    // Cached: identical for every user and every turn, so it is the prefix worth
-    // keeping stable. Per-car facts go in the messages below, never up here.
+    // Cached: identical for every user and turn. Per-car facts go in the messages below.
     system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
     messages: [
       {
         role: 'user',
-        content: `Here are the facts about my car.\n\n${input.vehicleContext}`,
+        /**
+         * The breakpoint that matters for cost. Caching is a prefix match, so this caches
+         * the system prompt *and* the car's facts -- which are the same on every turn and
+         * dwarf the prompt, so without a breakpoint here the bulk of each follow-up is
+         * re-read at full price. Only the question and history below it vary.
+         *
+         * Measured: the system prompt alone is ~1200 tokens, over Sonnet 5's 1024-token
+         * minimum, so the prefix caches even for a car with thin facts.
+         */
+        content: [
+          {
+            type: 'text' as const,
+            text: `Here are the facts about my car.\n\n${input.vehicleContext}`,
+            cache_control: { type: 'ephemeral' as const },
+          },
+        ],
       },
       { role: 'assistant', content: 'Understood. I will answer using only those facts.' },
       ...input.history.map((turn) => ({ role: turn.role, content: turn.text })),
@@ -189,8 +167,7 @@ export async function askCarAdvocate(input: AskInput): Promise<AskReply> {
     ],
   });
 
-  // Checked before reading content: a refusal returns HTTP 200 with empty or partial
-  // content, so indexing content[0] would throw or return a fragment.
+  // Before reading content: a refusal returns HTTP 200 with empty or partial content.
   if (response.stop_reason === 'refusal') {
     throw new Error('That question was declined by a safety filter. Try rephrasing it.');
   }
@@ -199,12 +176,10 @@ export async function askCarAdvocate(input: AskInput): Promise<AskReply> {
 }
 
 /**
- * Exported for testing. Pulls the reply out of the response blocks.
- *
- * Defensive despite the schema: a `max_tokens` stop, a fallback boundary block, or a
- * thinking block all mean the text is not simply `content[0]`.
+ * Pulls the reply out of the response blocks. Defensive despite the schema: a `max_tokens`
+ * stop or a thinking block means the text is not `content[0]`.
  */
-export function parseReply(content: { type: string; text?: string }[]): AskReply {
+function parseReply(content: { type: string; text?: string }[]): AskReply {
   const text = content
     .filter((block) => block.type === 'text' && typeof block.text === 'string')
     .map((block) => block.text as string)
@@ -216,8 +191,8 @@ export function parseReply(content: { type: string; text?: string }[]): AskReply
   try {
     parsed = JSON.parse(text);
   } catch {
-    // Structured outputs should make this impossible; if the shape ever changes,
-    // failing loudly beats showing the owner a blob of JSON.
+    // Structured outputs should make this impossible, but failing loudly beats showing
+    // the owner a blob of JSON.
     throw new Error('Ask CA returned a reply that could not be read');
   }
 

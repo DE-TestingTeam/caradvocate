@@ -2,10 +2,6 @@ import { AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Severity } from '@caradvocate/shared';
 
-/**
- * Only the `high` variant is designed in the wireframes; low and medium are
- * derived from the same treatment with muted / warning accents.
- */
 const severityStyles: Record<Severity, string> = {
   high: 'border-l-destructive bg-destructive/10 text-foreground',
   medium: 'border-l-warning bg-warning/10 text-foreground',

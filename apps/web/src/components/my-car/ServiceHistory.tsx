@@ -2,7 +2,6 @@ import { Pencil } from 'lucide-react';
 import { formatCurrency, formatMonthYear } from '@/lib/format';
 import type { ServiceRecord } from '@caradvocate/shared';
 
-/** Rows created by completing an assessment are suffixed, per the wireframe. */
 function describe(record: ServiceRecord): string {
   return record.source === 'repair_cost_checker'
     ? `${record.description} via Repair Cost Checker`

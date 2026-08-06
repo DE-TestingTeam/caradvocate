@@ -1,9 +1,7 @@
 /**
- * Keeps the local mirror of NHTSA owner complaints fresh.
- *
- * Same shape as recallSync, and both share services/modelFeed.ts for freshness and
- * case handling. The mirror matters more here than for recalls: the raw feed is
- * 344KB for a popular model, and aggregating it on every page load would be absurd.
+ * Keeps the local mirror of NHTSA owner complaints fresh. Same shape as recallSync, on the same
+ * machinery in modelFeed.ts. The mirror matters more here: the raw feed is 344KB for a popular
+ * model, and aggregating it on every page load would be absurd.
  */
 import type { Database } from '../db/index.js';
 import { modelOwnerReportQuotes, modelOwnerReports } from '../db/schema.js';
@@ -13,15 +11,6 @@ import { dueForCheck, modelMatches, normaliseKey, readSyncState, recordCheck } f
 const FEED = 'complaints' as const;
 
 type ReportRow = typeof modelOwnerReports.$inferSelect;
-
-/** Test seam, mirroring setRecallFetcherForTesting. */
-type ReportFetcher = (lookup: ComplaintLookup) => Promise<ComponentReports[] | undefined>;
-
-let fetcher: ReportFetcher = fetchComponentReports;
-
-export function setComplaintFetcherForTesting(next: ReportFetcher | undefined): void {
-  fetcher = next ?? fetchComponentReports;
-}
 
 /**
  * Aggregated owner reports for one model, syncing first if the mirror is stale.
@@ -37,14 +26,13 @@ export async function getOwnerReports(
   const sync = await readSyncState(db, FEED, lookup);
 
   let reached = sync?.succeededAt != null;
-  if (dueForCheck(sync, now)) {
+  if (dueForCheck(FEED, sync, now)) {
     reached = (await syncOwnerReports(db, lookup, now)) || reached;
   }
 
-  // Deliberately does not read the stored accounts. My Car shows counts and links
-  // to NHTSA for the prose, so joining them here would be a per-request query
-  // nothing renders. Anything that does want them -- grounding an Ask CA answer,
-  // say -- should read modelOwnerReportQuotes directly.
+  // Does not read the stored accounts: My Car shows counts and links to NHTSA for the prose, so
+  // joining them here would be a per-request query nothing renders. Callers that want them (the
+  // Ask CA context block) read modelOwnerReportQuotes directly.
   const reports = await db.select().from(modelOwnerReports).where(modelMatches(modelOwnerReports, lookup));
 
   // Most-reported first. The UI shows a limited number, so this decides which.
@@ -54,16 +42,11 @@ export async function getOwnerReports(
 }
 
 /**
- * Fetches and stores one model's aggregated complaints.
- *
- * A failed fetch records the attempt and leaves existing rows untouched, for the
- * same reason as recalls: stale data beats none, and a blip must not wipe a list
- * someone was relying on.
- *
- * Returns whether NHTSA was actually reached.
+ * Fetches and stores one model's aggregated complaints, returning whether NHTSA was reached. A
+ * failed fetch records the attempt and leaves existing rows untouched.
  */
 async function syncOwnerReports(db: Database, lookup: ComplaintLookup, now: Date): Promise<boolean> {
-  const fetched = await fetcher(lookup);
+  const fetched = await fetchComponentReports(lookup);
 
   if (fetched === undefined) {
     await recordCheck(db, FEED, lookup, now, false);
@@ -71,10 +54,9 @@ async function syncOwnerReports(db: Database, lookup: ComplaintLookup, now: Date
   }
 
   await db.transaction(async (tx) => {
-    // Replaced wholesale rather than upserted. Every value here is derived from the
-    // feed, so the feed is the whole truth; a clean replace also takes the quote
-    // rows with it via cascade, where an upsert would have to reconcile them. The
-    // transaction means the list is never observably empty.
+    // Replaced wholesale rather than upserted: every value is derived from the feed, and a
+    // clean replace takes the quote rows with it via cascade where an upsert would have to
+    // reconcile them. The transaction means the list is never observably empty.
     await tx.delete(modelOwnerReports).where(modelMatches(modelOwnerReports, lookup));
 
     if (fetched.length > 0) {

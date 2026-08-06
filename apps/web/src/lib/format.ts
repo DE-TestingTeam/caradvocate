@@ -22,11 +22,9 @@ export function formatMileage(value: number): string {
 }
 
 /**
- * 1499, 'USD' -> "$14.99". Cents in, so nothing upstream holds a float.
- *
- * Shows cents unlike formatCurrency, which rounds them away: this renders a price
- * someone is deciding whether to pay, and "$15" for $14.99 is the wrong number on
- * the one screen where the exact figure is the point.
+ * 1499, 'USD' -> "$14.99". Cents in, so nothing upstream holds a float. Keeps the cents that
+ * formatCurrency rounds away: "$15" for $14.99 is the wrong number on a screen where someone
+ * is deciding whether to pay.
  */
 export function formatPrice(cents: number, currencyCode: string): string {
   return new Intl.NumberFormat('en-US', {
@@ -48,11 +46,8 @@ export function formatLongDate(iso: string): string {
 }
 
 /**
- * NHTSA component names arrive as colon-delimited caps:
+ * Colon-delimited NHTSA caps, cased for reading with every segment kept:
  * "FUEL SYSTEM, GASOLINE:DELIVERY:FUEL PUMP" -> "Fuel System, Gasoline · Delivery · Fuel Pump"
- *
- * Shouting at the owner is not a design choice we want to inherit from an upstream
- * feed, so the text is cased for reading while keeping every segment.
  */
 export function formatRecallComponent(component: string): string {
   return component
@@ -71,15 +66,11 @@ function titleCaseSegment(segment: string): string {
 const KEEP_UPPERCASE = new Set(['NHTSA', 'VIN', 'ABS', 'SUV', 'USA', 'LED', 'GPS', 'AWD', 'FWD', 'RWD', 'TPMS']);
 
 /**
- * NHTSA wrote its older records entirely in capitals, so a 2011 recall arrives as
- * "IF THERE IS AN ENGINE OIL LEAK, THE ENGINE OIL PRESSURE WOULD DROP" -- and owner
- * complaints are worse, since plenty of people type in caps regardless of the year.
- * Modern sentence-case prose passes through untouched.
- *
- * Only text that is overwhelmingly uppercase is rewritten, so this cannot quietly
- * restyle prose that was fine to begin with. A handful of acronyms are preserved;
- * anything rarer may come out capitalised as a word, which still reads better than
- * a shouted paragraph.
+ * Un-shouts NHTSA prose: older records are entirely capitals, and owner complaints are worse
+ * since plenty of people type in caps regardless of the year. Only overwhelmingly uppercase
+ * text is rewritten, so sentence-case prose passes through untouched. Acronyms in
+ * KEEP_UPPERCASE survive; rarer ones come out capitalised as a word, which still beats a
+ * shouted paragraph.
  */
 export function formatNhtsaProse(text: string): string {
   const letters = text.replace(/[^A-Za-z]/g, '');
@@ -98,26 +89,31 @@ export function formatHours(hours: number): string {
   return `${hours} ${hours === 1 ? 'hr' : 'hrs'}`;
 }
 
-/**
- * Masks a VIN to the first 11 characters followed by one dot per hidden character.
- * "2HGFC2F53KH123456" -> "2HGFC2F53KH••••••"
- */
+/** "2HGFC2F53KH123456" -> "2HGFC2F53KH••••••" */
 export function maskVin(vin: string, visible = 11): string {
   const shown = vin.slice(0, visible);
   return shown + '•'.repeat(Math.max(0, vin.length - visible));
 }
 
-/**
- * Masks a VIN down to its last four characters, prefixed with four dots.
- * "2HGFC2F53KH124821" -> "••••4821"
- */
+/** "2HGFC2F53KH124821" -> "••••4821" */
 export function maskVinTail(vin: string, visible = 4): string {
   return '•'.repeat(4) + vin.slice(-visible);
 }
 
-/** "2019 Honda Civic EX" from a vehicle-ish shape. */
+/**
+ * "2019 Honda Civic EX" from a vehicle-ish shape.
+ *
+ * A trim that just repeats the model is dropped, because VIN decoding falls back to NHTSA's
+ * `Series` field when there is no real trim and that often holds the model name again -- a
+ * 2011 Pathfinder decodes with trim "Pathfinder" and would otherwise read "2011 NISSAN
+ * Pathfinder Pathfinder". Guarded here as well as at the decode so existing rows read
+ * correctly without having to be rewritten.
+ */
 export function vehicleName(v: { year: number; make: string; model: string; trim?: string }): string {
-  return [v.year, v.make, v.model, v.trim].filter(Boolean).join(' ');
+  const trim = v.trim?.trim();
+  const redundant = trim !== undefined && trim.toLowerCase() === v.model.trim().toLowerCase();
+
+  return [v.year, v.make, v.model, redundant ? undefined : trim].filter(Boolean).join(' ');
 }
 
 /** Today as an ISO date string (no time component). */
@@ -126,7 +122,7 @@ export function todayIso(): string {
 }
 
 function parseIso(iso: string): Date {
-  // Append a time so the string is parsed in local time rather than UTC,
-  // which would shift dates backwards for negative-offset timezones.
+  // A time makes this parse as local rather than UTC, which would shift dates backwards for
+  // negative-offset timezones.
   return new Date(`${iso}T12:00:00`);
 }

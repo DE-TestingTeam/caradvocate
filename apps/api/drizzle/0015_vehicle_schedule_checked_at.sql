@@ -1,0 +1,1 @@
+ALTER TABLE "vehicles" ADD COLUMN "maintenance_schedule_checked_at" timestamp with time zone;

@@ -1,11 +1,10 @@
 import { http } from './http';
 
 /**
- * Auth mode comes from the server, not from build-time env vars, so the browser
- * and the API can never disagree about whether sign-in is required.
+ * The Supabase credentials the browser signs in with, fetched from the server rather than baked in
+ * at build time so the two can never disagree about which project they are talking to.
  */
 export interface AuthConfig {
-  mode: 'supabase' | 'dev';
   supabaseUrl?: string;
   anonKey?: string;
 }
@@ -13,12 +12,9 @@ export interface AuthConfig {
 let cached: Promise<AuthConfig> | undefined;
 
 export function getAuthConfig(): Promise<AuthConfig> {
-  cached ??= http.get<AuthConfig>('/auth/config').catch(() => {
-    // If the API is unreachable we cannot know the mode. Assume sign-in is
-    // required: showing a login screen is a safer failure than showing someone
-    // an app that silently acts as a default user.
-    return { mode: 'supabase' } as AuthConfig;
-  });
+  // An unreachable API leaves us with no credentials, which AuthProvider treats as "not signed in"
+  // -- a login screen is a safer failure than an app that renders as though it had a session.
+  cached ??= http.get<AuthConfig>('/auth/config').catch(() => ({}) as AuthConfig);
 
   return cached;
 }

@@ -1,11 +1,14 @@
+/**
+ * Thin fetch wrapper, so error handling, JSON encoding and the base path are defined once.
+ * Requests are relative: the Vite dev proxy forwards them in development, a reverse proxy in
+ * production.
+ */
 import type { ApiErrorBody } from '@caradvocate/shared';
 
 /**
- * Thin fetch wrapper. Every API call in the app goes through this so error
- * handling, JSON encoding and the base path are defined once.
- *
- * Requests are relative, so the Vite dev proxy (see vite.config.ts) forwards
- * them to the API in development and a reverse proxy handles it in production.
+ * Every rejection from `http` is one of these. `status` is the HTTP status, or `0` when the
+ * request never got a response at all -- callers that branch on a status (RequireVehicle treats
+ * 404 as "no vehicle yet") must not mistake an offline browser for a real answer.
  */
 export class ApiError extends Error {
   readonly status: number;
@@ -24,13 +27,13 @@ export class ApiError extends Error {
 
 const BASE = '/api';
 
-/**
- * Supplies the current access token. Set by AuthProvider so this module has no
- * dependency on React or on Supabase -- in dev mode it simply returns undefined
- * and requests go out unauthenticated, which is what the API expects.
- */
 let accessTokenGetter: () => string | undefined = () => undefined;
 
+/**
+ * Supplies the token for every subsequent request. Called by AuthProvider, which keeps this module
+ * free of any dependency on React or Supabase. Until it is called -- and after sign-out -- requests
+ * go out unauthenticated and the API answers 401.
+ */
 export function setAccessTokenGetter(getter: () => string | undefined): void {
   accessTokenGetter = getter;
 }

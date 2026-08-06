@@ -1,19 +1,18 @@
 /**
- * Seeds reference data and two demo accounts.
+ * Seeds reference data and two demo accounts. Truncates everything first, so
+ * `npm run db:seed` is repeatable. The second account (dana@example.com) is a second
+ * tenant, and the one that starts behind the paywall.
  *
- * Truncates everything first, so `npm run db:seed` is repeatable. The second account
- * (dana@example.com) exists so the test suite can prove one user cannot reach another
- * user's rows.
- *
- * "Repeatable" is not the same as "safe", which is what assertNoRealAccounts below is
- * for. This ran once against a database holding a real signed-up account and deleted it,
- * along with the owner's car and their recall answers. A demo seed must not be one
- * mistyped command away from that.
+ * Repeatable is not the same as safe: this ran once against a database holding a real
+ * signed-up account and deleted it along with the owner's car and recall answers. Hence
+ * assertNoRealAccounts below.
  */
 import { isNotNull, sql } from 'drizzle-orm';
 import { closeDb, describeTarget, getDb, type Database } from './index.js';
 import * as t from './schema.js';
-import { benchmarkSeeds } from './fixtures.js';
+import { writeReferencePricing } from './referencePricing.js';
+import { SNAPSHOT_MODEL } from '../services/repairPricingSync.js';
+import { evaluateQuote } from '../services/quoteEvaluation.js';
 
 export async function seed(db: Database): Promise<void> {
   await assertNoRealAccounts(db);
@@ -24,12 +23,10 @@ export async function seed(db: Database): Promise<void> {
 }
 
 /**
- * Refuses to run when the database holds accounts somebody actually signed up for.
- *
- * A real account is one linked to a Supabase identity; the seeded demo users have
- * `supabaseUserId` null by design, so they are not protected and reseeding a demo
- * database still works exactly as before. SEED_WIPE_REAL_ACCOUNTS=1 is the deliberate
- * override, which exists so the answer to this guard is never "comment it out".
+ * Refuses to run when the database holds accounts somebody actually signed up for -- ones
+ * linked to a Supabase identity. Seeded demo users have `supabaseUserId` null, so they are
+ * not protected. SEED_WIPE_REAL_ACCOUNTS=1 is the deliberate override, so the answer to
+ * this guard is never "comment it out".
  */
 async function assertNoRealAccounts(db: Database): Promise<void> {
   if (process.env.SEED_WIPE_REAL_ACCOUNTS === '1') {
@@ -67,60 +64,18 @@ async function truncateAll(db: Database): Promise<void> {
   `);
 }
 
-/** Global data: repair catalog, benchmark pricing, and per-model known issues. */
+/**
+ * Global data: repair catalog, the snapshot model's pricing, and known issues.
+ *
+ * The benchmarks are real Vehicle Databases figures for a 2019 Civic, captured offline
+ * (db/fixtures.ts). They apply to that model and no other; nothing falls back to them.
+ * Alex's demo car is a 2019 Civic, so they are his own car's pricing. Every other model is
+ * priced on demand by services/repairPricingSync.ts and shows nothing until it has been.
+ */
 async function seedReference(db: Database): Promise<Map<string, string>> {
-  const repairIdBySlug = new Map<string, string>();
-
-  for (const [index, seedRow] of benchmarkSeeds.entries()) {
-    const [repair] = await db
-      .insert(t.repairs)
-      .values({ slug: seedRow.slug, name: seedRow.name, position: index })
-      .returning({ id: t.repairs.id });
-
-    repairIdBySlug.set(seedRow.slug, repair.id);
-
-    const partsTotal = seedRow.partsTotalOverride ?? sum(seedRow.parts.map((p) => p.avgPrice));
-    const estHours = round2(sum(seedRow.laborTasks.map((task) => task.hours)));
-    const laborTotal = seedRow.laborTotalOverride ?? Math.round(estHours * seedRow.laborRatePerHour);
-
-    const [benchmark] = await db
-      .insert(t.repairBenchmarks)
-      .values({
-        repairId: repair.id,
-        partsTotal,
-        partsLow: seedRow.partsLow,
-        partsHigh: seedRow.partsHigh,
-        laborRatePerHour: seedRow.laborRatePerHour,
-        laborEstHours: estHours.toFixed(2),
-        laborTotal,
-        fairTotalLow: seedRow.fairTotalLow,
-        fairTotalHigh: seedRow.fairTotalHigh,
-        recommendationHeadline: seedRow.recommendation.headline,
-        recommendationBadge: seedRow.recommendation.badge,
-        recommendationBody: seedRow.recommendation.body,
-      })
-      .returning({ id: t.repairBenchmarks.id });
-
-    if (seedRow.parts.length > 0) {
-      await db.insert(t.benchmarkParts).values(
-        seedRow.parts.map((part, position) => ({
-          benchmarkId: benchmark.id,
-          name: part.name,
-          avgPrice: part.avgPrice,
-          position,
-        })),
-      );
-    }
-
-    await db.insert(t.benchmarkLaborTasks).values(
-      seedRow.laborTasks.map((task, position) => ({
-        benchmarkId: benchmark.id,
-        name: task.name,
-        hours: task.hours.toFixed(2),
-        position,
-      })),
-    );
-  }
+  // Shared with `db:pricing`, which refreshes these same rows on a database holding real
+  // accounts. One code path so the two cannot drift.
+  const { repairIdBySlug } = await writeReferencePricing(db, SNAPSHOT_MODEL);
 
   await db.insert(t.modelKnownIssues).values([
     { year: 2019, make: 'Honda', model: 'Civic', label: 'Transmission hesitation under load', severity: 'medium', position: 0 },
@@ -140,9 +95,8 @@ async function seedAlexRivera(db: Database, repairIdBySlug: Map<string, string>)
       name: 'Alex Rivera',
       phone: '(555) 018-2245',
       memberSince: '2024-01-01',
-      // Past the paywall, because the wireframes depict the Repair Cost Checker in
-      // use and this is also the dev-bypass account. To see the paywall in dev,
-      // point DEV_USER_EMAIL at Dana below.
+      // Past the paywall, because the wireframes depict the Repair Cost Checker in use. Sign in
+      // as Dana below to see the paywall itself.
       plan: 'paid',
     })
     .returning({ id: t.users.id });
@@ -153,8 +107,8 @@ async function seedAlexRivera(db: Database, repairIdBySlug: Map<string, string>)
     { userId: user.id, name: 'Repair Cost Checker', status: 'Active', position: 2 },
   ]);
 
-  // NOTE: the wireframes disagree -- My Car shows a 2019 Honda Civic at 68,400 mi,
-  // Account shows a 2019 Honda CR-V EX at 48,250 mi. One row serves both screens.
+  // The wireframes disagree: My Car shows a 2019 Honda Civic at 68,400 mi, Account shows a 2019
+  // Honda CR-V EX at 48,250 mi. One row serves both screens.
   const [vehicle] = await db
     .insert(t.vehicles)
     .values({
@@ -187,14 +141,13 @@ async function seedAlexRivera(db: Database, repairIdBySlug: Map<string, string>)
   );
 
   /*
-   * Upkeep jobs carry intervals, not statuses. The status is worked out on read from
-   * the interval, the linked service history and the odometer (68,400 here), so these
-   * rows deliberately produce one of every outcome:
+   * Intervals, not statuses -- the status is computed on read. These rows deliberately
+   * produce one of every outcome against the 68,400-mile odometer:
    *
    *   oil          due_soon  -- 500 miles short of its 5,000-mile interval
    *   tyres        overdue   -- 6,000-mile interval, last done 10,400 miles ago
    *   cabin filter ok        -- 15,000-mile interval, plenty left
-   *   brake fluid  unknown   -- no interval set, so there is nothing to compute
+   *   brake fluid  unknown   -- no interval set
    *   coolant      unknown   -- has an interval but has never been done
    */
   const [oil, tyres, brakeFluid, cabinFilter] = await db
@@ -230,40 +183,36 @@ async function seedAssessments(
   vehicleId: string,
   repairIdBySlug: Map<string, string>,
 ): Promise<void> {
+  /*
+   * Quote figures are the amount only; the verdict, the parts/labor split and the
+   * explanation come from the real evaluateQuote below, so the demo account cannot drift
+   * from the benchmark.
+   *
+   * $1,680 for the compressor is deliberately kept: it was overpriced against the old
+   * invented range and is *fair* against the real one ($1,485-$1,842).
+   */
   const specs = [
     {
       slug: 'brake-pad-replacement',
       createdAt: new Date('2025-01-15T12:00:00Z'),
       mileage: 68400,
-      quote: {
-        amount: 320,
-        parts: 150,
-        labor: 170,
-        verdict: 'fair' as const,
-        explanation:
-          'Your quoted price of $320 is within the expected range of $280-$400 for this repair. Parts and labor are both within normal bounds.',
-      },
+      quoteAmount: 320,
       completed: undefined,
     },
     {
       slug: 'ac-compressor-replacement',
       createdAt: new Date('2024-11-03T12:00:00Z'),
       mileage: 66100,
-      quote: {
-        amount: 1680,
-        parts: 890,
-        labor: 790,
-        verdict: 'overpriced' as const,
-        explanation:
-          'Your quoted price of $1,680 is above the expected range of $860-$1,240 for this repair. Both parts and labor are priced above benchmark.',
-      },
+      quoteAmount: 1680,
       completed: undefined,
     },
     {
-      slug: 'timing-belt-inspection',
+      // Was timing-belt-inspection, which carries no pricing. Repointed so the demo
+      // account still has one completed assessment.
+      slug: 'coolant-flush',
       createdAt: new Date('2024-09-20T12:00:00Z'),
       mileage: 64800,
-      quote: undefined,
+      quoteAmount: undefined,
       completed: { at: '2024-10-04', cost: 165 },
     },
   ];
@@ -277,6 +226,17 @@ async function seedAssessments(
       with: { parts: true, laborTasks: true, repair: true },
     });
     if (!benchmark) throw new Error(`Missing benchmark for ${spec.slug}`);
+
+    // The same call the API makes, so the demo data cannot disagree with the product.
+    const quote =
+      spec.quoteAmount === undefined
+        ? undefined
+        : evaluateQuote(spec.quoteAmount, {
+            partsTotal: benchmark.partsTotal,
+            laborTotal: benchmark.laborTotal,
+            fairTotalLow: benchmark.fairTotalLow,
+            fairTotalHigh: benchmark.fairTotalHigh,
+          });
 
     const [assessment] = await db
       .insert(t.assessments)
@@ -297,11 +257,12 @@ async function seedAssessments(
         laborTotal: benchmark.laborTotal,
         fairTotalLow: benchmark.fairTotalLow,
         fairTotalHigh: benchmark.fairTotalHigh,
-        quoteAmount: spec.quote?.amount ?? null,
-        quoteParts: spec.quote?.parts ?? null,
-        quoteLabor: spec.quote?.labor ?? null,
-        quoteVerdict: spec.quote?.verdict ?? null,
-        quoteExplanation: spec.quote?.explanation ?? null,
+        benchmarkSource: benchmark.source,
+        quoteAmount: quote?.amount ?? null,
+        quoteParts: quote?.parts ?? null,
+        quoteLabor: quote?.labor ?? null,
+        quoteVerdict: quote?.verdict ?? null,
+        quoteExplanation: quote?.explanation ?? null,
         completedAt: spec.completed?.at ?? null,
         completedCost: spec.completed?.cost ?? null,
         createdAt: spec.createdAt,
@@ -332,10 +293,7 @@ async function seedAssessments(
   }
 }
 
-/**
- * A second tenant with its own car and assessment. Exists purely so the test
- * suite can assert that Alex cannot see any of it.
- */
+/** A second tenant, and the account that starts behind the paywall. None of it is Alex's. */
 async function seedSecondUser(db: Database, repairIdBySlug: Map<string, string>): Promise<void> {
   const [user] = await db
     .insert(t.users)
@@ -344,11 +302,8 @@ async function seedSecondUser(db: Database, repairIdBySlug: Map<string, string>)
       name: 'Dana Whitfield',
       phone: '(555) 442-9910',
       memberSince: '2025-06-01',
-      // Deliberately still behind the paywall, so there is an account that shows it
-      // without anyone editing the database. Set DEV_USER_EMAIL=dana@example.com to
-      // develop against it. Dana keeps the seeded assessment below -- the isolation
-      // suite needs a second tenant's row to prove Alex cannot read it, and an
-      // assessment predating an unlock is a real state anyway.
+      // Still behind the paywall, so there is an account that shows it without anyone editing the
+      // database. Sign in as dana@example.com to develop against it.
       plan: 'free',
     })
     .returning({ id: t.users.id });
@@ -428,6 +383,7 @@ async function seedSecondUser(db: Database, repairIdBySlug: Map<string, string>)
       laborTotal: benchmark.laborTotal,
       fairTotalLow: benchmark.fairTotalLow,
       fairTotalHigh: benchmark.fairTotalHigh,
+      benchmarkSource: benchmark.source,
       createdAt: new Date('2026-05-03T09:00:00Z'),
     })
     .returning({ id: t.assessments.id });
@@ -439,14 +395,6 @@ async function seedSecondUser(db: Database, repairIdBySlug: Map<string, string>)
   );
 }
 
-function sum(values: number[]): number {
-  return values.reduce((total, value) => total + value, 0);
-}
-
-function round2(value: number): number {
-  return Math.round(value * 100) / 100;
-}
-
 /** Allow `npm run db:seed` while keeping seed() importable by tests. */
 const invokedDirectly = process.argv[1]?.includes('seed');
 if (invokedDirectly) {
@@ -455,8 +403,8 @@ if (invokedDirectly) {
     await seed(getDb());
     console.log('Seeded reference data, alex.rivera@email.com, and dana@example.com.');
   } catch (error) {
-    // Printed rather than thrown: a refusal to delete real accounts is an expected
-    // outcome with something to read, and a stack trace buries the instructions.
+    // Printed rather than thrown: a refusal to delete real accounts is an expected outcome
+    // with instructions to read, and a stack trace buries them.
     console.error(`\n${error instanceof Error ? error.message : String(error)}\n`);
     await closeDb();
     process.exit(1);

@@ -7,12 +7,9 @@ import { vehicleName } from '@/lib/format';
 import type { ChatMessage } from '@caradvocate/shared';
 
 /**
- * Ask CA.
- *
- * The conversation lives here and nowhere else. Nothing is fetched on mount and nothing
- * is stored server-side, so leaving this screen ends the conversation -- which is the
- * intent, and the reason there is no history request and no loading skeleton. The
- * subtitle says so, because an owner who assumes their transcript is being kept would
+ * Ask CA. The conversation lives here and nowhere else: nothing is fetched on mount and nothing
+ * is stored server-side, so leaving the screen ends it -- hence no history request and no
+ * loading skeleton. The subtitle says so, since an owner assuming their transcript is kept would
  * be surprised by the opposite.
  */
 export function AskCAPage() {

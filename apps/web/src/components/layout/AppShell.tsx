@@ -1,10 +1,13 @@
-import { Outlet } from 'react-router-dom';
-import { TopBar } from './TopBar';
+import { Outlet } from "react-router-dom";
+import { TopBar } from "./TopBar";
 
 /**
- * Page frame. `chrome` is false for public routes such as sign-in, where there is
- * nowhere to navigate to yet -- which branch gets nav is a property of the route
- * tree in App.tsx, not something inferred from the URL here.
+ * Page frame: nav bar on top, page content below.
+ *
+ * `chrome={false}` drops the nav bar. Sign-in uses that, since you cannot go
+ * anywhere until you are signed in. The caller passes this in rather than
+ * AppShell checking the URL, because App.tsx already groups the public routes
+ * together -- so there is no list of URLs here to keep in sync.
  */
 export function AppShell({ chrome = true }: { chrome?: boolean }) {
   return (

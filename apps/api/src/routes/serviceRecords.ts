@@ -44,11 +44,8 @@ serviceRecordsRouter.post('/', validateBody(newServiceRecordSchema), async (req,
 });
 
 /**
- * Corrects a record.
- *
- * Worth more than tidiness now that these rows feed the maintenance calculation: a
- * mistyped odometer reading does not merely look wrong, it makes the app claim a job
- * is due when it is not.
+ * Corrects a record. These rows feed the maintenance calculation, so a mistyped odometer does
+ * not merely look wrong -- it makes the app claim a job is due when it is not.
  */
 serviceRecordsRouter.patch('/:id', validateBody(updateServiceRecordSchema), async (req, res) => {
   const vehicle = await requireOwnVehicle(req);
@@ -58,8 +55,8 @@ serviceRecordsRouter.patch('/:id', validateBody(updateServiceRecordSchema), asyn
   if (req.body.description !== undefined) patch.description = req.body.description;
   if (req.body.date !== undefined) patch.serviceDate = req.body.date;
   if (req.body.cost !== undefined) patch.cost = req.body.cost;
-  // Explicit null so a wrong reading can be removed rather than only replaced;
-  // `undefined` would be dropped by Drizzle and the bad value would survive.
+  // Explicit null so a wrong reading can be removed, not only replaced: Drizzle drops
+  // `undefined` and the bad value would survive.
   if ('mileageAtService' in req.body) patch.mileageAtService = req.body.mileageAtService ?? null;
   if ('maintenanceItemId' in req.body) {
     patch.maintenanceItemId = await resolveMaintenanceItem(req, vehicle.id, req.body.maintenanceItemId);
@@ -83,10 +80,8 @@ serviceRecordsRouter.delete('/:id', async (req, res) => {
 });
 
 /**
- * Narrows a path id to a record on the caller's own car.
- *
- * Filtering on the record id *and* the vehicle is what stops one account editing
- * another's history -- the same reasoning as requireOwnVehicle.
+ * Narrows a path id to a record on the caller's own car. Filtering on the record id *and* the
+ * vehicle is what stops one account editing another's history.
  */
 async function requireOwnRecord(req: Parameters<typeof requireOwnVehicle>[0], vehicleId: string) {
   const id = stringParam(req, 'id');
@@ -105,10 +100,8 @@ async function requireOwnRecord(req: Parameters<typeof requireOwnVehicle>[0], ve
 }
 
 /**
- * Confirms a claimed upkeep job belongs to this car before linking to it.
- *
- * Without the check a record could point at another account's job, and that job's
- * "last done" would then be driven by a stranger's service history.
+ * Confirms a claimed upkeep job belongs to this car before linking to it. Without the check, a
+ * record could point at another account's job and drive its "last done" from a stranger's history.
  */
 async function resolveMaintenanceItem(
   req: Parameters<typeof requireOwnVehicle>[0],

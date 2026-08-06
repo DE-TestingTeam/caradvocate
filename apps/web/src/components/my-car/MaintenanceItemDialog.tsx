@@ -15,20 +15,16 @@ import { useWrite } from '@/lib/useWrite';
 import type { MaintenanceItem } from '@caradvocate/shared';
 
 /**
- * Adds or edits one upkeep job.
- *
- * Both intervals are optional and blank means "not set", which the list then reports
- * as unknown. That is deliberate: an owner who does not know how often their brake
- * fluid needs doing should get "unknown" rather than a number we invented for them.
- * When both are given, whichever falls first wins — that is how manufacturers write
- * schedules ("every 10,000 miles or 12 months").
+ * Adds or edits one upkeep job. Both intervals are optional and blank means "not set", which the
+ * list reports as unknown -- an owner who does not know how often their brake fluid needs doing
+ * should get that rather than a number we invented. When both are given, whichever falls first
+ * wins, as manufacturers write schedules ("every 10,000 miles or 12 months").
  */
 export function MaintenanceItemDialog({
   item,
   open,
   onOpenChange,
 }: {
-  /** The job being edited, or undefined when adding. */
   item?: MaintenanceItem;
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -52,8 +48,7 @@ export function MaintenanceItemDialog({
     event.preventDefault();
     if (!valid) return;
 
-    // Blank clears the interval rather than leaving the old value, so `null` has to
-    // travel; sending undefined would silently keep it.
+    // Blank clears the interval, so `null` has to travel -- undefined would keep the old value.
     const patch = {
       label: label.trim(),
       intervalMiles: miles.trim() === '' ? undefined : Number(miles),
@@ -71,7 +66,6 @@ export function MaintenanceItemDialog({
     if (!item) return;
     await write(
       () => deleteMaintenanceItem(item.id),
-      // Said plainly, because it is not obvious that history survives.
       'Job removed. Your service records are untouched.',
       'Could not remove that.',
     );

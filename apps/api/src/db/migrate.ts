@@ -1,7 +1,5 @@
 /**
- * Applies pending migrations from ./drizzle.
- *
- * Uses the direct (non-pooled) connection -- see createMigrationDb. Run with
+ * Applies pending migrations from ./drizzle, on the direct (non-pooled) connection. Run with
  * `npm run db:migrate`.
  */
 import { fileURLToPath } from 'node:url';
@@ -11,8 +9,7 @@ import { env } from '../env.js';
 
 const migrationsFolder = fileURLToPath(new URL('../../drizzle', import.meta.url));
 
-// Checked before the log line below, so the run does not announce a target it has
-// not got and then fail with a stack trace.
+// Checked before the log line below, so the run does not announce a target it has not got.
 if (!env.DIRECT_DATABASE_URL && !env.DATABASE_URL) {
   console.error(
     'DATABASE_URL is required to apply migrations. Set it to a Postgres connection\n' +

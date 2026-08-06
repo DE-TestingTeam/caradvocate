@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { createAssessment, getRepairCatalog } from '@/lib/api';
+import { ApiError } from '@/lib/http';
 import { invalidateAll, useApi } from '@/lib/useApi';
 
 export function NewAssessmentPage() {
@@ -38,6 +39,22 @@ export function NewAssessmentPage() {
       invalidateAll();
       navigate(`/assessments/${created.id}`);
     } catch (cause) {
+      // No pricing for this repair on this car is the one failure that belongs on the
+      // next page rather than this one: the owner's answer to "what do you need?" was
+      // valid, and it is our figures that fall short. Everything else -- 402 from the
+      // paywall, an offline browser, a real fault -- stays here beside the button.
+      //
+      // The catalog flag is checked as well as the status because loadBenchmark answers
+      // 404 for an unknown repair id too, and that is a bug rather than a missing price.
+      // Attempting the POST first (rather than gating on the flag) means a repair priced
+      // by a sync since this page loaded still goes through.
+      const unpriced = catalog.data?.repairs.some(
+        (repair) => repair.id === repairId && !repair.priced,
+      );
+      if (cause instanceof ApiError && cause.status === 404 && unpriced) {
+        navigate(`/assessments/no-pricing?repair=${encodeURIComponent(repairId)}`);
+        return;
+      }
       setError(cause instanceof Error ? cause.message : 'Could not start the assessment.');
       setSubmitting(false);
     }
@@ -52,15 +69,15 @@ export function NewAssessmentPage() {
         <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
           Step 1: What repair do you need?
         </h2>
-        {catalog.data ? (
-          <RepairPicker items={catalog.data} value={repairId} onChange={setRepairId} />
-        ) : (
+        {!catalog.data ? (
           <div className="space-y-2">
             <Skeleton className="h-10 w-full" />
             {Array.from({ length: 4 }).map((_, i) => (
               <Skeleton key={i} className="h-12 w-full rounded-md" />
             ))}
           </div>
+        ) : (
+          <RepairPicker items={catalog.data.repairs} value={repairId} onChange={setRepairId} />
         )}
       </section>
 

@@ -1,9 +1,7 @@
 /**
- * Zod schemas for every request body the API accepts.
- *
- * The API validates with these; the web app can reuse them for client-side form
- * validation so both sides reject the same input. Response shapes are described
- * by the interfaces in domain.ts -- we validate what comes in, not what we emit.
+ * Zod schemas for every request body the API accepts, reusable by the web app so both sides
+ * reject the same input. Response shapes live in domain.ts -- we validate what comes in, not
+ * what we emit.
  */
 import { z } from 'zod';
 
@@ -33,11 +31,10 @@ export const newServiceRecordSchema = z.object({
 });
 
 /**
- * Every field optional, but at least one required -- an empty PATCH is a mistake.
- *
- * The clearable fields accept `null` as well as being omissible, and the difference
- * matters: omitted means "leave it alone", null means "remove it". Without null a
- * wrongly-entered odometer reading could only ever be replaced, never withdrawn.
+ * Every field optional, but at least one required -- an empty PATCH is a mistake. The clearable
+ * fields also accept `null`, and the difference matters: omitted means "leave it alone", null
+ * means "remove it". Without null a wrongly-entered odometer could only be replaced, never
+ * withdrawn.
  */
 export const updateServiceRecordSchema = newServiceRecordSchema
   .partial()
@@ -48,9 +45,8 @@ export const updateServiceRecordSchema = newServiceRecordSchema
   .refine((body) => Object.keys(body).length > 0, 'Provide at least one field to update');
 
 /**
- * An upkeep job. Intervals are optional because an owner may want the job listed
- * before they know how often it should happen -- it then reads as "unknown" rather
- * than being silently assigned a guess.
+ * An upkeep job. Intervals are optional because an owner may want the job listed before they
+ * know how often it should happen -- it then reads as "unknown" rather than taking a guess.
  */
 export const newMaintenanceItemSchema = z.object({
   label: z.string().trim().min(1, 'Give the job a name').max(120),

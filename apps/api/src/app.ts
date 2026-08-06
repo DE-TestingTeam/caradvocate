@@ -14,19 +14,21 @@ import { serviceRecordsRouter } from './routes/serviceRecords.js';
 import { vehicleRouter } from './routes/vehicle.js';
 import type { Database } from './db/index.js';
 
-/**
- * Builds the Express app against an injected database, so tests can hand it a
- * PGlite instance and the dev server can hand it a real pool.
- */
 export interface AppOptions {
   /**
-   * How to identify the caller. Defaults to the dev stub in
-   * middleware/currentUser.ts; tests inject a specific user, and real session
-   * verification will be passed in here.
+   * How to identify the caller. Defaults to the resolver in auth/resolvers.ts; tests inject a
+   * specific user.
    */
   resolveUser?: UserResolver;
 }
 
+/**
+ * Builds the Express app around an injected database, so tests can supply their own.
+ *
+ * Mount order is load-bearing: `express.json` and `attachDb` come first, then the two
+ * unauthenticated endpoints, then `requireUser` for everything under /api, and the error handlers
+ * last. Adding a route above the `requireUser` line silently exposes it.
+ */
 export function createApp(db: Database, options: AppOptions = {}): Express {
   const app = express();
 
@@ -37,24 +39,20 @@ export function createApp(db: Database, options: AppOptions = {}): Express {
     res.json({ ok: true });
   });
 
-  /**
-   * Tells the browser how to sign in -- or that it need not, in dev mode. Both
-   * values are public by design. Unauthenticated on purpose: the client has to
-   * read it before it can authenticate.
-   */
+  // Which Supabase project the browser should sign in against. Unauthenticated on purpose: the
+  // client has to read this before it can authenticate.
   app.get('/api/auth/config', (_req, res) => {
     res.json(publicAuthConfig());
   });
 
-  // Everything below this line requires an authenticated user. Mounting the
-  // middleware once here means a new router cannot forget it.
+  // Everything below requires an authenticated user. Mounted once here so a new router cannot
+  // forget it.
   app.use('/api', requireUser(options.resolveUser ?? defaultResolver()));
 
   app.use('/api/vehicle', vehicleRouter);
   app.use('/api/service-records', serviceRecordsRouter);
   app.use('/api/paywall', paywallRouter);
-  // The one paid surface in v1. requirePaid is what makes a recorded unlock mean the
-  // owner actually decided to open this -- see middleware/requirePaid.ts.
+  // The one paid surface in v1. See middleware/requirePaid.ts.
   app.use('/api/assessments', requirePaid, assessmentsRouter);
   app.use('/api/repairs', repairsRouter);
   app.use('/api/chat', chatRouter);

@@ -1,7 +1,7 @@
 # CarAdvocate
 
-Consumer app that tells car owners whether a repair is necessary and whether a
-shop's quote is fair.
+Consumer app for car owners facing a repair: what it should cost, and whether the
+quote in their hand is fair.
 
 ```
 apps/web        React 18 + Vite + Tailwind + shadcn/ui
@@ -9,13 +9,14 @@ apps/api        Express 5 + Drizzle ORM + Postgres
 packages/shared Domain types and zod schemas both sides import
 ```
 
-Every non-obvious decision is documented in the header comment of the module that
-implements it, so it cannot drift from the code. Start with
-`apps/api/src/db/schema.ts` and `apps/api/src/services/`.
+**Working prototype, incomplete product.** Every screen runs, but several features
+behind them do not exist yet — notably the necessity check. Nobody is charged.
+**[STATUS.md](STATUS.md) is the full picture** and the doc kept current; this README is
+only how to run and change the code.
 
 ## Getting started
 
-Requires Node 20.6+ and a Postgres database (in practice a Supabase project).
+Node 20.6+ and a Postgres database (in practice a Supabase project).
 
 ```bash
 npm install
@@ -24,159 +25,119 @@ npm run db:setup     # migrate + seed
 npm run dev          # API on :3000, web on :5173
 ```
 
-Open http://localhost:5173. The web dev server proxies `/api` to the API, so there
-is no CORS config and no base URL in the client.
+Open http://localhost:5173. The dev server proxies `/api`, so there is no CORS config
+and no base URL in the client.
 
 ## Configuration
 
-`.env` at the repo root, gitignored. `DATABASE_URL` is required; everything else is
-optional and switches a subsystem from its fallback to the real thing. Validated on
-boot by `apps/api/src/env.ts`, which documents each one.
+`.env` at the repo root, gitignored. Validated on boot by `apps/api/src/env.ts`, which
+documents each variable. Only the first two are required.
 
 | Variable | Unset | Set |
 |---|---|---|
 | `DATABASE_URL` | **API will not start** | Postgres over `pg`. On Supabase, the pooled string |
+| `SUPABASE_URL` + `SUPABASE_ANON_KEY` | **API will not start** | real auth, token verified per request |
 | `DIRECT_DATABASE_URL` | falls back to `DATABASE_URL` | migrations only; required when `DATABASE_URL` is pooled |
 | `PGSSLMODE` | TLS on for non-localhost | overrides that choice |
-| `SUPABASE_URL` + `SUPABASE_ANON_KEY` | no sign-in; every request is `DEV_USER_EMAIL` | real auth, token verified per request |
-| `SUPABASE_JWT_SECRET` | — | legacy shared-secret projects (HS256) |
+| `SUPABASE_JWT_SECRET` | — | legacy HS256 projects, in place of `SUPABASE_URL` |
 | `ANTHROPIC_API_KEY` | Ask CA uses canned replies | Ask CA answers with Claude |
 | `CARIMAGES_API_KEY` | My Car shows a placeholder | studio photo of the model |
+| `VEHICLEDATABASES_API_KEY` | only the seeded demo car has pricing | repair pricing for the owner's own model |
+| `OPEN_LABOR_PROJECT_API_KEY` | benchmarks show labor dollars, no hours | labor hours beside the pricing |
 | `PAYWALL_PRICE_CENTS` | **`1499` — a placeholder** | the price the paywall shows |
 | `PAYWALL_INTERVAL` | `month` | `month` or `year` |
-| `DEV_USER_EMAIL` | `alex.rivera@email.com` | who the dev bypass acts as |
 
-The API prints which mode it chose at startup. Never put the Supabase
-`service_role` key in `.env` — the anon key is public by design, that one is not.
-
-On Supabase both connection strings come from **Project Settings → Database →
-Connection string**, and are not interchangeable: the pooled one (port 6543) cannot
-provide the stable session DDL needs, so migrations use the direct one (5432). See
-`apps/api/src/db/connection.ts`.
+Sign-in is mandatory everywhere, including localhost — there is no bypass mode. Never
+put the Supabase `service_role` key in `.env`; the anon key is public by design, that
+one is not. Both connection strings come from **Project Settings → Database →
+Connection string** and are not interchangeable: migrations need the direct one (5432),
+not the pooled one (6543).
 
 ## Commands
 
 ```bash
 npm run dev            # API + web, watching
-npm test               # typecheck + API suite + e2e
-npm run test:api       # 602 checks, no database needed
-npm run test:e2e       # 93 checks, full stack
+npm run typecheck      # every workspace — the only automated gate
 npm run build          # shared, then api, then web
 npm run db:generate    # schema.ts -> a new migration (offline)
 npm run db:migrate     # apply migrations via DIRECT_DATABASE_URL
-npm run db:seed        # reference data + two demo users
+npm run db:seed        # reference data + two demo users (TRUNCATES users)
+npm run db:pricing     # refresh reference pricing only — safe on a live database
 npm run ingest:mileage # complaint mileage from NHTSA's bulk file (needs unzip)
 ```
 
-`packages/shared` is consumed as build output, so it must compile before the apps
-run. `install`, `dev`, `test` and `build` all handle that; `npm run dev:shared`
-watches it if you are editing it live.
+There is no test suite, so the paywall gate, the per-user data filters and anything
+reading an upstream feed have to be exercised by hand. `packages/shared` is consumed as
+build output; `install`, `dev` and `build` compile it first.
 
 ## Things that will bite
 
-**`db:seed` truncates `users`.** Run against a database someone has signed up to,
-it deletes their account, car, recall answers and service history. That happened
-once here, so `seed()` now refuses when it finds an account linked to a Supabase
-identity and names the accounts at risk. `SEED_WIPE_REAL_ACCOUNTS=1` overrides it.
+**`db:seed` truncates `users`** — every account, car, recall answer and service record.
+That happened once here, so it now refuses when it finds a real Supabase-linked account.
+`SEED_WIPE_REAL_ACCOUNTS=1` overrides.
 
-**Never edit a migration that has been applied anywhere**, including a teammate's
-project. Add a new one.
+**Never edit a migration applied anywhere**, including a teammate's project. Add one.
 
-**`PAYWALL_PRICE_CENTS` defaults to a placeholder.** It is the price shown to real
-people and the figure the prototype's result is denominated in, so set it
-deliberately before any cohort sees it. The API prints it on every boot.
+**Migrations and code ship together.** `0013` must be applied before this code, then
+`db:pricing` — until it runs, the app serves old invented figures under a real-looking
+name. `0014` is written but unapplied and is a `DROP TABLE`.
 
-## The paywall
+**`PAYWALL_PRICE_CENTS` defaults to a placeholder**, and it is the figure the
+experiment's result is denominated in. Set it before any cohort sees it.
 
-The Repair Cost Checker is the one paid surface, and v1 takes no money: the paywall
-shows a price, tapping unlock charges nothing and opens the feature, and the tap is
-recorded as a willingness-to-pay signal. That is the spec's design — it measures WTP
-at a price point without building billing.
+**A car the vendor cannot price shows no repairs, and that is correct.** A fallback to
+another vehicle's figures would be a regression — see `services/repairPricingSync.ts`.
 
-Two things make the number trustworthy, and both are easy to break:
+**The RLS scripts in `apps/api/sql/` are applied by hand.** `rls-lockdown.sql` closes a
+second door into the Supabase database that is open by default.
 
-- **The price travels with the tap.** `paywall_intents` stores the price and cadence
-  that were on screen, not a foreign key to config. Change the price mid-test and
-  earlier rows still mean what they meant.
-- **The gate is enforced server-side.** `apps/api/src/middleware/requirePaid.ts`
-  returns 402 on `/api/assessments` for a free account. The client gate is what the
-  owner sees; this is what makes a recorded tap mean they chose to open it. Without
-  it, a typed URL or a stale tab hands someone the feature with no tap, and the
-  conversion rate is quietly wrong.
+## Where things live
 
-The screen states the price before the button and discloses that nothing is charged
-on the same screen, above the fold — no card is requested and nothing is billed. It
-does not say "free" above the button, because a tap on something free measures
-nothing.
+```
+apps/api/src
+  routes/       one router per resource, all under /api
+  services/     upstream feeds, pricing, paywall, Ask CA — the real logic
+  db/           schema, seed, fixtures, connection
+  auth/         token verification and user provisioning
+  middleware/   auth gate, paid gate, validation, error envelope
+  drizzle/      migrations, append only        sql/  RLS, applied by hand
+apps/web/src
+  pages/        one per route in App.tsx
+  components/   ui/ is shadcn; the rest grouped by screen
+  lib/          api.ts and http.ts are the only modules that reach the server
+packages/shared/src   types, zod schemas, error codes — imported by both
+```
 
-Reading the results:
+Conventions worth knowing: user-owned tables carry `user_id` and every query filters on
+it; reference data is keyed by year/make/model instead. Money is integer whole dollars.
+One error envelope, one module that calls `fetch`.
+
+## Reading the paywall results
+
+Nobody is charged — each tap is a willingness-to-pay signal, and the price travels with
+the row so changing it does not re-label history.
 
 ```sql
 select price_cents, interval, source, count(*), count(distinct user_id)
 from paywall_intents group by 1, 2, 3;
 ```
 
-`source` is the entry point — `repair_cost_checker` (the gate itself, including
-arrivals from Ask CA's "CHECK REPAIR COSTS" answer) or `account`. A second tap by the
-same owner is a second row on purpose: re-deciding at a new price is the finding.
+Seeded accounts: Alex is past the paywall, Dana behind it, so `dana@example.com` shows
+the paywall without editing anything. Real signups start free.
 
-Seeded accounts: Alex is past the paywall (the wireframes show the feature in use, and
-he is the dev-bypass account); Dana is behind it, so
-`DEV_USER_EMAIL=dana@example.com` shows the paywall without editing anything. Every
-real signup starts free.
+## Finding the reasoning
 
-## Tests
+Every non-obvious decision lives in the header comment of the module implementing it,
+so it cannot drift from the code.
 
-Neither suite reads `DATABASE_URL` or needs a database running: both build their own
-in-memory PGlite instance (`apps/api/test/harness.ts`), migrated and seeded per run.
-So migrations, enums, foreign keys and cascades are genuinely exercised, CI needs no
-secret, and a test run cannot reach real data. Suites live in `apps/api/test/`;
-`test/offline.ts` keeps every upstream unreachable unless a suite installs its own
-fetcher.
+| Module | Explains |
+|---|---|
+| `db/schema.ts` | the ownership model, and why each table is shaped as it is |
+| `services/repairPricing.ts` | why the vendor's labor dollars never become book time |
+| `services/repairPricingSync.ts` | why there is no pricing fallback to another car |
+| `services/paywall.ts` | why the paywall takes no money, and what makes the signal valid |
+| `services/askClaude.ts` | how Ask CA is kept from inventing things |
+| `services/vehicleContext.ts` | what the model is told about the owner's car |
 
-`scripts/e2e.mts` is the one that catches contract drift between the two halves — it
-builds the real production bundle and drives it in jsdom against the real Express
-app.
-
-## Architecture notes
-
-**Data ownership.** User-owned tables carry `user_id` and every query filters on it.
-Their children carry only a parent FK and are authorised through that parent.
-Reference data (`repairs`, `repair_benchmarks`, `model_*`) has no owner and is keyed
-by year/make/model, because the answer is the same for every owner of the same car.
-`apps/api/test/isolation.test.ts` enforces the boundary. Money is integer whole
-dollars.
-
-**API.** Routers in `apps/api/src/routes/`, all under `/api` and all requiring auth
-except `GET /api/health` and `GET /api/auth/config`. Errors use one envelope, typed
-as `ApiErrorBody`; codes map to status in `packages/shared/src/errors.ts`.
-
-**Frontend.** `apps/web/src/lib/api.ts` is the only module that talks to the server
-and `http.ts` the only place that calls `fetch`. Reads go through `useApi(...)`,
-dialog writes through `useWrite(...)`. Every screen renders loading, error and
-loaded. `invalidateAll()` re-runs every query after a mutation — deliberately crude;
-swap in React Query when requests get frequent.
-
-## Known gaps
-
-**Benchmark pricing is placeholder data.** The "your quote is fair" judgement
-compares against hand-seeded `repair_benchmarks` rows; only the brake-pad figures
-come from the wireframes, and the rest are marked as invented in
-`apps/api/src/db/fixtures.ts`. Sourcing real parts pricing and OEM labor times is a
-licensing problem, not an engineering one. Assessments snapshot their figures at
-creation, so real pricing can land without rewriting history.
-
-**Not built:** password reset, account deletion, quote-PDF parsing, `safe_to_drive`
-on the urgency triage (the spec's paid triage output; Ask CA returns `urgency` but no
-safe-to-drive verdict), Car Value Tracking (needs a valuation vendor), and
-factory-scheduled maintenance intervals (licensed data — owners set their own).
-
-**Deleting an account takes its `paywall_intents` rows with it** (they cascade).
-Export before honouring a deletion request, or the PoC loses that data point.
-
-**Unverified:** token verification is covered by tests using a locally generated
-keypair, since CI cannot reach Supabase. Confirm real tokens once by decoding an
-`access_token` and checking `iss`, `aud`, `sub`, `email`.
-
-Anything with no wireframe — nav menu, edit dialogs, loading and error states — is
-marked with a `NOTE:` comment at the point of use.
+Anything with no wireframe — nav menu, edit dialogs, loading and error states — carries
+a `NOTE:` comment at the point of use.

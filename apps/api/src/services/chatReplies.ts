@@ -1,10 +1,7 @@
 /**
- * Canned Ask CA replies.
- *
- * PLACEHOLDER. There is no model call here -- replies cycle deterministically so
- * the UI has something to render. When the real LLM lands, this is the seam:
- * return the same shape and every urgency callout and CTA the client already
- * renders keeps working.
+ * Canned Ask CA replies, used when no ANTHROPIC_API_KEY is set. Cycles deterministically so the
+ * UI has something to render; the shape matches askClaude.ts, so the callouts and CTA the
+ * client renders keep working either way.
  */
 import type { ChatMessage } from '@caradvocate/shared';
 
@@ -32,10 +29,7 @@ const replies: Reply[] = [
   },
 ];
 
-/**
- * Picks a reply from the existing message count so a given conversation always
- * advances rather than repeating.
- */
+/** Keyed on the message count so a conversation advances rather than repeating. */
 export function nextReply(assistantMessageCount: number): Reply {
   return replies[assistantMessageCount % replies.length];
 }

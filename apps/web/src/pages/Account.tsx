@@ -15,11 +15,8 @@ import { formatMileage, formatPrice, maskVinTail, vehicleName } from '@/lib/form
 import { invalidateAll, useApi } from '@/lib/useApi';
 
 /**
- * Unlocks from Account rather than from the Repair Cost Checker gate.
- *
- * Recorded with its own source, because a tap here is a colder signal than one from
- * someone who arrived mid-repair via Ask CA -- and telling the two apart is the point
- * of collecting the source at all.
+ * Unlocks from Account rather than the Repair Cost Checker gate, recorded with its own source: a
+ * tap here is a colder signal than one from someone who arrived mid-repair via Ask CA.
  */
 function UnlockButton() {
   const { data: paywall } = useApi(getPaywall);

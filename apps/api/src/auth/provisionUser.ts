@@ -1,15 +1,10 @@
 /**
- * Turns a verified Supabase identity into a local profile row.
+ * Turns a verified Supabase identity into a local profile row, on first authenticated request
+ * rather than via a signup webhook -- so there is no window where someone holds a valid
+ * session but no profile, and no webhook to go down.
  *
- * Provisioning happens on first authenticated request rather than via a signup
- * webhook, so there is no window where someone holds a valid session but has no
- * profile, and no webhook to go down.
- *
- * Three cases, in order:
- *   1. Already linked      -> return it
- *   2. Same email, unlinked -> adopt it (so the seeded demo account, or a profile
- *                              created before auth existed, keeps its data)
- *   3. Nothing             -> create the profile and its default features
+ * Three cases, in order: already linked, return it; same email but unlinked, adopt it (so a
+ * seeded or pre-auth profile keeps its data); nothing, create it and its default features.
  */
 import { eq } from 'drizzle-orm';
 import type { Database } from '../db/index.js';
@@ -23,11 +18,9 @@ export interface ProfileRef {
 }
 
 /**
- * The subscription rows the Account screen renders.
- *
- * The Repair Cost Checker starts `Locked`: a new account is behind the paywall until
- * they tap through it, and this row is what Account shows them. services/paywall.ts
- * flips it when they do.
+ * The subscription rows the Account screen renders. The Repair Cost Checker starts `Locked`
+ * -- a new account is behind the paywall until they tap through, and services/paywall.ts
+ * flips this row when they do.
  */
 const DEFAULT_FEATURES = [
   { name: 'My Car', status: 'Included' as const, position: 0 },
@@ -58,8 +51,8 @@ export async function provisionUser(db: Database, identity: VerifiedIdentity): P
     return byEmail[0];
   }
 
-  // New account. Profile and features are written together so the Account screen
-  // can never render a user with no subscription rows.
+  // Profile and features written together, so Account can never render a user with no
+  // subscription rows.
   return db.transaction(async (tx) => {
     const [created] = await tx
       .insert(users)
@@ -70,8 +63,8 @@ export async function provisionUser(db: Database, identity: VerifiedIdentity): P
         name: defaultNameFor(identity.email),
         phone: '',
         memberSince: new Date().toISOString().slice(0, 10),
-        // Every real signup starts behind the paywall. This is the cohort the
-        // prototype measures, so it must not be pre-unlocked.
+        // Every real signup starts behind the paywall -- this is the cohort the prototype
+        // measures, so it must not be pre-unlocked.
         plan: 'free',
       })
       .returning({ id: users.id, email: users.email });

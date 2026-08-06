@@ -1,25 +1,16 @@
 /**
- * Whether an upkeep job is due.
+ * Whether an upkeep job is due -- the whole of "scheduled maintenance": the last time a job was
+ * done plus the interval it recurs on, against today's odometer and date.
  *
- * This is the whole of "scheduled maintenance": subtract the last time a job was
- * done from the interval it recurs on, and compare against today's odometer and
- * today's date. The previous version of this app stored a status instead, which
- * meant nothing kept it true and the seed had to write the answer into the label.
+ * Two rules carry most of the weight. With no interval, or nothing ever logged, the answer is
+ * `unknown` rather than `ok`: there is no baseline to measure from. And with both a mileage and
+ * a time interval, whichever falls first wins -- that is how manufacturers write schedules
+ * ("every 10,000 miles or 12 months"), and the later of the two would tell someone they are
+ * fine when they are a year overdue.
  *
- * Two rules carry most of the weight:
- *
- *   - With no interval, or nothing ever logged against the job, the answer is
- *     `unknown`. Not `ok`. There is no baseline to measure from, and an all-clear we
- *     cannot support is worse than admitting we do not know.
- *   - With both a mileage and a time interval, whichever falls first wins. That is
- *     how manufacturers write schedules ("every 10,000 miles or 12 months") and
- *     taking the later of the two would tell someone they are fine when they are a
- *     year overdue.
- *
- * The calculation is pure and takes rows rather than a database, so the suite can
- * exercise it without one. `loadMaintenanceItems` at the foot of the file is the one
- * exception: it is the two queries the calculation needs, and it lives here because
- * both the My Car endpoint and the Ask CA context block ask the same question.
+ * The calculation is pure and takes rows rather than a database. `loadMaintenanceItems` at the
+ * foot of the file is the exception, and lives here because both the My Car endpoint and the
+ * Ask CA context block ask the same question.
  */
 import { and, asc, eq, isNotNull, max } from 'drizzle-orm';
 import type { MaintenanceItem, MaintenanceStatus } from '@caradvocate/shared';
@@ -70,8 +61,7 @@ export function toMaintenanceItem(
   if (!hasInterval) return { ...base, unknownReason: 'no_interval' };
   if (!last) return { ...base, unknownReason: 'never_serviced' };
 
-  // Each interval yields a verdict independently; the most urgent one stands, since
-  // whichever falls first is what makes the job due.
+  // Each interval yields a verdict independently; the most urgent one stands.
   const verdicts: MaintenanceStatus[] = [];
   let dueAtMileage: number | undefined;
   let milesRemaining: number | undefined;
@@ -89,8 +79,7 @@ export function toMaintenanceItem(
     verdicts.push(daysRemaining < 0 ? 'overdue' : daysRemaining <= SOON_DAYS ? 'due_soon' : 'ok');
   }
 
-  // A mileage interval with no recorded odometer at the last service leaves nothing
-  // to measure -- the interval exists but the baseline does not.
+  // A mileage interval with no odometer at the last service has an interval but no baseline.
   if (verdicts.length === 0) {
     return { ...base, unknownReason: 'never_serviced' };
   }
@@ -117,10 +106,8 @@ function mostUrgent(verdicts: MaintenanceStatus[]): MaintenanceStatus {
 }
 
 /**
- * Adds whole months to an ISO date, clamping the day.
- *
- * 31 January plus one month is 28 February, not 3 March -- letting Date roll over
- * would quietly move a due date into the following month.
+ * Adds whole months to an ISO date, clamping the day: 31 January plus one month is 28 February,
+ * not 3 March, and letting Date roll over would move a due date into the following month.
  */
 function addMonths(iso: string, months: number): string {
   const [year, month, day] = iso.split('-').map(Number);
@@ -140,15 +127,11 @@ function daysBetween(today: Date, iso: string): number {
 }
 
 /**
- * One car's upkeep jobs with their due status worked out, most urgent first.
+ * One car's upkeep jobs with their due status worked out, most urgent first. The last service
+ * per job is one grouped query rather than one per item.
  *
- * The status is computed rather than stored, which needs two things beyond the jobs
- * themselves: today's odometer, and the last service logged against each job. The
- * latter is one grouped query rather than one per item.
- *
- * Shared by `GET /api/vehicle/maintenance` and the Ask CA context block, which must
- * agree -- an owner told a job is overdue on My Car and fine in chat would rightly
- * trust neither.
+ * Shared by `GET /api/vehicle/maintenance` and the Ask CA context block, which must agree -- an
+ * owner told a job is overdue on My Car and fine in chat would rightly trust neither.
  */
 export async function loadMaintenanceItems(
   db: Database,
@@ -159,7 +142,7 @@ export async function loadMaintenanceItems(
       .select()
       .from(maintenanceItems)
       .where(eq(maintenanceItems.vehicleId, vehicle.id))
-      // The owner's own ordering, which decides ties once the urgency sort is applied.
+      // The owner's ordering, which decides ties once the urgency sort is applied.
       .orderBy(asc(maintenanceItems.position)),
     db
       .select({

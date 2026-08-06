@@ -6,6 +6,7 @@ import { RequireVehicle } from '@/components/layout/RequireVehicle';
 import { AccountPage } from '@/pages/Account';
 import { AskCAPage } from '@/pages/AskCA';
 import { AssessmentDetailPage } from '@/pages/AssessmentDetail';
+import { AssessmentNoPricingPage } from '@/pages/AssessmentNoPricing';
 import { AssessmentsPage } from '@/pages/Assessments';
 import { LoginPage } from '@/pages/Login';
 import { MyCarPage } from '@/pages/MyCar';
@@ -36,6 +37,8 @@ export default function App() {
             <Route element={<RequirePaidPlan />}>
               <Route path="/assessments" element={<AssessmentsPage />} />
               <Route path="/assessments/new" element={<NewAssessmentPage />} />
+              {/* Before :id, and a literal segment so it cannot be read as one. */}
+              <Route path="/assessments/no-pricing" element={<AssessmentNoPricingPage />} />
               <Route path="/assessments/:id" element={<AssessmentDetailPage />} />
             </Route>
           </Route>

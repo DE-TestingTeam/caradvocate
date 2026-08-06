@@ -15,12 +15,9 @@ const statusMeta: Record<
 };
 
 /**
- * Recurring upkeep, with whether each job is due.
- *
- * Every status here is arithmetic the server did on the interval, the last service
- * logged against the job and the current odometer — so each row can show its own
- * working. That matters more than it sounds: an owner told "overdue" with no reason
- * has to trust us, and one told "due at 68,900, you're at 68,400" can check.
+ * Recurring upkeep, with whether each job is due. Every status is arithmetic the server did on
+ * the interval, the last logged service and the odometer, so each row can show its working: an
+ * owner told "overdue" has to trust us, one told "due at 68,900, you're at 68,400" can check.
  */
 export function MaintenanceList({
   items,
@@ -82,24 +79,26 @@ export function MaintenanceList({
 }
 
 /**
- * The reasoning behind the badge.
- *
- * When the status is `unknown` this says *why*, because "unknown" alone reads like a
- * bug. The two reasons need different things from the owner: an interval, or a logged
- * service to measure from.
+ * The reasoning behind the badge. When the status is `unknown` this says *why*, because
+ * "unknown" alone reads like a bug, and the two reasons need different things from the owner.
  */
 function Working({ item }: { item: MaintenanceItem }) {
+  const every = describeInterval(item);
+
   if (item.status === 'unknown') {
     return (
       <p className="mt-0.5 text-xs text-muted-foreground">
         {item.unknownReason === 'no_interval'
           ? 'Set how often this is due to track it.'
-          : 'Log this service once to start tracking it.'}
+          : // The interval leads: it is the one thing known about a job with no history, and
+            // without it the row says only that it cannot say anything.
+            [every, 'log this service once to start tracking it.'].filter(Boolean).join(' · ')}
       </p>
     );
   }
 
   const parts: string[] = [];
+  if (every) parts.push(every);
 
   if (item.milesRemaining !== undefined && item.dueAtMileage !== undefined) {
     parts.push(
@@ -119,4 +118,22 @@ function Working({ item }: { item: MaintenanceItem }) {
   }
 
   return <p className="mt-0.5 text-xs text-muted-foreground">{parts.join(' · ')}</p>;
+}
+
+/**
+ * How often the job is due, in the owner's words. Absent when no interval is set, which is the
+ * `no_interval` case and says its own thing.
+ *
+ * Both intervals are named when both exist, joined by "or", because that is the rule: whichever
+ * comes first wins, so showing only the mileage would hide a job going overdue on time alone.
+ */
+function describeInterval(item: MaintenanceItem): string | undefined {
+  const every: string[] = [];
+
+  if (item.intervalMiles !== undefined) every.push(formatMileage(item.intervalMiles));
+  if (item.intervalMonths !== undefined) {
+    every.push(item.intervalMonths === 1 ? '1 month' : `${item.intervalMonths} months`);
+  }
+
+  return every.length > 0 ? `Every ${every.join(' or ')}` : undefined;
 }

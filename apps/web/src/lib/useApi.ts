@@ -1,9 +1,8 @@
 import * as React from 'react';
 
 /**
- * Global revision counter. Mutations bump it; every useApi() query re-runs.
- * Crude but adequate for a mock-backed prototype -- replace with React Query or
- * SWR when the real API lands.
+ * Global revision counter. Mutations bump it; every useApi() query re-runs. Crude but adequate
+ * at this size -- swap for React Query or SWR if caching needs get real.
  */
 const listeners = new Set<() => void>();
 let revision = 0;
@@ -31,13 +30,12 @@ export interface AsyncState<T> {
 }
 
 /**
- * Runs an api.ts function and tracks loading/error state.
- * `deps` should contain anything the fetcher closes over (e.g. a route param).
+ * Runs an api.ts function and tracks loading/error state. `deps` should contain anything the
+ * fetcher closes over, e.g. a route param.
  *
- * The fetcher is held in a ref rather than a dependency: callers pass either a
- * stable import (identity never changes, so it cannot drive the effect) or a
- * fresh arrow function every render (identity always changes, which would loop).
- * `deps` plus the revision counter are the real triggers.
+ * The fetcher is held in a ref rather than a dependency: callers pass either a stable import,
+ * whose identity never changes, or a fresh arrow every render, whose identity always does and
+ * would loop. `deps` plus the revision counter are the real triggers.
  */
 export function useApi<T>(fetcher: () => Promise<T>, deps: readonly unknown[] = []): AsyncState<T> {
   const rev = useRevision();

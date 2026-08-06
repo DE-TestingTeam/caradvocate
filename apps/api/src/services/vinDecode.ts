@@ -1,27 +1,16 @@
 /**
- * VIN decoding via NHTSA's free vPIC API.
+ * VIN decoding via NHTSA's free vPIC API, which answers
+ * `{ Results: [ { Make, Model, ModelYear, Trim, ... } ] }` with `ModelYear` as a string and
+ * empty strings rather than nulls for anything it could not determine.
  *
- * Verified against the live service:
+ * Two things the live service settled that the docs did not. An undecodable VIN is a 200, not
+ * an error -- garbage in yields a full row with every field empty, which is why the "no make
+ * and no model" test below is what detects failure. And `ErrorCode` is unreliable as a gate: a
+ * fully decoded VIN can carry `ErrorCode: '1'`, and several arrive comma-joined ("6,7"), so
+ * rejecting on a non-zero code would throw away good decodes.
  *
- *   curl 'https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVinValues/2HGFC2F53KH124821?format=json'
- *
- * The documented shape held up: `{ Results: [ { Make, Model, ModelYear, Trim, ... } ] }`,
- * 154 fields, `ModelYear` as a *string*, and empty strings rather than nulls for
- * anything vPIC could not determine.
- *
- * Two things the live check settled that the docs did not:
- *
- *   - **An undecodable VIN is a 200, not an error.** Garbage in yields a full row
- *     with every field empty. That is why the "no make and no model" test below is
- *     what detects failure -- there is no status code to key off.
- *   - **`ErrorCode` is unreliable as a gate.** A valid, fully decoded VIN can still
- *     come back with `ErrorCode: '1'` ("check digit does not calculate properly"),
- *     and it arrives comma-joined ("6,7") when several apply. Rejecting on a
- *     non-zero code would throw away good decodes, so it is deliberately ignored.
- *
- * Everything here is defensive regardless: an unexpected shape, a missing field, a
- * timeout or a non-200 all resolve to `undefined`, and the UI falls back to manual
- * entry. A degraded decode cannot break onboarding.
+ * Defensive throughout: an unexpected shape, a timeout or a non-200 all resolve to
+ * `undefined` and the UI falls back to manual entry.
  */
 import type { DecodedVin } from '@caradvocate/shared';
 import { HttpError } from '../lib/httpError.js';
@@ -33,8 +22,8 @@ export async function decodeVin(vin: string): Promise<DecodedVin> {
   const raw = await fetchVpic(vin);
   const decoded = raw ? parseVpicResponse(vin, raw) : { vin };
 
-  // A decode that yields neither make nor model is no more useful than nothing;
-  // say so plainly so the client shows the manual form instead of empty fields.
+  // Neither make nor model is no more useful than nothing, so say so and let the client show
+  // the manual form instead of empty fields.
   if (!decoded.make && !decoded.model) {
     throw HttpError.notFound('Could not decode that VIN. Enter the details manually.');
   }
@@ -61,22 +50,35 @@ async function fetchVpic(vin: string): Promise<unknown | undefined> {
   }
 }
 
-/**
- * Exported for testing. vPIC returns `{ Results: [ { Make, Model, ModelYear, ... } ] }`
- * with empty strings (not nulls) for fields it cannot determine -- confirmed against
- * the live service, where `Series` came back as `''` on a car that has no series.
- */
+/** Exported for testing. */
 export function parseVpicResponse(vin: string, body: unknown): DecodedVin {
   const result = firstResult(body);
   if (!result) return { vin };
+
+  const model = readString(result, 'Model');
 
   return {
     vin,
     year: readYear(result),
     make: readString(result, 'Make'),
-    model: readString(result, 'Model'),
-    trim: readString(result, 'Trim') ?? readString(result, 'Series'),
+    model,
+    // `Series` is a fallback rather than a synonym: when vPIC has no trim it often repeats
+    // the model there, so a 2011 Pathfinder decodes with Series "Pathfinder". Storing that
+    // gives "2011 NISSAN Pathfinder Pathfinder" everywhere the name is shown, so a trim that
+    // only echoes the model is dropped as the absent trim it actually is.
+    trim: readTrim(result, model),
   };
+}
+
+/** The real trim, or undefined when vPIC only offered the model name back. */
+function readTrim(
+  result: Record<string, unknown>,
+  model: string | undefined,
+): string | undefined {
+  const trim = readString(result, 'Trim') ?? readString(result, 'Series');
+  if (trim === undefined) return undefined;
+  if (model !== undefined && trim.toLowerCase() === model.trim().toLowerCase()) return undefined;
+  return trim;
 }
 
 function firstResult(body: unknown): Record<string, unknown> | undefined {

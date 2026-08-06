@@ -6,91 +6,112 @@
       "idx": 0,
       "version": "7",
       "when": 1785267468638,
-      "tag": "0000_square_lilith",
+      "tag": "0000_initial_schema",
       "breakpoints": true
     },
     {
       "idx": 1,
       "version": "7",
       "when": 1785336596498,
-      "tag": "0001_sloppy_jean_grey",
+      "tag": "0001_users_supabase_user_id",
       "breakpoints": true
     },
     {
       "idx": 2,
       "version": "7",
       "when": 1785336739075,
-      "tag": "0002_crazy_revanche",
+      "tag": "0002_vehicles_nullable_valuation",
       "breakpoints": true
     },
     {
       "idx": 3,
       "version": "7",
       "when": 1785340612922,
-      "tag": "0003_polite_johnny_storm",
+      "tag": "0003_vehicles_nullable_vin",
       "breakpoints": true
     },
     {
       "idx": 4,
       "version": "7",
       "when": 1785346620107,
-      "tag": "0004_nifty_mockingbird",
+      "tag": "0004_nhtsa_model_feeds",
       "breakpoints": true
     },
     {
       "idx": 5,
       "version": "7",
       "when": 1785348104282,
-      "tag": "0005_cuddly_banshee",
+      "tag": "0005_model_owner_report_quotes",
       "breakpoints": true
     },
     {
       "idx": 6,
       "version": "7",
       "when": 1785353119806,
-      "tag": "0006_dusty_terrax",
+      "tag": "0006_vehicle_recall_status",
       "breakpoints": true
     },
     {
       "idx": 7,
       "version": "7",
       "when": 1785353567190,
-      "tag": "0007_lonely_toad_men",
+      "tag": "0007_owner_report_mileage_stats",
       "breakpoints": true
     },
     {
       "idx": 8,
       "version": "7",
       "when": 1785355574228,
-      "tag": "0008_cooing_wrecking_crew",
+      "tag": "0008_service_records_maintenance_link",
       "breakpoints": true
     },
     {
       "idx": 9,
       "version": "7",
       "when": 1785355617462,
-      "tag": "0009_gray_luke_cage",
+      "tag": "0009_maintenance_item_intervals",
       "breakpoints": true
     },
     {
       "idx": 10,
       "version": "7",
       "when": 1785359181067,
-      "tag": "0010_lazy_captain_midlands",
+      "tag": "0010_drop_chat_messages",
       "breakpoints": true
     },
     {
       "idx": 11,
       "version": "7",
       "when": 1785421164770,
-      "tag": "0011_busy_stature",
+      "tag": "0011_model_safety_ratings",
       "breakpoints": true
     },
     {
       "idx": 12,
       "version": "7",
       "when": 1785436207753,
-      "tag": "0012_brief_gargoyle",
+      "tag": "0012_paywall_intents",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1785699578236,
+      "tag": "0013_repair_benchmarks_per_model",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1785887079167,
+      "tag": "0014_drop_model_safety_ratings",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1785961401211,
+      "tag": "0015_vehicle_schedule_checked_at",
       "breakpoints": true
     }
   ]

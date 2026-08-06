@@ -5,16 +5,6 @@ import { formatRecallComponent } from '@/lib/format';
 import { nhtsaVehicleUrl, type VehicleKey } from '@/lib/nhtsa';
 import type { KnownIssue, KnownIssueReport, Severity } from '@caradvocate/shared';
 
-/**
- * Red, amber, neutral.
- *
- * `low` stays uncoloured on purpose: two complaints about a model is weak signal,
- * and a colour of its own would imply a finding the data cannot support. Green would
- * be worse -- nothing in this list is good news, only less bad.
- *
- * The badge text states the severity as well, so colour reinforces the label rather
- * than being the only thing carrying it.
- */
 const severityVariant: Record<Severity, 'destructive' | 'warning' | 'outline'> = {
   high: 'destructive',
   medium: 'warning',
@@ -22,18 +12,12 @@ const severityVariant: Record<Severity, 'destructive' | 'warning' | 'outline'> =
 };
 
 /**
- * What tends to go wrong with this model.
+ * What tends to go wrong with this model. Two kinds of row:
+ * ours are written for a reader; the rest are NHTSA complaints, which carry their counts instead
+ * of being stated as faults, because an owner can weigh "31 reports, 3 involved a crash".
  *
- * Two kinds of entry, deliberately distinguishable. Curated ones are written for a
- * reader. The rest are systems owners have complained about to NHTSA -- real
- * accounts, but unverified, so they carry their report count rather than being
- * stated as faults. An owner can weigh "31 reports, 3 involved a crash"; they
- * cannot weigh an assertion with no provenance.
- *
- * The complaints themselves are deliberately not reproduced here. Each is several
- * paragraphs and a popular model has hundreds, which buries the one thing this list
- * is for: seeing at a glance which systems are trouble. Anyone who wants the
- * accounts gets them from NHTSA, where they are complete rather than excerpted.
+ * The complaint text is not shown -- each runs to paragraphs, and hundreds would bury the list.
+ * The NHTSA link has them in full.
  */
 export function KnownIssuesList({ report, vehicle }: { report: KnownIssueReport; vehicle: VehicleKey }) {
   if (report.issues.length === 0) {
@@ -69,8 +53,6 @@ export function KnownIssuesList({ report, vehicle }: { report: KnownIssueReport;
       </ul>
 
       {reported && (
-        // Provenance and the way out, stated once at the bottom rather than
-        // repeated on every row.
         <p className="mt-3 text-xs text-muted-foreground">
           Report counts come from complaints owners filed with NHTSA for this year, make and model. They are first-hand
           accounts, not verified findings.{' '}
@@ -90,7 +72,7 @@ export function KnownIssuesList({ report, vehicle }: { report: KnownIssueReport;
   );
 }
 
-/** The counts behind one component, only as far as they are non-zero. */
+/** The numbers behind one row. Zero counts are left out rather than printed. */
 function ReportDetail({ issue }: { issue: KnownIssue }) {
   const harms = [
     issue.deathCount ? `${issue.deathCount} involved a death` : undefined,
@@ -103,11 +85,6 @@ function ReportDetail({ issue }: { issue: KnownIssue }) {
     <p className="mt-0.5 text-xs text-muted-foreground">
       {issue.reportCount === 1 ? '1 owner report' : `${issue.reportCount} owner reports`}
       {harms.length > 0 && ` · ${harms.join(', ')}`}
-      {/*
-        The one number here that is about *your* car rather than the model. "in N of
-        them" is deliberate: the range comes from the subset of complaints that
-        recorded an odometer reading, and hiding that would overstate it.
-      */}
       {issue.mileage && (
         <>
           {' · '}

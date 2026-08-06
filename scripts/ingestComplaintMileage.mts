@@ -1,29 +1,19 @@
 /**
- * Fills in mileage-at-failure on the owner-report aggregates.
- *
- * NHTSA's JSON complaints API omits the odometer reading entirely. Their bulk flat
- * file has it (`MILES`), so this is the only way to answer the question owners
- * actually ask: "is this going to happen to me, and when?"
- *
- * Run it periodically:
+ * Fills in mileage-at-failure on the owner-report aggregates. NHTSA's JSON complaints API omits
+ * the odometer reading; their bulk flat file has it (`MILES`), so this is the only way to answer
+ * "is this going to happen to me, and when?"
  *
  *   npm run ingest:mileage                 # downloads the current file
  *   npm run ingest:mileage -- ./cmpl.zip   # or reuse one already on disk
  *
- * Three things shape the design:
+ * Three things shape the design. The file is ~351MB zipped and gigabytes unzipped, so it is
+ * streamed through `unzip -p` and only rows for models our users own are kept. Its COMPDESC is
+ * finer-grained than the API's `components` ("SERVICE BRAKES, HYDRAULIC" vs "SERVICE BRAKES"),
+ * so it is reduced to the same shape before matching -- verified against a 2011 Pathfinder,
+ * where the reduced counts match the API's groups exactly. And only about two thirds of
+ * complaints report an odometer, so the sample count is stored alongside the range.
  *
- *   - The file is ~351MB zipped and gigabytes unzipped, all makes since the 1990s.
- *     It is streamed through `unzip -p` and never written to disk, and only rows for
- *     models our users actually own are kept.
- *   - The bulk file's COMPDESC is finer-grained than the API's `components`
- *     ("SERVICE BRAKES, HYDRAULIC" vs "SERVICE BRAKES"), so it is reduced to the
- *     same shape before matching. Verified against a 2011 Pathfinder, where the
- *     reduced counts match the API's groups exactly.
- *   - Only about two thirds of complaints report an odometer reading, so the sample
- *     count is stored alongside the range and a thin sample is not presented as a
- *     finding.
- *
- * Requires `unzip` on PATH, which macOS and most Linux images have.
+ * Requires `unzip` on PATH.
  */
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
@@ -56,8 +46,7 @@ async function main(): Promise<void> {
   const db = getDb();
   console.log(`Database: ${describeTarget()}`);
 
-  // Only models someone owns. Ingesting every make would mean millions of rows
-  // nobody will ever read.
+  // Only models someone owns: every make would be millions of rows nobody reads.
   const owned = await db
     .selectDistinct({ year: vehicles.year, make: vehicles.make, model: vehicles.model })
     .from(vehicles);
@@ -153,8 +142,7 @@ async function main(): Promise<void> {
       .returning({ id: modelOwnerReports.id });
 
     if (result.length === 0) {
-      // The API feed has not produced this component group, so there is nothing to
-      // attach the mileage to. Reported rather than swallowed.
+      // The API feed has no such component group, so there is nothing to attach the mileage to.
       unmatched += 1;
       console.log(`  no aggregate row for ${yearStr} ${make} ${model} / ${component} -- run the app once to sync complaints first`);
     } else {
@@ -171,10 +159,8 @@ async function main(): Promise<void> {
 }
 
 /**
- * Nearest-rank percentiles.
- *
- * Not interpolated: with a handful of samples an interpolated value invents a
- * precision the data does not have, and these are real odometer readings.
+ * Nearest-rank percentiles, not interpolated: with a handful of samples an interpolated value
+ * invents a precision the data does not have.
  */
 function percentiles(values: number[]): { count: number; p25: number; median: number; p75: number } {
   const sorted = [...values].sort((a, b) => a - b);
@@ -200,8 +186,8 @@ async function streamRows(zipPath: string, onRow: (fields: string[]) => void): P
   }
 
   const code: number = await new Promise((resolve) => child.on('close', resolve));
-  // unzip exits 0 normally; SIGPIPE-ish teardown can yield others once the stream
-  // is fully consumed, so only a real failure with no rows read should throw.
+  // unzip exits 0 normally, but SIGPIPE-ish teardown can yield others once the stream is fully
+  // consumed, so only a failure with no rows read should throw.
   if (code !== 0 && stderr.trim()) {
     throw new Error(`unzip failed (${code}): ${stderr.trim().slice(0, 200)}`);
   }

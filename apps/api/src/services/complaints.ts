@@ -1,21 +1,14 @@
 /**
  * Owner complaints from NHTSA's free complaints API.
  *
- * Verified against the live service:
+ * DATES DIFFER FROM THE RECALLS FEED on the same host: this one is MM/DD/YYYY, recalls are
+ * DD/MM/YYYY. Confirmed by scanning both -- recall dates reach 28 in the first segment,
+ * complaint dates never exceed 12 there while reaching 31 in the second. Reusing the recall
+ * parser would mangle every date it could not detect as impossible.
  *
- *   curl 'https://api.nhtsa.gov/complaints/complaintsByVehicle?make=nissan&model=pathfinder&modelYear=2011'
- *
- * ============================== DATES DIFFER =================================
- * This feed uses **MM/DD/YYYY**. The recalls feed on the same host uses
- * **DD/MM/YYYY**. That is not a typo here -- it was confirmed by scanning both
- * feeds: recall dates reach 28 in the first segment, complaint dates never exceed
- * 12 there while reaching 31 in the second. Reusing the recall date parser would
- * silently mangle every date it could not detect as impossible.
- * =============================================================================
- *
- * What arrives is one record per complaint; what the UI needs is "which systems get
- * reported, and how often". So this module aggregates by component, which is also
- * what keeps a 344KB response for a popular model out of the hot path.
+ * What arrives is one record per complaint; what the UI needs is which systems get reported
+ * and how often, so this aggregates by component -- which also keeps a 344KB response for a
+ * popular model out of the hot path.
  */
 const NHTSA_COMPLAINTS = 'https://api.nhtsa.gov/complaints/complaintsByVehicle';
 const TIMEOUT_MS = 10000;
@@ -24,13 +17,10 @@ const TIMEOUT_MS = 10000;
 const NON_COMPONENT = 'UNKNOWN OR OTHER';
 
 /**
- * NHTSA's component taxonomy shifted over the years, so the same fuel problem is
- * tagged three ways and one complaint often carries all three -- 62 of 63 fuel
- * complaints on a 2019 Civic carry both "FUEL SYSTEM" and "GASOLINE". Without this
- * the section shows three near-identical rows for one issue.
- *
- * Deliberately minimal: only clusters confirmed to co-occur on the live feed are
- * merged, and anything unrecognised passes through untouched.
+ * NHTSA's component taxonomy shifted over the years, so the same fuel problem is tagged three
+ * ways and one complaint often carries all three -- 62 of 63 fuel complaints on a 2019 Civic
+ * carry both "FUEL SYSTEM" and "GASOLINE". Without this the section shows three near-identical
+ * rows for one issue. Only clusters confirmed to co-occur on the live feed are merged.
  */
 const CANONICAL_COMPONENT = new Map([
   ['GASOLINE', 'FUEL SYSTEM'],
@@ -38,19 +28,14 @@ const CANONICAL_COMPONENT = new Map([
 ]);
 
 /**
- * Reduces one component label to the form the aggregates are keyed on.
+ * Reduces one component label to the form the aggregates are keyed on. `undefined` for NHTSA's
+ * uncategorised bucket.
  *
- * Shared with the bulk-file ingest, which needs the same answer from a differently
- * shaped input. The bulk file's COMPDESC is finer-grained and uses both separators
- * *within* one component's name -- "LATCHES/LOCKS/LINKAGES:HOOD:LATCH",
- * "SERVICE BRAKES, HYDRAULIC" -- where the JSON API uses a comma to separate
- * several components. So the colon and comma tails are dropped here, and the API
- * path splits on commas before calling this.
- *
- * Verified on a 2011 Pathfinder: reducing the bulk file this way reproduces the
- * API's component groups and counts exactly.
- *
- * Returns undefined for NHTSA's uncategorised bucket, which tells an owner nothing.
+ * Shared with the bulk-file ingest, whose COMPDESC is finer-grained and uses both separators
+ * *within* one name ("LATCHES/LOCKS/LINKAGES:HOOD:LATCH", "SERVICE BRAKES, HYDRAULIC") where
+ * the JSON API uses a comma between components. So the colon and comma tails are dropped here
+ * and the API path splits on commas before calling this. Verified on a 2011 Pathfinder:
+ * reducing the bulk file this way reproduces the API's groups and counts exactly.
  */
 export function canonicalComponent(raw: string): string | undefined {
   const head = raw.split(':')[0]?.split(',')[0]?.trim().toUpperCase();
@@ -133,11 +118,9 @@ async function requestComplaints(lookup: ComplaintLookup): Promise<unknown> {
 }
 
 /**
- * Exported for testing. NHTSA returns `{ count, results: [ { components, crash, … } ] }`.
- *
- * A complaint contributes once to each distinct system it names, because a report
- * about brakes *and* the engine genuinely concerns both. Canonicalising before
- * dedupe is what stops a triple-tagged fuel complaint counting three times.
+ * Exported for testing. A complaint contributes once to each distinct system it names, because
+ * a report about brakes *and* the engine concerns both. Canonicalising before dedupe is what
+ * stops a triple-tagged fuel complaint counting three times.
  */
 export function aggregateComplaints(body: unknown): ComponentReports[] {
   const groups = new Map<string, ComponentReports>();
@@ -196,12 +179,10 @@ export function aggregateComplaints(body: unknown): ComponentReports[] {
 }
 
 /**
- * The few accounts most worth reading.
- *
- * An account where someone crashed or was hurt leads, because that is the one that
- * changes a decision. Recency breaks the tie: a 2025 report describes the car
- * someone is driving now, a 2013 one may describe a fault long since fixed by a
- * service bulletin. Duplicate text is dropped -- owners sometimes file twice.
+ * The few accounts most worth reading. One where someone crashed or was hurt leads, because it
+ * is the one that changes a decision; recency breaks the tie, since a 2013 report may describe
+ * a fault long since fixed by a service bulletin. Duplicate text is dropped -- owners
+ * sometimes file twice.
  */
 function pickQuotes(candidates: QuoteCandidate[]): OwnerQuote[] {
   const seen = new Set<string>();
@@ -222,11 +203,8 @@ function pickQuotes(candidates: QuoteCandidate[]): OwnerQuote[] {
 }
 
 /**
- * The owner's description, if it says anything.
- *
- * NHTSA pads prose with double spaces, and a handful of complaints carry a stub
- * like "SEE SUMMARY" -- too short to inform, so they are left out rather than
- * shown as an account.
+ * The owner's description, if it says anything. NHTSA pads prose with double spaces, and a
+ * handful of complaints carry a stub like "SEE SUMMARY" -- too short to inform, so dropped.
  */
 function readSummary(row: Record<string, unknown>): string | undefined {
   const value = row.summary;
@@ -245,8 +223,8 @@ function componentsOf(row: Record<string, unknown>): string[] {
   const raw = row.components;
   if (typeof raw !== 'string') return [];
 
-  // Comma is a separator here, unlike in the bulk file where it can be part of one
-  // component's name -- hence the split before canonicalising rather than inside it.
+  // Comma is a separator here, unlike in the bulk file where it can be part of one name --
+  // hence the split before canonicalising rather than inside it.
   const canonical = raw
     .split(',')
     .map((part) => canonicalComponent(part))

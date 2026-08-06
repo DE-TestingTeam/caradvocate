@@ -1,18 +1,11 @@
 /**
- * Bearer-token verification.
+ * Bearer-token verification. Supabase signs access tokens either asymmetrically (against the
+ * project's published JWKS) or, on older projects, with a shared HS256 secret. Both work;
+ * JWKS is preferred because the secret never leaves Supabase.
  *
- * Supabase signs access tokens either asymmetrically (verified against the
- * project's published JWKS) or, on older projects, with a shared HS256 secret.
- * Both are supported; JWKS is preferred because the secret never leaves Supabase.
- *
- * What is checked, and why each matters:
- *   - signature   a forged or tampered token is rejected
- *   - expiry      jose enforces `exp` and `nbf`, so a stale token stops working
- *   - issuer      a validly-signed token from a *different* Supabase project
- *                 must not authenticate here
- *   - audience    Supabase marks signed-in users with aud "authenticated";
- *                 anon tokens carry a different value and are refused
- *   - subject     no `sub` means no identity to attribute the request to
+ * Checked: signature, expiry (jose enforces `exp`/`nbf`), issuer -- so a validly-signed token
+ * from a *different* project cannot authenticate here -- audience, since Supabase marks
+ * signed-in users `authenticated` and anon tokens carry another value, and subject.
  */
 import { createRemoteJWKSet, jwtVerify, type JWTPayload, type JWTVerifyGetKey } from 'jose';
 import { expectedIssuer, jwksUrl, sharedSecret } from './config.js';
@@ -30,7 +23,6 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3
 let remoteJwks: JWTVerifyGetKey | undefined;
 
 function getJwks(): JWTVerifyGetKey | undefined {
-  // An injected key set wins, so tests never reach the network.
   if (remoteJwks) return remoteJwks;
 
   const url = jwksUrl();
@@ -40,11 +32,6 @@ function getJwks(): JWTVerifyGetKey | undefined {
   return remoteJwks;
 }
 
-/** Exposed so tests can point verification at a locally generated key set. */
-export function setJwksForTesting(getKey: JWTVerifyGetKey | undefined): void {
-  remoteJwks = getKey;
-}
-
 export function extractBearerToken(header: string | undefined): string | undefined {
   if (!header) return undefined;
   const [scheme, token] = header.split(' ');
@@ -52,6 +39,11 @@ export function extractBearerToken(header: string | undefined): string | undefin
   return token.trim() || undefined;
 }
 
+/**
+ * The identity behind a token, or a 401. Every rejection reason -- bad signature, expired, wrong
+ * issuer, wrong audience, missing claim -- surfaces as the same vague message on purpose: which
+ * check failed is not the caller's business, and saying so helps anyone probing for a valid token.
+ */
 export async function verifyAccessToken(token: string): Promise<VerifiedIdentity> {
   const issuer = expectedIssuer();
   const options = {
@@ -80,8 +72,8 @@ export async function verifyAccessToken(token: string): Promise<VerifiedIdentity
     throw HttpError.unauthenticated('Token is missing a subject');
   }
 
-  // Supabase subjects are UUIDs and the column is typed as one. Reject anything
-  // else here so a malformed token is a 401 rather than a database type error.
+  // Supabase subjects are UUIDs and the column is typed as one, so a malformed token is a 401
+  // here rather than a database type error later.
   if (!UUID_PATTERN.test(supabaseUserId)) {
     throw HttpError.unauthenticated('Token subject is not a valid identifier');
   }
@@ -95,8 +87,8 @@ export async function verifyAccessToken(token: string): Promise<VerifiedIdentity
 }
 
 /**
- * Supabase puts the address in `email`, but some flows carry it only inside
- * `user_metadata`, so fall back rather than reject a legitimate session.
+ * Supabase puts the address in `email`, but some flows carry it only in `user_metadata`, so
+ * fall back rather than reject a legitimate session.
  */
 function readEmail(payload: JWTPayload): string | undefined {
   if (typeof payload.email === 'string' && payload.email.length > 0) {

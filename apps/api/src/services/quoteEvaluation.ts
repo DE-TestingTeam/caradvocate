@@ -1,11 +1,8 @@
 /**
- * Quote evaluation -- the judgement the whole product rests on.
- *
- * This moved off the client, where it was trivially inspectable and editable.
- * It is still a placeholder: it compares the quote to a seeded benchmark range
- * and nothing more. A real implementation needs sourced parts pricing and OEM
- * labor times, and should probably weigh regional labor rates and the shop's
- * own history. See the root README for the outstanding data question.
+ * Quote evaluation -- the judgement the whole product rests on. Server-side, where the client
+ * cannot edit it, but still a placeholder: it compares the quote to a benchmark range and
+ * nothing more. A real implementation should weigh regional labor rates and the shop's own
+ * history. See the root README for the outstanding data question.
  */
 import type { AssessmentQuote, QuoteVerdict } from '@caradvocate/shared';
 
@@ -17,13 +14,12 @@ export interface BenchmarkFigures {
 }
 
 /**
- * Splits the quoted total across parts and labor in the same proportion as the
- * benchmark, because shop quotes routinely arrive as a single number.
+ * Splits the quoted total across parts and labor in the benchmark's proportion, because shop
+ * quotes routinely arrive as a single number.
  *
- * NOTE: a quote *below* the benchmark range is reported as fair. The wireframes
- * define no "suspiciously low" verdict, and being told a cheap quote is fine is
- * the less harmful error. Revisit if the product wants to flag lowballs that
- * signal skipped work or counterfeit parts.
+ * A quote *below* the range is reported as fair: the wireframes define no "suspiciously low"
+ * verdict, and it is the less harmful error. Revisit to flag lowballs that signal skipped work
+ * or counterfeit parts.
  */
 export function evaluateQuote(amount: number, benchmark: BenchmarkFigures): AssessmentQuote {
   const verdict: QuoteVerdict = amount > benchmark.fairTotalHigh ? 'overpriced' : 'fair';

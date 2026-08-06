@@ -10,17 +10,12 @@ const badgeVariants = cva(
         default: 'border-transparent bg-primary text-primary-foreground',
         secondary: 'border-transparent bg-secondary text-secondary-foreground',
         /**
-         * Tinted rather than filled.
+         * Tinted rather than filled: saturated red repeated down a list of recalls and
+         * maintenance items shouts until none of it registers, while a tint plus border still
+         * reads as "bad" at a glance.
          *
-         * A saturated block of red repeated down a list of recalls, known issues and
-         * maintenance items shouts at the reader until none of it registers. The
-         * tint plus a matching border still reads as "bad" at a glance while letting
-         * the label carry the meaning.
-         *
-         * Text stays `foreground` rather than taking the accent colour: measured
-         * against these tints, `text-destructive` lands at 4.1:1 and `text-warning`
-         * at 1.9:1, both short of AA for text this size. Neutral text on the tint is
-         * ~17:1. This mirrors UrgencyCallout, which already tints the same way.
+         * Text stays `foreground` for contrast -- against these tints `text-destructive` is
+         * 4.1:1 and `text-warning` 1.9:1, both short of AA at this size, where neutral is ~17:1.
          */
         destructive: 'border-destructive/30 bg-destructive/15 text-foreground',
         /** The middle step, on the same amber token UrgencyCallout uses. */

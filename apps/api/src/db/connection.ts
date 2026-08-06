@@ -1,9 +1,6 @@
 /**
- * Turns a connection string into a `pg` pool config.
- *
- * Kept separate from db/index.ts so it can be unit tested without opening a
- * socket -- the rules below are easy to get subtly wrong and impossible to check
- * by reading.
+ * Turns a connection string into a `pg` pool config. Separate from db/index.ts so it can be
+ * unit tested without opening a socket.
  */
 import type { PoolConfig } from 'pg';
 
@@ -22,29 +19,18 @@ export function buildPoolConfig(databaseUrl: string, options: ConnectionOptions 
   const config: PoolConfig = { connectionString: databaseUrl };
 
   if (needsSsl(url.hostname, explicitMode)) {
-    /**
-     * Supabase (and most hosted Postgres) terminate TLS with a certificate from
-     * a CA that Node does not ship. Verification is therefore disabled, which
-     * means the connection is encrypted but the server is not authenticated.
-     *
-     * That is the standard arrangement for hosted Postgres and is what the
-     * `?sslmode=require` in their connection strings asks for. To get full
-     * verification, download the project CA certificate and pass it as `ca`
-     * here with rejectUnauthorized: true.
-     */
+    // Supabase and most hosted Postgres terminate TLS with a CA that Node does not ship, so
+    // the connection is encrypted but the server is not authenticated -- which is what the
+    // `?sslmode=require` in their connection strings asks for. For full verification, pass
+    // the project CA certificate as `ca` with rejectUnauthorized: true.
     config.ssl = { rejectUnauthorized: false };
   }
 
   if (isTransactionPooler(url)) {
-    /**
-     * Supabase's transaction-mode pooler (Supavisor, port 6543) hands a
-     * different backend to each transaction, so server-side prepared statements
-     * and session state do not survive. Drizzle's normal queries use unnamed
-     * statements and are fine; `.prepare()` and LISTEN/NOTIFY are not.
-     *
-     * A smaller local pool also matters: the pooler multiplexes for us, and
-     * every client here consumes one of the project's connection slots.
-     */
+    // Supavisor hands a different backend to each transaction, so prepared statements and
+    // session state do not survive -- Drizzle's unnamed statements are fine, `.prepare()`
+    // and LISTEN/NOTIFY are not. The pool stays small because the pooler multiplexes for us
+    // and every client consumes one of the project's connection slots.
     config.max = 5;
   }
 
@@ -64,10 +50,8 @@ export function isTransactionPooler(url: URL): boolean {
 }
 
 /**
- * Migrations must not run through a transaction pooler: DDL wants a stable
- * session, and Supabase documents the direct connection for exactly this. Falls
- * back to DATABASE_URL when no direct URL is configured (e.g. plain local
- * Postgres, where they are the same thing).
+ * Migrations must not run through a transaction pooler -- DDL wants a stable session. Falls
+ * back to DATABASE_URL when no direct URL is configured, as with plain local Postgres.
  */
 export function migrationUrl(databaseUrl: string, directUrl?: string): string {
   return directUrl && directUrl.length > 0 ? directUrl : databaseUrl;

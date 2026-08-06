@@ -1,10 +1,7 @@
 /**
- * The single seam between the UI and the server.
- *
- * Components never call fetch directly and never import from @caradvocate/shared
- * schemas for transport concerns -- they call these functions. Every response is
- * typed by the shared domain contract, so a backend change that breaks a shape
- * fails typechecking here rather than at runtime in a component.
+ * The single seam between the UI and the server. Components never call fetch directly --
+ * they call these functions, typed by the shared domain contract, so a backend change that
+ * breaks a shape fails typechecking here rather than at runtime in a component.
  */
 import type {
   Account,
@@ -20,7 +17,7 @@ import type {
   UpdateMaintenanceItemInput,
   UpdateServiceRecordInput,
   RecallReport,
-  RepairCatalogItem,
+  RepairCatalogReport,
   ServiceRecord,
   PaywallStatus,
   UpdateAccountInput,
@@ -45,18 +42,14 @@ export function createVehicle(input: NewVehicleInput): Promise<Vehicle> {
   return http.post<Vehicle>('/vehicle', input);
 }
 
-/**
- * Looks up a VIN. Rejects when the VIN cannot be decoded, which callers should
- * treat as "fall back to manual entry" rather than as a failure to report.
- */
+/** Rejects when the VIN cannot be decoded -- callers should fall back to manual entry. */
 export function decodeVin(vin: string): Promise<DecodedVin> {
   return http.get<DecodedVin>(`/vehicle/decode/${encodeURIComponent(vin)}`);
 }
 
 /**
- * Upkeep jobs with their due status already worked out. The status is computed
- * server-side from the interval, the linked service history and the odometer, so the
- * client never does the arithmetic and cannot disagree with it.
+ * Upkeep jobs with their due status already worked out server-side, so the client never
+ * does the arithmetic and cannot disagree with it.
  */
 export function getMaintenance(): Promise<MaintenanceItem[]> {
   return http.get<MaintenanceItem[]>('/vehicle/maintenance');
@@ -82,18 +75,12 @@ export function getKnownIssues(): Promise<KnownIssueReport> {
   return http.get<KnownIssueReport>('/vehicle/known-issues');
 }
 
-/**
- * Open safety recalls. Carries `checked` so the UI can say "none found" only when
- * NHTSA was actually reached, rather than implying an all-clear it cannot support.
- */
+/** Open safety recalls. `checked` lets the UI say "none found" only when NHTSA was reached. */
 export function getRecalls(): Promise<RecallReport> {
   return http.get<RecallReport>('/vehicle/recalls');
 }
 
-/**
- * Records what the owner says about one recall on their car. NHTSA cannot tell us
- * whether the work was done, so this is the only source for it.
- */
+/** What the owner says about one recall on their car -- NHTSA cannot tell us. */
 export function setRecallRepaired(campaignNumber: string, repaired: boolean): Promise<void> {
   return http.put<void>(`/vehicle/recalls/${encodeURIComponent(campaignNumber)}`, { repaired });
 }
@@ -104,11 +91,9 @@ export function clearRecallStatus(campaignNumber: string): Promise<void> {
 }
 
 /**
- * The signed URL of a studio photo of the caller's model.
- *
- * Resolves to `{}` rather than rejecting when there is nothing to show, so an
- * unconfigured or unmatched photo is a placeholder and not an error state. The URL
- * expires -- fetch when the image mounts, do not hold it.
+ * The signed URL of a studio photo of the caller's model. Resolves to `{}` rather than
+ * rejecting when there is nothing to show, so a missing photo is a placeholder, not an
+ * error. The URL expires -- fetch when the image mounts, do not hold it.
  */
 export function getVehicleImage(): Promise<VehicleImage> {
   return http.get<VehicleImage>('/vehicle/image');
@@ -122,10 +107,8 @@ export function getPaywall(): Promise<PaywallStatus> {
 }
 
 /**
- * Records a tap on unlock and opens the paid features.
- *
- * Charges nothing -- the tap is the signal. `source` is where it was tapped, which
- * the prototype reads conversion by, so pass the screen the owner was actually on.
+ * Records a tap on unlock and opens the paid features. Charges nothing -- the tap is the
+ * signal. Pass the screen the owner was actually on: the prototype reads conversion by it.
  */
 export function unlockPaywall(source: 'repair_cost_checker' | 'account'): Promise<PaywallStatus> {
   return http.post<PaywallStatus>('/paywall/unlock', { source });
@@ -142,8 +125,8 @@ export function addServiceRecord(input: NewServiceRecordInput): Promise<ServiceR
 }
 
 /**
- * Corrects a record. Worth having beyond tidiness: these rows drive the maintenance
- * calculation, so a mistyped odometer makes the app claim a job is due when it is not.
+ * Corrects a record. These rows drive the maintenance calculation, so a mistyped odometer
+ * makes the app claim a job is due when it is not.
  */
 export function updateServiceRecord(id: string, patch: UpdateServiceRecordInput): Promise<ServiceRecord> {
   return http.patch<ServiceRecord>(`/service-records/${encodeURIComponent(id)}`, patch);
@@ -171,18 +154,20 @@ export function completeAssessment(id: string, cost: number): Promise<Assessment
   return http.post<Assessment>(`/assessments/${id}/complete`, { cost });
 }
 
-export function getRepairCatalog(): Promise<RepairCatalogItem[]> {
-  return http.get<RepairCatalogItem[]>('/repairs');
+/**
+ * The repairs that can be priced for the owner's own car. `checked` tells "the vendor has no
+ * pricing for this car" from "we have never reached the vendor", which the picker has to
+ * say. Repairs priced against a different vehicle are never included.
+ */
+export function getRepairCatalog(): Promise<RepairCatalogReport> {
+  return http.get<RepairCatalogReport>('/repairs');
 }
 
 /* ------------------------------------------------------------------- chat */
 
 /**
- * Sends a question along with the conversation so far.
- *
- * There is no getChatHistory: nothing is stored, so there is nothing to fetch. The
- * conversation lives in the Ask CA page's state and goes when the page does -- see
- * apps/api/src/routes/chat.ts for why.
+ * Sends a question along with the conversation so far. There is no getChatHistory: nothing
+ * is stored. The conversation lives in the Ask CA page's state and goes when the page does.
  */
 export function sendChatMessage(
   text: string,

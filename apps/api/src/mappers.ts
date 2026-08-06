@@ -1,20 +1,15 @@
 /**
- * Row -> wire mapping.
- *
- * Postgres gives us snake_case columns, `numeric` as strings and `date` as
- * strings; the client contract in @caradvocate/shared wants camelCase and real
- * numbers. All of that translation happens here so routes stay thin and no
- * component ever sees a database shape.
+ * Row -> wire mapping. Postgres gives snake_case columns and `numeric`/`date` as strings;
+ * the contract in @caradvocate/shared wants camelCase and real numbers. Translating here
+ * keeps routes thin and database shapes out of components.
  */
 import type {
   Account,
-  AssistFitment,
   Assessment,
   KnownIssue,
   MileageAtFailure,
   Recall,
   RepairCatalogItem,
-  SafetyRating,
   ServiceRecord,
   Vehicle,
 } from '@caradvocate/shared';
@@ -51,13 +46,10 @@ export function toKnownIssue(row: Row<typeof t.modelKnownIssues>): KnownIssue {
 const PATTERN_THRESHOLD = 5;
 
 /**
- * Aggregated owner complaints, presented as a known issue.
- *
- * Severity is derived from what NHTSA actually recorded rather than from a
- * judgement of our own: a group where someone crashed, caught fire or was hurt is
- * high, a repeatedly-reported one is medium, and a handful of reports is low. Unlike
- * recalls, `low` is meaningful here -- two complaints about a model is noise, not a
- * fault, and dressing it up as one would mislead.
+ * Aggregated owner complaints, presented as a known issue. Severity comes from what NHTSA
+ * recorded: a group where someone crashed, caught fire or was hurt is high, a
+ * repeatedly-reported one is medium, a handful of reports is low. Unlike recalls, `low` is
+ * meaningful here -- two complaints is noise, not a fault.
  */
 export function toKnownIssueFromReports(row: Row<typeof t.modelOwnerReports>): KnownIssue {
   const harmed =
@@ -101,9 +93,8 @@ function toMileageAtFailure(row: Row<typeof t.modelOwnerReports>): MileageAtFail
 }
 
 /**
- * Severity comes from NHTSA's advisories, not from a judgement made here. Both
- * "stop driving" and "park outside" are escalations it publishes explicitly; every
- * other recall is a safety defect too, so none of them map to `low`.
+ * Severity comes from NHTSA's own "stop driving" and "park outside" advisories. Every other
+ * recall is a safety defect too, so none map to `low`.
  */
 export function toRecall(row: Row<typeof t.modelRecalls>, repaired?: boolean): Recall {
   return {
@@ -121,50 +112,6 @@ export function toRecall(row: Row<typeof t.modelRecalls>, repaired?: boolean): R
   };
 }
 
-/**
- * One NCAP-tested variant.
- *
- * Every rating is dropped rather than zeroed when NHTSA never ran the test, because
- * the wire contract uses absence to mean "untested" and a zero would render as a
- * zero-star car. `rolloverPossibility` arrives from `numeric` as a string.
- *
- * The fitment columns are plain `text` in the database -- adding a value should not
- * need a migration -- so an unrecognised one is dropped here rather than passed
- * through as a string the client's union does not admit.
- */
-export function toSafetyRating(row: Row<typeof t.modelSafetyRatings>): SafetyRating {
-  return {
-    id: row.id,
-    description: row.description,
-    overall: row.overallRating ?? undefined,
-    frontCrash: row.frontCrashRating ?? undefined,
-    sideCrash: row.sideCrashRating ?? undefined,
-    rollover: row.rolloverRating ?? undefined,
-    rolloverPossibility: readPossibility(row.rolloverPossibility),
-    forwardCollisionWarning: fitment(row.forwardCollisionWarning),
-    laneDepartureWarning: fitment(row.laneDepartureWarning),
-    electronicStabilityControl: fitment(row.electronicStabilityControl),
-  };
-}
-
-/** `numeric` round-trips as a string; anything unparseable is no reading at all. */
-function readPossibility(value: string | null): number | undefined {
-  if (value === null) return undefined;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : undefined;
-}
-
-/**
- * Narrows a stored fitment string to the contract's union.
- *
- * The column is plain `text` so adding a value needs no migration, which means an
- * unrecognised one is possible; it is dropped rather than passed through as a string
- * the client's union does not admit.
- */
-function fitment(value: string | null): AssistFitment | undefined {
-  return value === 'standard' || value === 'optional' || value === 'no' ? value : undefined;
-}
-
 export function toServiceRecord(row: Row<typeof t.serviceRecords>): ServiceRecord {
   return {
     id: row.id,
@@ -177,8 +124,15 @@ export function toServiceRecord(row: Row<typeof t.serviceRecords>): ServiceRecor
   };
 }
 
-export function toRepairCatalogItem(row: Row<typeof t.repairs>): RepairCatalogItem {
-  return { id: row.id, name: row.name };
+/**
+ * `priced` is not a column -- it is whether this repair has a benchmark for the caller's
+ * own model, which the route resolves once for the whole catalog.
+ */
+export function toRepairCatalogItem(
+  row: Row<typeof t.repairs>,
+  priced: boolean,
+): RepairCatalogItem {
+  return { id: row.id, name: row.name, priced };
 }
 
 export function toAssessment(
@@ -206,15 +160,21 @@ export function toAssessment(
       high: row.partsHigh,
     },
     labor: {
-      ratePerHour: row.laborRatePerHour,
-      estHours: Number(row.laborEstHours),
+      // Dropped rather than zeroed when the source published no book times: "0 h at $0/hr"
+      // beside a real total reads as broken. See services/repairPricing.ts.
+      ...(row.laborRatePerHour === null ? {} : { ratePerHour: row.laborRatePerHour }),
+      ...(row.laborEstHours === null ? {} : { estHours: Number(row.laborEstHours) }),
       tasks: [...laborTasks]
         .sort((a, b) => a.position - b.position)
-        .map((task) => ({ name: task.name, hours: Number(task.hours) })),
+        .map((task) => ({
+          name: task.name,
+          ...(task.hours === null ? {} : { hours: Number(task.hours) }),
+        })),
       total: row.laborTotal,
     },
     fairTotalLow: row.fairTotalLow,
     fairTotalHigh: row.fairTotalHigh,
+    benchmarkSource: row.benchmarkSource,
   };
 
   // The five quote columns are written together, so testing one is enough.

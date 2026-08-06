@@ -9,12 +9,9 @@ import { createVehicle, decodeVin } from '@/lib/api';
 import { invalidateAll } from '@/lib/useApi';
 
 /**
- * Adds the user's car.
- *
- * Manual entry is the primary path because it always works. The VIN lookup is an
- * accelerator that prefills the same fields; if it fails for any reason the form
- * is already there and nothing is blocked. That matters because the VIN decode
- * calls an external service that may be unavailable.
+ * Adds the user's car. Manual entry is the primary path because it always works; the VIN lookup
+ * is an accelerator that prefills the same fields, so when the external decode is unavailable the
+ * form is already there and nothing is blocked.
  */
 export function OnboardingPage() {
   const navigate = useNavigate();

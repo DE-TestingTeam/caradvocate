@@ -1,55 +1,57 @@
 /**
  * Seed data.
  *
- * The brake-pad benchmark and everything on the Alex Rivera account are
- * transcribed from the wireframes and should be treated as fixed. The other
- * eleven benchmarks are PLACEHOLDERS -- plausible shapes so the repair picker
- * scrolls and every selection produces a working assessment. Real parts pricing
- * and OEM labor times still need to be sourced; see the root README.
+ * `referenceBenchmarks` below is a captured Vehicle Databases response for the reference
+ * model, not plausible-looking numbers. Captured 2 August 2026 from
+ * `GET /vehicle-repairs/v2/2HGFC2F53KH124821` (2019 Honda Civic LX 4dr Sedan CVT), each
+ * figure the union of VDB's independent and dealer channels (services/repairPricing.ts).
+ *
+ * A snapshot rather than a live call because the seed has to be deterministic and offline
+ * -- seeding must not depend on the network, and VDB's allowance is metered. Live pricing
+ * for an owner's actual car arrives through services/repairPricingSync.ts.
+ *
+ * Everything on the Alex Rivera account in seed.ts is transcribed from the wireframes and
+ * should be treated as fixed.
  */
 
-export interface BenchmarkSeed {
+/**
+ * One repair's real pricing for the reference model. No labor rate or hours: VDB publishes
+ * labor as money only (see services/repairPricing.ts). `laborTotal` is the real figure.
+ */
+export interface ReferenceBenchmark {
   slug: string;
   name: string;
-  parts: { name: string; avgPrice: number }[];
-  laborTasks: { name: string; hours: number }[];
-  laborRatePerHour: number;
+  /** VDB's own title for the job, so a row traces back to its source. */
+  sourceTitle: string;
+  /** Which VDB channels priced it. Dealer-only for 35 of the 76 titles. */
+  channels: ('independent' | 'dealer')[];
+  partsTotal: number;
   partsLow: number;
   partsHigh: number;
+  laborTotal: number;
   fairTotalLow: number;
   fairTotalHigh: number;
   recommendation: { headline: string; badge: string; body: string };
-  /** Set when the wireframe dictates a total that does not equal the sum of its parts. */
-  partsTotalOverride?: number;
-  laborTotalOverride?: number;
 }
 
-export const benchmarkSeeds: BenchmarkSeed[] = [
+/**
+ * The catalog, in picker order. `timing-belt-inspection` is in `unpricedRepairs` below:
+ * VDB prices a replacement and no inspection, and one priced off the other would be
+ * wrong by roughly tenfold.
+ */
+export const referenceBenchmarks: ReferenceBenchmark[] = [
   {
     slug: 'brake-pad-replacement',
     name: 'Brake Pad Replacement',
-    parts: [
-      { name: 'Front Brake Pads (set)', avgPrice: 45 },
-      { name: 'Brake Rotors (x2)', avgPrice: 70 },
-      { name: 'Brake Hardware Kit', avgPrice: 12 },
-      { name: 'Brake Cleaner', avgPrice: 8 },
-      { name: 'Brake Grease', avgPrice: 5 },
-    ],
-    laborTasks: [
-      { name: 'Remove wheels & calipers', hours: 0.4 },
-      { name: 'Replace pads & hardware', hours: 0.6 },
-      { name: 'Resurface/inspect rotors', hours: 0.3 },
-      { name: 'Reassemble & test', hours: 0.2 },
-    ],
-    laborRatePerHour: 95,
-    partsLow: 80,
-    partsHigh: 200,
-    // NOTE: the wireframes cite $280-$400 in the Quote Evaluation copy but
-    // $360-$660 on the Fair Total card. The card wins here because it is the
-    // figure the user is shown as the headline estimate.
-    fairTotalLow: 360,
-    fairTotalHigh: 660,
-    laborTotalOverride: 142,
+    sourceTitle: 'Brakes - Replace Pads',
+    channels: ['independent', 'dealer'],
+    partsTotal: 116,
+    partsLow: 95,
+    partsHigh: 138,
+    laborTotal: 215,
+    // Supersedes the wireframes' $280-$400 (Quote Evaluation) and $360-$660 (Fair Total).
+    fairTotalLow: 271,
+    fairTotalHigh: 396,
     recommendation: {
       headline: 'Repair is Recommended',
       badge: 'CRITICAL REPAIR',
@@ -59,24 +61,14 @@ export const benchmarkSeeds: BenchmarkSeed[] = [
   {
     slug: 'ac-compressor-replacement',
     name: 'AC Compressor Replacement',
-    parts: [
-      { name: 'AC Compressor', avgPrice: 340 },
-      { name: 'Receiver/Drier', avgPrice: 45 },
-      { name: 'Expansion Valve', avgPrice: 38 },
-      { name: 'O-Ring & Seal Kit', avgPrice: 18 },
-      { name: 'Refrigerant (R-1234yf)', avgPrice: 95 },
-    ],
-    laborTasks: [
-      { name: 'Recover refrigerant', hours: 0.5 },
-      { name: 'Remove compressor & lines', hours: 1.2 },
-      { name: 'Install compressor & drier', hours: 1.1 },
-      { name: 'Evacuate, recharge & test', hours: 0.6 },
-    ],
-    laborRatePerHour: 95,
-    partsLow: 420,
-    partsHigh: 700,
-    fairTotalLow: 860,
-    fairTotalHigh: 1240,
+    sourceTitle: 'Air Conditioning - Replace Compressor',
+    channels: ['independent', 'dealer'],
+    partsTotal: 581,
+    partsLow: 516,
+    partsHigh: 649,
+    laborTotal: 1078,
+    fairTotalLow: 1485,
+    fairTotalHigh: 1842,
     recommendation: {
       headline: 'Repair is Recommended',
       badge: 'CRITICAL REPAIR',
@@ -84,47 +76,16 @@ export const benchmarkSeeds: BenchmarkSeed[] = [
     },
   },
   {
-    slug: 'timing-belt-inspection',
-    name: 'Timing Belt Inspection',
-    parts: [
-      { name: 'Timing Belt', avgPrice: 48 },
-      { name: 'Belt Tensioner', avgPrice: 62 },
-      { name: 'Idler Pulley', avgPrice: 30 },
-    ],
-    laborTasks: [
-      { name: 'Remove accessory belts & covers', hours: 0.5 },
-      { name: 'Inspect belt & tensioner', hours: 0.4 },
-      { name: 'Reassemble & test', hours: 0.2 },
-    ],
-    laborRatePerHour: 95,
-    partsLow: 95,
-    partsHigh: 210,
-    fairTotalLow: 200,
-    fairTotalHigh: 380,
-    recommendation: {
-      headline: 'Repair is Recommended',
-      badge: 'ROUTINE',
-      body: 'At 64,800 miles an inspection is due on the manufacturer schedule. No symptoms reported, so replacement is not yet indicated.',
-    },
-  },
-  {
     slug: 'oil-change-filter',
     name: 'Oil Change & Filter',
-    parts: [
-      { name: 'Full Synthetic Oil (4.4 qt)', avgPrice: 38 },
-      { name: 'Oil Filter', avgPrice: 11 },
-      { name: 'Drain Plug Washer', avgPrice: 2 },
-    ],
-    laborTasks: [
-      { name: 'Drain & replace oil', hours: 0.3 },
-      { name: 'Replace filter', hours: 0.2 },
-      { name: 'Reset service reminder', hours: 0.1 },
-    ],
-    laborRatePerHour: 95,
-    partsLow: 35,
-    partsHigh: 75,
-    fairTotalLow: 70,
-    fairTotalHigh: 140,
+    sourceTitle: 'Oil Change',
+    channels: ['independent', 'dealer'],
+    partsTotal: 56,
+    partsLow: 45,
+    partsHigh: 67,
+    laborTotal: 46,
+    fairTotalLow: 82,
+    fairTotalHigh: 124,
     recommendation: {
       headline: 'Repair is Recommended',
       badge: 'ROUTINE',
@@ -134,21 +95,14 @@ export const benchmarkSeeds: BenchmarkSeed[] = [
   {
     slug: 'transmission-flush',
     name: 'Transmission Flush',
-    parts: [
-      { name: 'CVT Fluid (5 qt)', avgPrice: 78 },
-      { name: 'Transmission Filter', avgPrice: 34 },
-      { name: 'Pan Gasket', avgPrice: 16 },
-    ],
-    laborTasks: [
-      { name: 'Drain & drop pan', hours: 0.7 },
-      { name: 'Replace filter & gasket', hours: 0.5 },
-      { name: 'Refill & road test', hours: 0.4 },
-    ],
-    laborRatePerHour: 95,
-    partsLow: 95,
-    partsHigh: 190,
-    fairTotalLow: 260,
-    fairTotalHigh: 430,
+    sourceTitle: 'Transmission Fluid - Flush',
+    channels: ['independent', 'dealer'],
+    partsTotal: 103,
+    partsLow: 91,
+    partsHigh: 114,
+    laborTotal: 126,
+    fairTotalLow: 203,
+    fairTotalHigh: 254,
     recommendation: {
       headline: 'Repair is Recommended',
       badge: 'RECOMMENDED',
@@ -158,20 +112,14 @@ export const benchmarkSeeds: BenchmarkSeed[] = [
   {
     slug: 'ac-recharge',
     name: 'AC Recharge',
-    parts: [
-      { name: 'Refrigerant (R-1234yf)', avgPrice: 95 },
-      { name: 'UV Leak Dye', avgPrice: 9 },
-    ],
-    laborTasks: [
-      { name: 'Evacuate system', hours: 0.4 },
-      { name: 'Leak test', hours: 0.3 },
-      { name: 'Recharge & verify', hours: 0.3 },
-    ],
-    laborRatePerHour: 95,
-    partsLow: 85,
-    partsHigh: 170,
-    fairTotalLow: 190,
-    fairTotalHigh: 330,
+    sourceTitle: 'Air Conditioning - Recharge',
+    channels: ['independent', 'dealer'],
+    partsTotal: 120,
+    partsLow: 101,
+    partsHigh: 140,
+    laborTotal: 223,
+    fairTotalLow: 289,
+    fairTotalHigh: 401,
     recommendation: {
       headline: 'Repair is Recommended',
       badge: 'RECOMMENDED',
@@ -181,19 +129,14 @@ export const benchmarkSeeds: BenchmarkSeed[] = [
   {
     slug: 'battery-replacement',
     name: 'Battery Replacement',
-    parts: [
-      { name: 'Group 51R AGM Battery', avgPrice: 165 },
-      { name: 'Terminal Cleaner & Grease', avgPrice: 7 },
-    ],
-    laborTasks: [
-      { name: 'Remove & replace battery', hours: 0.3 },
-      { name: 'Test charging system', hours: 0.2 },
-    ],
-    laborRatePerHour: 95,
-    partsLow: 130,
-    partsHigh: 240,
-    fairTotalLow: 175,
-    fairTotalHigh: 300,
+    sourceTitle: 'Battery - Replace',
+    channels: ['independent', 'dealer'],
+    partsTotal: 202,
+    partsLow: 186,
+    partsHigh: 219,
+    laborTotal: 109,
+    fairTotalLow: 286,
+    fairTotalHigh: 338,
     recommendation: {
       headline: 'Repair is Recommended',
       badge: 'RECOMMENDED',
@@ -203,21 +146,16 @@ export const benchmarkSeeds: BenchmarkSeed[] = [
   {
     slug: 'alternator-replacement',
     name: 'Alternator Replacement',
-    parts: [
-      { name: 'Alternator', avgPrice: 285 },
-      { name: 'Serpentine Belt', avgPrice: 32 },
-      { name: 'Belt Tensioner', avgPrice: 58 },
-    ],
-    laborTasks: [
-      { name: 'Remove accessory belt', hours: 0.4 },
-      { name: 'Replace alternator', hours: 1.3 },
-      { name: 'Test output & reassemble', hours: 0.4 },
-    ],
-    laborRatePerHour: 95,
-    partsLow: 300,
-    partsHigh: 520,
-    fairTotalLow: 560,
-    fairTotalHigh: 900,
+    sourceTitle: 'Alternator Replacement',
+    // Dealer-only, so there is no independent floor and a shop may come in below
+    // fairTotalLow.
+    channels: ['dealer'],
+    partsTotal: 593,
+    partsLow: 563,
+    partsHigh: 623,
+    laborTotal: 363,
+    fairTotalLow: 904,
+    fairTotalHigh: 1008,
     recommendation: {
       headline: 'Repair is Recommended',
       badge: 'CRITICAL REPAIR',
@@ -227,16 +165,15 @@ export const benchmarkSeeds: BenchmarkSeed[] = [
   {
     slug: 'tire-rotation',
     name: 'Tire Rotation',
-    parts: [{ name: 'Wheel Torque Service', avgPrice: 0 }],
-    laborTasks: [
-      { name: 'Lift & rotate tires', hours: 0.4 },
-      { name: 'Torque & set pressures', hours: 0.2 },
-    ],
-    laborRatePerHour: 95,
+    sourceTitle: 'Tire(s) - Rotate',
+    channels: ['independent', 'dealer'],
+    // Pure labor: VDB prices the parts at zero, so no parts line item is stored.
+    partsTotal: 0,
     partsLow: 0,
-    partsHigh: 20,
-    fairTotalLow: 40,
-    fairTotalHigh: 90,
+    partsHigh: 0,
+    laborTotal: 58,
+    fairTotalLow: 47,
+    fairTotalHigh: 68,
     recommendation: {
       headline: 'Repair is Recommended',
       badge: 'ROUTINE',
@@ -246,19 +183,14 @@ export const benchmarkSeeds: BenchmarkSeed[] = [
   {
     slug: 'coolant-flush',
     name: 'Coolant Flush',
-    parts: [
-      { name: 'Honda Type 2 Coolant (2 gal)', avgPrice: 44 },
-      { name: 'Radiator Cap', avgPrice: 14 },
-    ],
-    laborTasks: [
-      { name: 'Drain & flush system', hours: 0.6 },
-      { name: 'Refill & bleed air', hours: 0.5 },
-    ],
-    laborRatePerHour: 95,
-    partsLow: 40,
-    partsHigh: 95,
-    fairTotalLow: 150,
-    fairTotalHigh: 260,
+    sourceTitle: 'Coolant - Flush',
+    channels: ['independent', 'dealer'],
+    partsTotal: 77,
+    partsLow: 64,
+    partsHigh: 89,
+    laborTotal: 180,
+    fairTotalLow: 216,
+    fairTotalHigh: 300,
     recommendation: {
       headline: 'Repair is Recommended',
       badge: 'ROUTINE',
@@ -268,20 +200,14 @@ export const benchmarkSeeds: BenchmarkSeed[] = [
   {
     slug: 'spark-plug-replacement',
     name: 'Spark Plug Replacement',
-    parts: [
-      { name: 'Iridium Spark Plugs (x4)', avgPrice: 56 },
-      { name: 'Coil Boot Grease', avgPrice: 6 },
-    ],
-    laborTasks: [
-      { name: 'Remove coils & plugs', hours: 0.5 },
-      { name: 'Install & torque plugs', hours: 0.4 },
-      { name: 'Reassemble & test', hours: 0.2 },
-    ],
-    laborRatePerHour: 95,
-    partsLow: 50,
-    partsHigh: 110,
-    fairTotalLow: 160,
-    fairTotalHigh: 290,
+    sourceTitle: 'Spark Plugs - Replace',
+    channels: ['independent', 'dealer'],
+    partsTotal: 129,
+    partsLow: 114,
+    partsHigh: 144,
+    laborTotal: 192,
+    fairTotalLow: 285,
+    fairTotalHigh: 359,
     recommendation: {
       headline: 'Repair is Recommended',
       badge: 'ROUTINE',
@@ -291,21 +217,29 @@ export const benchmarkSeeds: BenchmarkSeed[] = [
   {
     slug: 'wheel-alignment',
     name: 'Wheel Alignment',
-    parts: [{ name: 'Alignment Hardware (as needed)', avgPrice: 12 }],
-    laborTasks: [
-      { name: 'Mount & measure', hours: 0.5 },
-      { name: 'Adjust camber/toe', hours: 0.6 },
-      { name: 'Verify & road test', hours: 0.3 },
-    ],
-    laborRatePerHour: 95,
+    sourceTitle: 'Wheels - Alignment',
+    channels: ['independent', 'dealer'],
+    // Pure labor, as with the rotation above.
+    partsTotal: 0,
     partsLow: 0,
-    partsHigh: 40,
-    fairTotalLow: 110,
-    fairTotalHigh: 220,
+    partsHigh: 0,
+    laborTotal: 201,
+    fairTotalLow: 176,
+    fairTotalHigh: 226,
     recommendation: {
       headline: 'Repair is Recommended',
       badge: 'RECOMMENDED',
       body: 'Uneven front tread wear indicates the alignment is out of specification.',
     },
   },
+];
+
+/**
+ * Catalog entries with no pricing anywhere. They exist as `repairs` rows so the catalog is
+ * not silently narrowed and an existing assessment's `repairId` still resolves, but GET
+ * /api/repairs omits them -- offering a repair the app cannot price is a dead end.
+ */
+export const unpricedRepairs: { slug: string; name: string }[] = [
+  // VDB prices "Timing Belt - Replace" (~$950 on this car) and no inspection.
+  { slug: 'timing-belt-inspection', name: 'Timing Belt Inspection' },
 ];

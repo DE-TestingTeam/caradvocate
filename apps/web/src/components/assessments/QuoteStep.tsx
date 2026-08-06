@@ -1,10 +1,10 @@
-import * as React from 'react';
-import { FileText, Upload } from 'lucide-react';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { cn } from '@/lib/utils';
+import * as React from "react";
+import { FileText, Upload } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { cn } from "@/lib/utils";
 
-export type QuoteChoice = 'yes' | 'no';
+export type QuoteChoice = "yes" | "no";
 
 interface QuoteStepProps {
   choice: QuoteChoice | undefined;
@@ -36,26 +36,32 @@ export function QuoteStep({
     <div className="space-y-3">
       <button
         type="button"
-        onClick={() => onChoiceChange('yes')}
+        onClick={() => onChoiceChange("yes")}
         className={cn(
-          'w-full rounded-lg border p-4 text-left transition-colors',
-          choice === 'yes' ? 'border-2 border-foreground' : 'bg-muted/50 hover:bg-accent',
+          "w-full rounded-lg border p-4 text-left transition-colors",
+          choice === "yes"
+            ? "border-2 border-foreground"
+            : "bg-muted/50 hover:bg-accent",
         )}
       >
         <div className="flex items-center gap-2">
           <FileText className="h-5 w-5 shrink-0" />
           <span className="text-base font-semibold">Yes, I have a quote</span>
         </div>
-        <p className="mt-1 text-sm text-muted-foreground">Upload or enter your quote for a fairness check</p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Upload or enter your quote for a fairness check
+        </p>
       </button>
 
-      {choice === 'yes' && (
+      {choice === "yes" && (
         <div className="space-y-4 pl-1">
           <div
             role="button"
             tabIndex={0}
             onClick={() => inputRef.current?.click()}
-            onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && inputRef.current?.click()}
+            onKeyDown={(e) =>
+              (e.key === "Enter" || e.key === " ") && inputRef.current?.click()
+            }
             onDragOver={(e) => {
               e.preventDefault();
               setDragging(true);
@@ -67,14 +73,16 @@ export function QuoteStep({
               acceptFile(e.dataTransfer.files);
             }}
             className={cn(
-              'flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed p-8 text-center transition-colors',
-              dragging ? 'border-foreground bg-accent' : 'hover:bg-muted/50',
+              "flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed p-8 text-center transition-colors",
+              dragging ? "border-foreground bg-accent" : "hover:bg-muted/50",
             )}
           >
             <Upload className="h-5 w-5 text-muted-foreground" />
-            <span className="text-base font-semibold">{fileName ?? 'Upload quote PDF'}</span>
+            <span className="text-base font-semibold">
+              {fileName ?? "Upload quote PDF"}
+            </span>
             <span className="text-sm text-muted-foreground">
-              {fileName ? 'Tap to replace' : 'or drag and drop here'}
+              {fileName ? "Tap to replace" : "or drag and drop here"}
             </span>
             <input
               ref={inputRef}
@@ -85,8 +93,6 @@ export function QuoteStep({
             />
           </div>
 
-          {/* NOTE: not in the wireframes. The detail screen needs a numeric quote,
-              and nothing here parses the uploaded PDF. */}
           <div className="space-y-2">
             <Label htmlFor="quote-amount">Quote total</Label>
             <div className="relative">
@@ -111,14 +117,18 @@ export function QuoteStep({
 
       <button
         type="button"
-        onClick={() => onChoiceChange('no')}
+        onClick={() => onChoiceChange("no")}
         className={cn(
-          'w-full rounded-lg border p-4 text-left transition-colors',
-          choice === 'no' ? 'border-2 border-foreground' : 'bg-muted/50 hover:bg-accent',
+          "w-full rounded-lg border p-4 text-left transition-colors",
+          choice === "no"
+            ? "border-2 border-foreground"
+            : "bg-muted/50 hover:bg-accent",
         )}
       >
         <span className="text-base font-semibold">No, not yet</span>
-        <p className="mt-1 text-sm text-muted-foreground">Get expected costs before visiting a shop</p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Get expected costs before visiting a shop
+        </p>
       </button>
     </div>
   );

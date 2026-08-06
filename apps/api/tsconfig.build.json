@@ -1,7 +1,7 @@
 {
   // Production build: src only, so output lands at dist/index.js rather than
   // dist/src/index.js. tsconfig.json stays broader for typechecking, which must
-  // also cover test/ and drizzle.config.ts.
+  // also cover drizzle.config.ts.
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "noEmit": false,

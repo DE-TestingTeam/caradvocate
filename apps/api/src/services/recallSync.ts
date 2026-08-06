@@ -1,11 +1,7 @@
 /**
- * Keeps the local mirror of NHTSA recalls fresh.
- *
- * Recalls belong to a model, so this syncs per year/make/model and every owner of
- * that car reads the same rows. The mirror exists so a page load is a local query
- * rather than an upstream request, and so My Car still works when NHTSA does not.
- *
- * Freshness is deliberately coarse: campaigns are issued over weeks, not minutes.
+ * Keeps the local mirror of NHTSA recalls fresh. Syncs per year/make/model, so every owner of
+ * that car reads the same rows, a page load is a local query, and My Car still works when
+ * NHTSA does not. Freshness is coarse: campaigns are issued over weeks, not minutes.
  */
 import { and, notInArray, sql } from 'drizzle-orm';
 import type { Database } from '../db/index.js';
@@ -18,24 +14,9 @@ const FEED = 'recalls' as const;
 type RecallRow = typeof modelRecalls.$inferSelect;
 
 /**
- * Test seam, mirroring setJwksForTesting in auth/verifyToken.ts. The suite must not
- * depend on NHTSA being reachable, and the sync logic worth testing -- upsert,
- * removal of retired campaigns, failure handling -- is all downstream of the fetch.
- */
-type RecallFetcher = (lookup: RecallLookup) => Promise<FetchedRecall[] | undefined>;
-
-let fetcher: RecallFetcher = fetchRecalls;
-
-export function setRecallFetcherForTesting(next: RecallFetcher | undefined): void {
-  fetcher = next ?? fetchRecalls;
-}
-
-/**
- * Recalls for one model, syncing first if the mirror is stale.
- *
- * Returns `synced: false` only when NHTSA has never been reached successfully for
- * this model, which is what lets the UI distinguish "no recalls" from "we do not
- * know yet" instead of reporting an all-clear it cannot support.
+ * Recalls for one model, syncing first if the mirror is stale. `synced: false` means NHTSA has
+ * never been reached for this model, which is what lets the UI distinguish "no recalls" from
+ * "we do not know yet".
  */
 export async function getModelRecalls(
   db: Database,
@@ -44,32 +25,25 @@ export async function getModelRecalls(
 ): Promise<{ recalls: RecallRow[]; synced: boolean }> {
   const sync = await readSyncState(db, FEED, lookup);
 
-  // Tracked rather than re-read afterwards: this runs on every My Car load, and
-  // the sync already knows whether it reached NHTSA.
+  // Tracked rather than re-read: this runs on every My Car load, and the sync already knows.
   let reached = sync?.succeededAt != null;
-  if (dueForCheck(sync, now)) {
+  if (dueForCheck(FEED, sync, now)) {
     reached = (await syncModelRecalls(db, lookup, now)) || reached;
   }
 
   const recalls = await db.select().from(modelRecalls).where(modelMatches(modelRecalls, lookup));
-  // Most severe first, then longest-outstanding: a "stop driving" campaign must
-  // never sit below a routine one, and an old unremedied defect must not sink.
   recalls.sort(bySeverityThenAge);
 
   return { recalls, synced: reached };
 }
 
 /**
- * Fetches and stores one model's recalls.
- *
- * A failed fetch records the attempt and leaves existing rows untouched: stale
- * recall data is far better than none, and deleting on failure would mean an
- * NHTSA blip silently clears a genuine safety warning off someone's screen.
- *
- * Returns whether NHTSA was actually reached.
+ * Fetches and stores one model's recalls, returning whether NHTSA was reached. A failed fetch
+ * records the attempt and leaves existing rows untouched -- deleting on failure would let an
+ * NHTSA blip clear a genuine safety warning off someone's screen.
  */
 async function syncModelRecalls(db: Database, lookup: RecallLookup, now: Date): Promise<boolean> {
-  const fetched = await fetcher(lookup);
+  const fetched = await fetchRecalls(lookup);
 
   if (fetched === undefined) {
     await recordCheck(db, FEED, lookup, now, false);
@@ -79,8 +53,7 @@ async function syncModelRecalls(db: Database, lookup: RecallLookup, now: Date): 
   await db.transaction(async (tx) => {
     const keep = fetched.map((recall) => recall.campaignNumber);
 
-    // Campaigns NHTSA no longer lists for this model are dropped, so a corrected
-    // or superseded recall does not linger forever.
+    // Campaigns NHTSA no longer lists are dropped, so a superseded recall does not linger.
     await tx
       .delete(modelRecalls)
       .where(
@@ -93,8 +66,7 @@ async function syncModelRecalls(db: Database, lookup: RecallLookup, now: Date): 
       await tx
         .insert(modelRecalls)
         .values(fetched.map((recall) => toRow(lookup, recall)))
-        // Re-syncing updates in place: NHTSA revises summaries and remedies as a
-        // campaign progresses, and the campaign number is the stable identity.
+        // Updated in place: NHTSA revises summaries and remedies as a campaign progresses.
         .onConflictDoUpdate({
           target: [modelRecalls.year, modelRecalls.make, modelRecalls.model, modelRecalls.campaignNumber],
           set: {
@@ -130,12 +102,9 @@ function toRow(lookup: RecallLookup, recall: FetchedRecall) {
 }
 
 /**
- * Highest urgency first; within the same urgency, the oldest campaign first.
- *
- * Age is not a reason to bury a recall. Nothing here expires -- a 2011 defect that
- * was never remedied has been outstanding for over a decade, which makes it more
- * overdue than one issued last year, not less interesting. Sorting newest-first
- * would push exactly the longest-neglected item to the bottom of the list.
+ * Highest urgency first, then the oldest campaign. Nothing here expires, so a never-remedied
+ * 2011 defect is more overdue than one issued last year, not less interesting -- sorting
+ * newest-first would push the longest-neglected item to the bottom.
  */
 function bySeverityThenAge(a: RecallRow, b: RecallRow): number {
   const urgency = (row: RecallRow) => (row.parkIt ? 2 : row.parkOutside ? 1 : 0);

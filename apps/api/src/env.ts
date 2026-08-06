@@ -1,87 +1,88 @@
 import { z } from 'zod';
 
-/**
- * Fail fast on bad configuration rather than at the first query.
- */
+// Fail fast on bad configuration rather than at the first query.
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(3000),
   /**
-   * Required to run the API or the migration and seed scripts. On Supabase this is
-   * the pooled "Transaction pooler" string; see DIRECT_DATABASE_URL below.
-   *
-   * Optional here rather than required because the test suites import this module
-   * while supplying their own in-memory database, and must not be able to reach a
-   * real one. `getDb()` is where the requirement is enforced.
+   * On Supabase, the pooled "Transaction pooler" string. Optional here so that a missing
+   * one surfaces as `getDb()`'s "Refusing to start" message, which names the fix, rather
+   * than as a raw schema error at import time.
    */
   DATABASE_URL: z.string().min(1).optional(),
-  /**
-   * Direct (non-pooled) connection, used only for migrations. On Supabase this
-   * is the "Direct connection" string; leave unset for local Postgres, where it
-   * is the same as DATABASE_URL.
-   */
+  /** Direct (non-pooled) connection, migrations only. Unset for local Postgres. */
   DIRECT_DATABASE_URL: z.string().optional(),
   /** Escape hatch mirroring libpq's PGSSLMODE, if the automatic choice is wrong. */
   PGSSLMODE: z.enum(['require', 'disable', 'prefer']).optional(),
-  /* ------------------------------------------------------ Supabase Auth ----
-   * Set these to require real sign-in. With none of them set, the API falls
-   * back to the dev stub below so local development needs no configuration.
+
+  /**
+   * Supabase Auth. Sign-in is mandatory, so the API refuses to boot with none of these set.
+   * SUPABASE_URL is enough on its own -- the JWKS endpoint is derived from it.
    *
-   * SUPABASE_URL is enough on its own: the JWKS endpoint is derived from it.
-   * SUPABASE_JWT_SECRET covers older projects that sign with a shared secret.
+   * Optional in the schema because either one satisfies the requirement, so neither can be
+   * required on its own. auth/config.ts is where the real check lives.
    */
   SUPABASE_URL: z.string().url().optional(),
   /** Public key, safe to hand to the browser. Served via GET /api/auth/config. */
   SUPABASE_ANON_KEY: z.string().optional(),
-  /** Overrides the JWKS URL derived from SUPABASE_URL, if you need to. */
+  /** Overrides the JWKS URL derived from SUPABASE_URL. */
   SUPABASE_JWKS_URL: z.string().url().optional(),
   /** Legacy shared-secret projects (HS256). Prefer JWKS where available. */
   SUPABASE_JWT_SECRET: z.string().min(16).optional(),
 
-  /* -------------------------------------------------------------- Ask CA ----
-   * Set this and Ask CA answers with Claude, grounded in the owner's own car.
-   * With it unset, Ask CA falls back to canned replies -- the same
-   * configuration-decides-the-mode shape as the auth dev bypass above, so a
-   * fresh clone still runs with nothing to configure.
-   */
+  /** Set and Ask CA answers with Claude; unset falls back to canned replies. */
   ANTHROPIC_API_KEY: z.string().min(1).optional(),
 
-  /* ----------------------------------------------------------- CarImages ----
-   * The studio photo of the owner's model on My Car. The key alone turns it
-   * on; with it unset, My Car shows a placeholder -- the same
-   * configuration-decides-the-mode shape as Ask CA above. Both values stay on
-   * this side either way, so the browser only ever sees an expiring signed URL.
-   */
+  /** Set and My Car shows a studio photo of the owner's model; unset, a placeholder. */
   CARIMAGES_API_KEY: z.string().min(1).optional(),
   /**
-   * Optional, and only needed once a domain allowlist is set on the key in the
-   * CarImages dashboard. An allowlist is checked against Origin/Referer, which
-   * a server-side call does not send, so those calls would start failing 403;
-   * the secret proves key ownership and skips the check. Set it if you lock the
-   * key down. See services/carImages.ts.
+   * Only needed once a domain allowlist is set on the key. An allowlist is checked
+   * against Origin/Referer, which a server-side call does not send, so those calls
+   * would fail 403; the secret proves key ownership and skips the check.
    */
   CARIMAGES_API_SECRET: z.string().min(1).optional(),
 
-  /* ------------------------------------------------------------ Paywall ----
-   * The price the fake paywall shows. Nobody is charged -- the tap is recorded as
-   * a willingness-to-pay signal and the feature opens. See services/paywall.ts.
+  /**
+   * Real parts and labor pricing for the Repair Cost Checker.
    *
-   * This is the experiment's independent variable, so it is configuration rather
-   * than a constant: it has to be changeable between cohorts without a deploy,
-   * and each recorded tap stores the figure that was on screen at the time.
+   * NOTHING FALLS BACK. Unset, the only priced model is the one the seed writes reference
+   * figures for (a 2019 Civic), and every other car shows its whole catalog with each
+   * repair marked unpriced. The reference figures are stored against that model alone and
+   * are deliberately not a stand-in -- see services/repairPricingSync.ts.
+   *
+   * The plan carries a finite monthly call allowance and answers 403 once spent.
+   * That degrades pricing rather than breaking it (see services/vehicleDatabases.ts),
+   * and is logged, because a spent quota otherwise looks like an unpriced catalog.
+   */
+  VEHICLEDATABASES_API_KEY: z.string().min(1).optional(),
+
+  /**
+   * Labor hours for the Repair Cost Checker, which VEHICLEDATABASES_API_KEY's feed does
+   * not publish. Unset, benchmarks carry pricing with no book time, exactly as before --
+   * `laborEstHours` stays null and the labor line shows dollars only.
+   *
+   * The free tier allows 10 calls per DAY and answers 429 once spent, which caps how many
+   * models can be primed in a day. That degrades hours rather than pricing (see
+   * services/openLaborProject.ts), and is logged.
+   *
+   * The vendor labels its figures "estimated", not licensed book times. They are display
+   * only; the fair-price verdict stays on dollars. See services/laborTimes.ts.
+   */
+  OPEN_LABOR_PROJECT_API_KEY: z.string().min(1).optional(),
+
+  /**
+   * The price the fake paywall shows. Nobody is charged -- the tap is recorded as a
+   * willingness-to-pay signal and the feature opens. See services/paywall.ts.
+   *
+   * Configuration rather than a constant because it is the experiment's independent
+   * variable: changeable between cohorts without a deploy, and each recorded tap
+   * stores the figure that was on screen at the time.
    *
    * THE DEFAULT IS A PLACEHOLDER. Set it deliberately before any real test.
    */
   PAYWALL_PRICE_CENTS: z.coerce.number().int().positive().default(1499),
   /** v1 tests a subscription only, never per-incident pricing. */
   PAYWALL_INTERVAL: z.enum(['month', 'year']).default('month'),
-
-  /**
-   * DEV ONLY. When Supabase is not configured, every request is attributed to
-   * this user so the app is usable without signing in.
-   * See src/auth/resolvers.ts.
-   */
-  DEV_USER_EMAIL: z.string().email().default('alex.rivera@email.com'),
 });
 
 export const env = envSchema.parse(process.env);

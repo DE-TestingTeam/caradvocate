@@ -1,13 +1,10 @@
-import { Navigate, Outlet, useLocation } from 'react-router-dom';
-import { Skeleton } from '@/components/ui/skeleton';
-import { useAuth } from '@/lib/auth';
+import { Navigate, Outlet, useLocation } from "react-router-dom";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useAuth } from "@/lib/auth";
 
 /**
- * Blocks the app until the user is authenticated.
- *
- * In dev mode `authenticated` is true immediately, so the zero-setup local path
- * never sees a login screen. Nothing here is a security boundary -- the API
- * enforces access on every request; this only decides what to render.
+ * Blocks the app until the user is authenticated. Not a security boundary: the API enforces
+ * access on every request; this only decides what to render.
  */
 export function AuthGate() {
   const { loading, authenticated } = useAuth();

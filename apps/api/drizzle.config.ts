@@ -1,12 +1,9 @@
 import { defineConfig } from 'drizzle-kit';
 
 /**
- * `drizzle-kit generate` only reads the schema file and never connects, so the
- * credentials below matter only for commands that do (studio, push, introspect).
- *
- * Migrations are applied by `npm run db:migrate` (src/db/migrate.ts), not by
- * drizzle-kit, so that they go through the direct connection with the same TLS
- * handling as the app.
+ * `drizzle-kit generate` never connects, so the credentials below matter only for studio, push
+ * and introspect. Migrations are applied by `npm run db:migrate` (src/db/migrate.ts) rather
+ * than drizzle-kit, so they go through the direct connection with the app's TLS handling.
  */
 const LOCAL_FALLBACK = 'postgresql://caradvocate:caradvocate@localhost:5432/caradvocate';
 const url = process.env.DIRECT_DATABASE_URL ?? process.env.DATABASE_URL ?? LOCAL_FALLBACK;

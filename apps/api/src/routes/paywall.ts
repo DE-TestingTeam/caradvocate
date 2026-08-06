@@ -1,11 +1,7 @@
 /**
- * The paywall the Repair Cost Checker sits behind.
- *
- * Two endpoints: what the offer is, and a tap on it. There is deliberately no way to
- * lock an account back up -- an unlock is an event that happened, and re-locking
- * would let someone tap twice for one decision and inflate the signal.
- *
- * See services/paywall.ts for why nobody is charged.
+ * The paywall the Repair Cost Checker sits behind: what the offer is, and a tap on it. There
+ * is deliberately no way to lock an account back up -- re-locking would let someone tap twice
+ * for one decision and inflate the signal. See services/paywall.ts for why nobody is charged.
  */
 import { Router } from 'express';
 import { z } from 'zod';
@@ -23,9 +19,8 @@ paywallRouter.get('/', async (req, res) => {
 });
 
 /**
- * Where the tap is recorded. The source is required rather than defaulted: an
- * unattributed intent row cannot be read for conversion by entry point, and
- * defaulting it would quietly attribute every stray call to one screen.
+ * The source is required rather than defaulted: an unattributed row cannot be read for
+ * conversion by entry point, and a default would attribute every stray call to one screen.
  */
 const unlockSchema = z.object({
   source: z.enum(['repair_cost_checker', 'account']),

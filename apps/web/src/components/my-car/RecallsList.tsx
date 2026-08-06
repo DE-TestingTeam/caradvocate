@@ -7,12 +7,9 @@ import { cn } from '@/lib/utils';
 import type { Recall, RecallReport } from '@caradvocate/shared';
 
 /**
- * Open safety recalls for the owner's model.
- *
- * Each recall collapses to its component and urgency, because the full NHTSA text
- * is several paragraphs and four of them at once is unreadable. What NHTSA calls
- * the consequence is shown first on expand: the reason to act is more useful than
- * the mechanism.
+ * Open safety recalls for the owner's model. Each collapses to its component and urgency, since
+ * the full NHTSA text is several paragraphs and four at once is unreadable. The consequence
+ * comes first on expand: the reason to act is more useful than the mechanism.
  */
 export function RecallsList({
   report,
@@ -25,8 +22,7 @@ export function RecallsList({
   onStatusChange: (campaignNumber: string, repaired: boolean | undefined) => void;
 }) {
   if (report.recalls.length === 0) {
-    // "Nothing found" and "we could not look" are different claims, and only one
-    // of them is reassuring. Never present the second as the first.
+    // "Nothing found" and "we could not look" are different claims; only one is reassuring.
     return report.checked ? (
       <p className="flex items-center gap-2 py-2 text-sm text-muted-foreground">
         <ShieldCheck className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -42,8 +38,7 @@ export function RecallsList({
   return (
     <ul className="space-y-2">
       {report.recalls.map((recall) => (
-        // A recall the owner has had done stays listed but recedes: the record is
-        // worth keeping, and they may be misremembering.
+        // A recall the owner has had done recedes but stays listed -- they may be misremembering.
         <li key={recall.id} className={cn('rounded-lg border p-3', recall.repaired && 'opacity-60')}>
           <div className="flex items-start justify-between gap-3">
             <span className="flex min-w-0 items-center gap-2">
@@ -123,11 +118,9 @@ export function RecallsList({
 }
 
 /**
- * The owner's answer to "has this been done?".
- *
- * Three states, not two: unknown is the default and is not the same as outstanding.
- * Both answers are reversible, because someone who mis-clicks on a safety recall
- * must not be stuck with a warning hidden behind an opacity change.
+ * The owner's answer to "has this been done?". Three states, not two -- unknown is the default
+ * and is not the same as outstanding. Both answers are reversible, so a mis-click on a safety
+ * recall cannot leave someone with a warning hidden behind an opacity change.
  */
 function RepairStatus({
   recall,
@@ -174,13 +167,12 @@ function RepairStatus({
 }
 
 /**
- * NHTSA publishes two escalations above an ordinary recall, and they mean very
- * different things to someone deciding whether to drive to work tomorrow.
+ * NHTSA's two escalations above an ordinary recall, which mean different things to someone
+ * deciding whether to drive to work tomorrow.
  */
 function UrgencyBadge({ recall }: { recall: Recall }) {
-  // Red is reserved for "do not drive this". Park-outside is serious but strictly
-  // less restrictive -- the car is still drivable, it just should not sit next to a
-  // building -- so it takes the middle colour rather than the same red.
+  // Red is reserved for "do not drive this". Park-outside is serious but less restrictive -- the
+  // car is still drivable -- so it takes the middle colour.
   if (recall.parkIt) {
     return (
       <Badge variant="destructive" className="shrink-0">

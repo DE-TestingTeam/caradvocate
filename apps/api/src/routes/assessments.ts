@@ -8,7 +8,6 @@ import {
   assessments,
   benchmarkLaborTasks,
   benchmarkParts,
-  repairBenchmarks,
   repairs,
   serviceRecords,
 } from '../db/schema.js';
@@ -17,6 +16,8 @@ import { toAssessment } from '../mappers.js';
 import { userIdOf } from '../middleware/currentUser.js';
 import { validateBody, validateParams } from '../middleware/validate.js';
 import { evaluateQuote } from '../services/quoteEvaluation.js';
+import { ensureRepairPricing, findBenchmark } from '../services/repairPricingSync.js';
+import type { ModelKey } from '../services/modelFeed.js';
 import type { Database } from '../db/index.js';
 import { requireOwnVehicle, stringParam } from './helpers.js';
 
@@ -24,12 +25,7 @@ export const assessmentsRouter = Router();
 
 const idParamSchema = z.object({ id: z.string().uuid('Not a valid assessment id') });
 
-/**
- * The snapshotted parts and labour of one assessment, in display order.
- *
- * `position` is what preserves the order the benchmark listed them in; without it
- * the line items would come back in whatever order Postgres chose.
- */
+/** The snapshotted parts and labour of one assessment, in the order the benchmark listed them. */
 async function loadSnapshotChildren(db: Database, assessmentId: string) {
   const [parts, tasks] = await Promise.all([
     db
@@ -71,8 +67,8 @@ assessmentsRouter.get('/', async (req, res) => {
     .where(eq(assessments.userId, userId))
     .orderBy(desc(assessments.createdAt));
 
-  // Children are fetched per row for clarity. With a realistic number of
-  // assessments per user this is fine; batch it if that assumption changes.
+  // Children per row for clarity. Fine at a realistic number of assessments per user;
+  // batch it if that assumption changes.
   const result: Assessment[] = [];
   for (const row of rows) {
     const { parts, tasks } = await loadSnapshotChildren(req.db, row.id);
@@ -89,45 +85,46 @@ assessmentsRouter.get('/:id', validateParams(idParamSchema), async (req, res) =>
 });
 
 /**
- * The reference pricing for one repair, with its line items.
- *
- * A repair with no benchmark row is a 404: the whole point of an assessment is the
- * comparison, and there is nothing to compare against.
+ * The pricing for one repair on the caller's OWN model, with its line items. No pricing
+ * for this car is a 404, never a substitution with another vehicle's figures -- an
+ * assessment is a comparison against the car in the driveway. See
+ * services/repairPricingSync.ts.
  */
-async function loadBenchmark(db: Database, repairId: string) {
-  const [row] = await db
-    .select({ repair: repairs, benchmark: repairBenchmarks })
-    .from(repairs)
-    .innerJoin(repairBenchmarks, eq(repairBenchmarks.repairId, repairs.id))
-    .where(eq(repairs.id, repairId))
-    .limit(1);
+async function loadBenchmark(db: Database, repairId: string, model: ModelKey) {
+  const [repair] = await db.select().from(repairs).where(eq(repairs.id, repairId)).limit(1);
+  if (!repair) throw HttpError.notFound('No pricing available for that repair');
 
-  if (!row) {
-    throw HttpError.notFound('No benchmark pricing available for that repair');
+  // One metered call per model per week at most; see services/repairPricingSync.ts.
+  await ensureRepairPricing(db, model);
+
+  const benchmark = await findBenchmark(db, repairId, model);
+  if (!benchmark) {
+    // Names the car: the reason is specific to it, and the client shows this verbatim.
+    throw HttpError.notFound(
+      `We do not have pricing for a ${model.year} ${model.make} ${model.model} for that repair yet.`,
+    );
   }
 
   const [sourceParts, sourceTasks] = await Promise.all([
     db
       .select()
       .from(benchmarkParts)
-      .where(eq(benchmarkParts.benchmarkId, row.benchmark.id))
+      .where(eq(benchmarkParts.benchmarkId, benchmark.id))
       .orderBy(asc(benchmarkParts.position)),
     db
       .select()
       .from(benchmarkLaborTasks)
-      .where(eq(benchmarkLaborTasks.benchmarkId, row.benchmark.id))
+      .where(eq(benchmarkLaborTasks.benchmarkId, benchmark.id))
       .orderBy(asc(benchmarkLaborTasks.position)),
   ]);
 
-  return { repair: row.repair, benchmark: row.benchmark, sourceParts, sourceTasks };
+  return { repair, benchmark, sourceParts, sourceTasks };
 }
 
 /**
- * Creates an assessment by SNAPSHOTTING the current benchmark.
- *
- * Nothing here is joined live from repairBenchmarks afterwards: reference pricing
- * gets refreshed, and an assessment the user saved must keep showing the numbers
- * they were actually shown.
+ * Creates an assessment by SNAPSHOTTING the current benchmark. Nothing is joined live from
+ * repairBenchmarks afterwards: reference pricing gets refreshed, and a saved assessment
+ * must keep showing the numbers the user was shown.
  */
 assessmentsRouter.post('/', validateBody(newAssessmentSchema), async (req, res) => {
   const userId = userIdOf(req);
@@ -136,6 +133,7 @@ assessmentsRouter.post('/', validateBody(newAssessmentSchema), async (req, res) 
   const { repair, benchmark, sourceParts, sourceTasks } = await loadBenchmark(
     req.db,
     req.body.repairId,
+    { year: vehicle.year, make: vehicle.make, model: vehicle.model },
   );
 
   const quote =
@@ -168,6 +166,9 @@ assessmentsRouter.post('/', validateBody(newAssessmentSchema), async (req, res) 
         laborTotal: benchmark.laborTotal,
         fairTotalLow: benchmark.fairTotalLow,
         fairTotalHigh: benchmark.fairTotalHigh,
+        // Snapshotted with the figures: which car's pricing this verdict rests on is part
+        // of the answer, not metadata about it.
+        benchmarkSource: benchmark.source,
         quoteAmount: quote?.amount ?? null,
         quoteParts: quote?.parts ?? null,
         quoteLabor: quote?.labor ?? null,

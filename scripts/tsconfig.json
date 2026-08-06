@@ -2,12 +2,12 @@
   /*
    * The repo-root scripts, which no workspace tsconfig covered.
    *
-   * They import API source directly (`../apps/api/src/app.js`), so the options here
-   * mirror apps/api's rather than standing on their own -- a script and the code it
-   * drives have to agree about module resolution and strictness.
+   * They import API source directly (`../apps/api/src/db/index.js`), so the options
+   * here mirror apps/api's rather than standing on their own -- a script and the code
+   * it drives have to agree about module resolution and strictness.
    *
-   * Wired into `npm run typecheck` at the root, because the gap is what let the e2e
-   * script reference an untyped jsdom without anything failing.
+   * Wired into `npm run typecheck` at the root, so a script that drifts from the API
+   * source it imports fails there rather than at the moment someone runs it.
    */
   "compilerOptions": {
     "target": "ES2022",

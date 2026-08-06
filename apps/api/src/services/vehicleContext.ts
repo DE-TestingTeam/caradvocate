@@ -1,19 +1,11 @@
 /**
- * Everything known about one owner's car, as text for the model to reason over.
+ * Everything known about one owner's car, as text for the model to reason over -- what
+ * separates a grounded answer from a plausible one.
  *
- * This is what separates a grounded answer from a plausible one. Asked "my brakes
- * feel spongy", a model with no context can only recite general advice; a model
- * holding this block can say that six owners of this exact model reported brake
- * problems around 26,000 miles, that one involved a crash, and that the owner's own
- * brake service was 8,000 miles ago.
- *
- * Two deliberate choices:
- *
- *   - **Text, not JSON.** Cheaper in tokens and the model reads it just as well.
- *   - **Provenance travels with every fact.** Each section says where it came from
- *     and what it cannot support, because the model has to be able to tell the owner
- *     the difference between an NHTSA recall and an unverified complaint. Stripping
- *     the provenance to save tokens would remove exactly what stops it overclaiming.
+ * Text rather than JSON: cheaper in tokens and the model reads it just as well. Provenance
+ * travels with every fact, because the model has to be able to tell the owner an NHTSA
+ * recall from an unverified complaint; stripping it to save tokens would remove exactly
+ * what stops it overclaiming.
  */
 import { desc, eq } from 'drizzle-orm';
 import type { MaintenanceItem } from '@caradvocate/shared';
@@ -29,23 +21,19 @@ import { getOwnerReports } from './complaintSync.js';
 import { loadMaintenanceItems } from './maintenanceDue.js';
 import { modelMatches, type ModelKey } from './modelFeed.js';
 import { getModelRecalls } from './recallSync.js';
-import { getModelSafetyRatings } from './safetyRatingSync.js';
 
 type Vehicle = typeof vehicles.$inferSelect;
 
 /**
- * How many owner accounts to include per component. Enough to be useful, not a wall.
- *
- * Fewer than complaints.ts stores per component: everything here competes for the
- * model's attention against the recalls and the upkeep schedule.
+ * How many owner accounts per component. Fewer than complaints.ts stores, since everything
+ * here competes for the model's attention against the recalls and the upkeep schedule.
  */
 const QUOTES_IN_PROMPT = 2;
 
 /**
- * How many complaint components to describe, most-reported first.
- *
- * Matches MAX_REPORTED_ISSUES on the known-issues endpoint deliberately: the model
- * should be reasoning over the same list the owner is looking at.
+ * How many complaint components to describe, most-reported first. Matches
+ * MAX_REPORTED_ISSUES on the known-issues endpoint, so the model reasons over the same list
+ * the owner is looking at.
  */
 const COMPONENTS_IN_PROMPT = 8;
 
@@ -55,10 +43,9 @@ const HISTORY_LIMIT = 8;
 export async function buildVehicleContext(db: Database, vehicle: Vehicle): Promise<string> {
   const model: ModelKey = { year: vehicle.year, make: vehicle.make, model: vehicle.model };
 
-  const [recalls, reports, safety, jobs, history] = await Promise.all([
+  const [recalls, reports, jobs, history] = await Promise.all([
     getModelRecalls(db, model),
     getOwnerReports(db, model),
-    getModelSafetyRatings(db, model),
     loadMaintenanceItems(db, vehicle),
     db
       .select()
@@ -84,7 +71,6 @@ VIN on file: ${vehicle.vin ? 'yes' : 'no'}`,
 
     recallSection(recalls, repairedBy),
     knownIssuesSection(reports, quotes),
-    safetySection(safety),
     maintenanceSection(jobs),
     historySection(history),
   ];
@@ -158,67 +144,6 @@ function knownIssuesSection(
   return `WHAT OWNERS REPORT -- complaints filed with NHTSA about this year/make/model.
 These are unverified first-hand accounts, NOT confirmed faults, and not proof this car will develop the same problem. Say so when you use them.
 ${lines.join('\n')}`;
-}
-
-/**
- * Crash-test results, which answer a question the other sections cannot.
- *
- * Recalls and complaints are both about things going *wrong* with a specific car.
- * This is the only section describing how the model performs when the worst happens,
- * and it is what lets the model answer "is this a safe car for my daughter" with a
- * figure instead of a platitude.
- *
- * Untested is stated as untested. Most pre-2011 vehicles carry "Not Rated" on every
- * field, and a model that treated a missing star rating as a bad one would tell an
- * owner their car failed a test nobody ran.
- */
-function safetySection(safety: Awaited<ReturnType<typeof getModelSafetyRatings>>): string {
-  if (!safety.synced) {
-    return 'CRASH TEST RATINGS\nNHTSA could not be reached, so crash-test results are unknown. Not a sign the car did badly.';
-  }
-  if (safety.variants.length === 0) {
-    return 'CRASH TEST RATINGS\nNHTSA has not crash-tested this year/make/model. That means untested, NOT unsafe -- say it that way if it comes up.';
-  }
-
-  const lines = safety.variants.map((row) => {
-    const stars = [
-      row.overallRating ? `${row.overallRating}/5 overall` : 'no overall rating',
-      row.frontCrashRating ? `${row.frontCrashRating}/5 front` : '',
-      row.sideCrashRating ? `${row.sideCrashRating}/5 side` : '',
-      row.rolloverRating ? `${row.rolloverRating}/5 rollover` : '',
-    ]
-      .filter(Boolean)
-      .join(', ');
-
-    const rollover = row.rolloverPossibility
-      ? ` Rollover chance in a single-vehicle crash: ${(Number(row.rolloverPossibility) * 100).toFixed(1)}%.`
-      : '';
-
-    // Fitment is worth carrying because it is actionable in a way stars are not: an
-    // owner whose trim lists automatic braking as optional can check whether theirs
-    // has it, and one whose model never offered it knows not to look.
-    const assists = [
-      describeAssist('automatic emergency braking / forward collision warning', row.forwardCollisionWarning),
-      describeAssist('lane departure warning', row.laneDepartureWarning),
-      describeAssist('electronic stability control', row.electronicStabilityControl),
-    ]
-      .filter(Boolean)
-      .join('; ');
-
-    return `- ${row.description}: ${stars}.${rollover}${assists ? `\n    Driver aids: ${assists}.` : ''}`;
-  });
-
-  return `CRASH TEST RATINGS -- NHTSA's own 5-star crash tests for this year/make/model. Stars are out of 5; more is better.
-NHTSA tests each body style and drivetrain separately, so several versions of one model can score differently. These are results for the MODEL, not an inspection of this car.
-Driver-aid fitment is what NHTSA recorded for the tested version; the owner's own trim may differ, so tell them to check rather than asserting their car has it.
-${lines.join('\n')}`;
-}
-
-function describeAssist(label: string, fitment: string | null): string {
-  if (fitment === 'standard') return `${label} was standard`;
-  if (fitment === 'optional') return `${label} was optional`;
-  if (fitment === 'no') return `${label} was not offered`;
-  return '';
 }
 
 function maintenanceSection(jobs: MaintenanceItem[]): string {

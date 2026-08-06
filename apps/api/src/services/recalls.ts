@@ -1,22 +1,13 @@
 /**
- * Safety recalls from NHTSA's free recalls API.
+ * Safety recalls from NHTSA's free recalls API. Two details of it are easy to get wrong:
+ * `ReportReceivedDate` is DD/MM/YYYY, so "28/05/2020" is 28 May; and the park-outside flag is
+ * spelled `parkOutSide`, with a capital S.
  *
- * Verified against the live service:
+ * An unknown make/model returns `Count: 0` rather than an error, so a genuine all-clear and an
+ * unrecognised model are indistinguishable here -- both mean "nothing to show".
  *
- *   curl 'https://api.nhtsa.gov/recalls/recallsByVehicle?make=honda&model=civic&modelYear=2019'
- *
- * Two details of that API are worth stating, because both are easy to get wrong:
- *
- *   - `ReportReceivedDate` is DD/MM/YYYY. "28/05/2020" is 28 May, not 5 February.
- *   - the stop-driving flag is spelled `parkOutSide`, with a capital S.
- *
- * An unknown make/model is not an error upstream -- it returns `Count: 0` -- so a
- * genuine all-clear and an unrecognised model are indistinguishable here. Both
- * mean "nothing to show", which is what the UI reports.
- *
- * Everything is defensive in the same way as vinDecode: a timeout, a non-200 or an
- * unexpected shape yields no recalls rather than throwing, because a recall feed
- * being down must not take My Car down with it.
+ * Defensive throughout: a timeout, a non-200 or an unexpected shape yields no recalls rather
+ * than throwing, because a recall feed being down must not take My Car down with it.
  */
 const NHTSA_RECALLS = 'https://api.nhtsa.gov/recalls/recallsByVehicle';
 const TIMEOUT_MS = 8000;
@@ -41,9 +32,8 @@ export interface RecallLookup {
 }
 
 /**
- * Recalls for one model. Resolves to an empty array on any failure -- callers
- * cannot distinguish "none" from "could not reach NHTSA", which is deliberate:
- * the sync record is what tracks whether a check actually succeeded.
+ * Recalls for one model, or `undefined` when NHTSA could not be reached. The sync record is
+ * what tracks whether a check actually succeeded.
  */
 export async function fetchRecalls(lookup: RecallLookup): Promise<FetchedRecall[] | undefined> {
   const body = await requestRecalls(lookup);
@@ -76,10 +66,9 @@ async function requestRecalls(lookup: RecallLookup): Promise<unknown | undefined
 }
 
 /**
- * Exported for testing. NHTSA returns `{ Count, results: [ { ... } ] }`.
- *
- * A campaign with no identifier is dropped: `campaignNumber` is what makes a row
- * unique per model, so without it a re-sync would duplicate the recall forever.
+ * Exported for testing. NHTSA returns `{ Count, results: [ { ... } ] }`. A campaign with no
+ * identifier is dropped -- `campaignNumber` is what makes a row unique per model, so without
+ * it a re-sync would duplicate the recall forever.
  */
 export function parseRecallsResponse(body: unknown): FetchedRecall[] {
   const rows = resultRows(body);
@@ -101,8 +90,7 @@ export function parseRecallsResponse(body: unknown): FetchedRecall[] {
       consequence: readString(row, 'Consequence') ?? '',
       remedy: readString(row, 'Remedy') ?? '',
       parkIt: readBoolean(row, 'parkIt'),
-      // Note the capital S. Misreading this silently downgrades the severity of
-      // the most urgent recalls NHTSA issues.
+      // Capital S. Misreading this downgrades the severity of NHTSA's most urgent recalls.
       parkOutside: readBoolean(row, 'parkOutSide'),
       reportedOn: readReportDate(row),
     });
@@ -150,8 +138,7 @@ function readReportDate(row: Record<string, unknown>): string | undefined {
   if (monthIndex < 1 || monthIndex > 12 || dayNumber < 1 || dayNumber > 31) return undefined;
 
   const iso = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
-  // Rejects the impossible dates the range check above still lets through, such
-  // as 31 February, by checking the date survives a round trip.
+  // A round trip rejects the impossible dates the range check lets through, e.g. 31 February.
   const parsed = new Date(`${iso}T00:00:00Z`);
   if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== iso) return undefined;
 

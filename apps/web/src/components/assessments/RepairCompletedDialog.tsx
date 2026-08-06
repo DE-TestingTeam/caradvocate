@@ -1,13 +1,19 @@
-import * as React from 'react';
-import { ArrowRight } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
-import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { completeAssessment } from '@/lib/api';
-import { completionCost } from '@/lib/assessment';
-import { formatCurrency, formatLongDate, todayIso } from '@/lib/format';
-import { invalidateAll } from '@/lib/useApi';
-import type { Assessment } from '@caradvocate/shared';
+import * as React from "react";
+import { ArrowRight } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { completeAssessment } from "@/lib/api";
+import { completionCost } from "@/lib/assessment";
+import { formatCurrency, formatLongDate, todayIso } from "@/lib/format";
+import { invalidateAll } from "@/lib/useApi";
+import type { Assessment } from "@caradvocate/shared";
 
 interface RepairCompletedDialogProps {
   assessment: Assessment | undefined;
@@ -15,11 +21,11 @@ interface RepairCompletedDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
-/**
- * viewport-mobile-4.png. Confirms completion, then mirrors the repair into the
- * My Car service history via completeAssessment().
- */
-export function RepairCompletedDialog({ assessment, open, onOpenChange }: RepairCompletedDialogProps) {
+export function RepairCompletedDialog({
+  assessment,
+  open,
+  onOpenChange,
+}: RepairCompletedDialogProps) {
   const navigate = useNavigate();
   const [saved, setSaved] = React.useState(false);
   const [error, setError] = React.useState<string>();
@@ -58,9 +64,12 @@ export function RepairCompletedDialog({ assessment, open, onOpenChange }: Repair
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent hideClose className="gap-5">
         <DialogHeader>
-          <DialogTitle>{error ? 'Could not save' : 'Repair Completed'}</DialogTitle>
+          <DialogTitle>
+            {error ? "Could not save" : "Repair Completed"}
+          </DialogTitle>
           <DialogDescription>
-            {error ?? 'Your service history on My Car has been updated with this repair.'}
+            {error ??
+              "Your service history on My Car has been updated with this repair."}
           </DialogDescription>
         </DialogHeader>
 
@@ -68,12 +77,18 @@ export function RepairCompletedDialog({ assessment, open, onOpenChange }: Repair
           <div className="font-semibold">{assessment.repairName}</div>
           <div className="mt-1 flex items-center justify-between text-sm text-muted-foreground">
             <span>{formatLongDate(assessment.completedAt ?? todayIso())}</span>
-            <span className="font-semibold text-foreground">{formatCurrency(cost)}</span>
+            <span className="font-semibold text-foreground">
+              {formatCurrency(cost)}
+            </span>
           </div>
         </div>
 
         <div className="space-y-3">
-          <Button variant="outline" className="w-full" onClick={() => onOpenChange(false)}>
+          <Button
+            variant="outline"
+            className="w-full"
+            onClick={() => onOpenChange(false)}
+          >
             Done
           </Button>
           {!error && (
@@ -82,7 +97,7 @@ export function RepairCompletedDialog({ assessment, open, onOpenChange }: Repair
               className="mx-auto flex items-center gap-1.5 text-sm font-medium underline underline-offset-4"
               onClick={() => {
                 onOpenChange(false);
-                navigate('/my-car');
+                navigate("/my-car");
               }}
             >
               View Service History

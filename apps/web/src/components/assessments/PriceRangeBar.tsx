@@ -1,4 +1,4 @@
-import { formatCurrency } from '@/lib/format';
+import { formatCurrency } from "@/lib/format";
 
 interface PriceRangeBarProps {
   low: number;
@@ -6,7 +6,6 @@ interface PriceRangeBarProps {
   high: number;
 }
 
-/** Horizontal benchmark range with a marker at the average. */
 export function PriceRangeBar({ low, avg, high }: PriceRangeBarProps) {
   const span = Math.max(1, high - low);
   const percent = Math.min(100, Math.max(0, ((avg - low) / span) * 100));
@@ -39,13 +38,22 @@ function RangeLabel({
 }: {
   caption: string;
   value: number;
-  align: 'left' | 'center' | 'right';
+  align: "left" | "center" | "right";
 }) {
-  const alignment = align === 'left' ? 'text-left' : align === 'right' ? 'text-right' : 'text-center';
+  const alignment =
+    align === "left"
+      ? "text-left"
+      : align === "right"
+        ? "text-right"
+        : "text-center";
   return (
     <div className={alignment}>
-      <div className="font-medium uppercase tracking-widest text-muted-foreground">{caption}</div>
-      <div className="mt-0.5 text-sm font-semibold">{formatCurrency(value)}</div>
+      <div className="font-medium uppercase tracking-widest text-muted-foreground">
+        {caption}
+      </div>
+      <div className="mt-0.5 text-sm font-semibold">
+        {formatCurrency(value)}
+      </div>
     </div>
   );
 }

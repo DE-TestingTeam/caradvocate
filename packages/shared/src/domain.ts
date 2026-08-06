@@ -1,32 +1,23 @@
 /**
- * The CarAdvocate domain contract.
- *
- * This is the single definition of every shape that crosses the wire. The API
- * validates against it and the web app consumes it, so the two cannot drift.
- * Nothing in here is allowed to import from apps/.
+ * The CarAdvocate domain contract: the single definition of every shape that crosses
+ * the wire. The API validates against it and the web app consumes it, so the two
+ * cannot drift. Nothing in here may import from apps/.
  */
 
 export type Severity = 'low' | 'medium' | 'high';
 
 /**
- * Whether an upkeep job is due.
+ * Whether an upkeep job is due. Computed from the interval, the last service and
+ * today's odometer -- not stored, because nothing would keep a stored value true.
  *
- * Computed from the interval, the last time it was done and today's odometer -- not
- * stored, because nothing would keep a stored value true.
- *
- * `unknown` is a first-class answer and the default: with no interval set, or no
- * service ever logged against the job, there is genuinely nothing to say. Reporting
- * `ok` in that case would be an all-clear we cannot support -- the same mistake as
- * calling an unchecked recall list clean.
- *
- * `open_recall` is gone: recalls have their own section, sourced from NHTSA.
+ * `unknown` is a first-class answer and the default: with no interval set or no service
+ * ever logged, there is nothing to say, and `ok` would be an unsupportable all-clear.
  */
 export type MaintenanceStatus = 'overdue' | 'due_soon' | 'ok' | 'unknown';
 
 /**
- * The wireframes only ever show FAIR and OVERPRICED, so those are the only two
- * verdicts. A below-benchmark quote is currently reported as fair -- if the
- * product later wants to flag suspiciously low quotes, add the member here first.
+ * The wireframes only ever show FAIR and OVERPRICED. A below-benchmark quote is
+ * reported as fair; to flag suspiciously low quotes, add the member here first.
  */
 export type QuoteVerdict = 'fair' | 'overpriced';
 
@@ -45,9 +36,9 @@ export interface Vehicle {
   vin?: string;
   mileage: number;
   /**
-   * Valuation is absent until a data source (Kelley Blue Book or equivalent) has
-   * priced the vehicle. A car the user just added has none, and inventing a
-   * number would undermine the one thing this product is for.
+   * Absent until a data source (Kelley Blue Book or equivalent) has priced the
+   * vehicle. A car the user just added has none, and inventing a number would
+   * undermine the one thing this product is for.
    */
   estMarketValue?: number;
   tradeInLow?: number;
@@ -59,15 +50,9 @@ export interface Vehicle {
 /**
  * The signed URL of a studio photo of the owner's model, shown on My Car.
  *
- * `{}` is a routine response, not an error. An absent `imageUrl` covers all of
- * "CarImages is not configured", "no match for this year/make/model" and "the
- * service could not be reached", because the photo is decoration and none of those
- * deserve an error state on the page whose job is telling an owner about recalls.
- * The UI falls back to a static placeholder.
- *
- * The URL is signed and expiring, so it is fetched when the image mounts rather
- * than stored anywhere. How long it lasts is CarImages' choice and not part of
- * this contract -- treat it as good for this page view only.
+ * `{}` is a routine response. An absent `imageUrl` covers "not configured", "no match"
+ * and "unreachable" alike -- the photo is decoration, and the UI falls back to a static
+ * placeholder. The URL expires, so it is fetched on mount rather than stored.
  */
 export interface VehicleImage {
   /** Studio photo of this generation, 3:2. */
@@ -75,9 +60,8 @@ export interface VehicleImage {
 }
 
 /**
- * What a VIN lookup yields during onboarding. Every field but the VIN itself is
- * optional: the decoder reports only what it could determine, and the form falls
- * back to manual entry for the rest.
+ * What a VIN lookup yields during onboarding. Every field but the VIN is optional: the
+ * decoder reports only what it could determine, and the form falls back to manual entry.
  */
 export interface DecodedVin {
   vin: string;
@@ -97,10 +81,7 @@ export interface MaintenanceItem {
   /** The most recent service logged against this job, if any. */
   lastServicedOn?: string;
   lastServicedMileage?: number;
-  /**
-   * When it next falls due. Present only when there is an interval *and* a last
-   * service to measure from -- otherwise the app would be inventing a baseline.
-   */
+  /** Present only with an interval *and* a last service to measure from. */
   dueAtMileage?: number;
   dueOn?: string;
   /**
@@ -113,10 +94,8 @@ export interface MaintenanceItem {
 }
 
 /**
- * One NHTSA safety recall for the owner's model.
- *
- * `severity` is derived from NHTSA's own advisories rather than judged here:
- * "stop driving" and "park outside" are the two escalations it publishes.
+ * One NHTSA safety recall for the owner's model. `severity` is derived from NHTSA's own
+ * advisories rather than judged here.
  */
 export interface Recall {
   id: string;
@@ -134,19 +113,16 @@ export interface Recall {
   /** ISO yyyy-mm-dd. Absent when NHTSA reported no usable date. */
   reportedOn?: string;
   /**
-   * What the owner says about their own car: `true` repaired, `false` still
-   * outstanding, absent when nobody has said. NHTSA cannot answer this -- its feed
-   * is per-model -- so an absent value means unknown, not "not done".
+   * What the owner says about their own car: `true` repaired, `false` outstanding,
+   * absent when nobody has said. NHTSA's feed is per-model and cannot answer this, so
+   * absent means unknown, not "not done".
    */
   repaired?: boolean;
 }
 
 /**
- * Recalls plus whether the upstream check has ever succeeded.
- *
- * Without `checked`, an empty list is ambiguous -- it could mean this car is clear
- * or that NHTSA has never been reachable. Reporting an all-clear we cannot support
- * is the one outcome worth engineering against here.
+ * Recalls plus whether the upstream check has ever succeeded. Without `checked`, an
+ * empty list could mean this car is clear or that NHTSA has never been reachable.
  */
 export interface RecallReport {
   recalls: Recall[];
@@ -154,64 +130,9 @@ export interface RecallReport {
 }
 
 /**
- * Whether NHTSA recorded a driver-assist feature as fitted.
- *
- * `no` means NHTSA recorded the feature as not offered on this variant, which is a
- * finding about the model, not a gap in our data. Absent means NHTSA said nothing --
- * common on older vehicles, where these columns predate the programme.
- */
-export type AssistFitment = 'standard' | 'optional' | 'no';
-
-/**
- * One NCAP-tested variant of the owner's model.
- *
- * NHTSA crash-tests body styles and drivetrains separately, so one year/make/model
- * routinely has several of these -- a 2019 Civic has a 2-door and a 4-door, a 2019
- * F-150 has five cab configurations. They are kept apart rather than averaged: a
- * 4x2 and a 4x4 can differ by a star on rollover, and an average would describe a
- * truck nobody drives.
- *
- * Every rating is optional because NHTSA publishes `"Not Rated"` for tests it never
- * ran, and a car nobody crash-tested must not come back as a zero-star car.
- */
-export interface SafetyRating {
-  id: string;
-  /** NHTSA's own label for the tested variant, e.g. "2019 Ford F-150 Super Crew PU/CC 4x4". */
-  description: string;
-  /** 1-5 stars. Absent where NHTSA reported "Not Rated". */
-  overall?: number;
-  frontCrash?: number;
-  sideCrash?: number;
-  rollover?: number;
-  /**
-   * Modelled chance of rollover in a single-vehicle crash, 0-1. Absent when the
-   * rollover test was not run -- NHTSA sends 0.0 for that case, which would read as
-   * "cannot roll over" if passed through.
-   */
-  rolloverPossibility?: number;
-  forwardCollisionWarning?: AssistFitment;
-  laneDepartureWarning?: AssistFitment;
-  electronicStabilityControl?: AssistFitment;
-}
-
-/**
- * Crash-test ratings plus whether the upstream check has ever succeeded.
- *
- * Same reasoning as RecallReport: an untested car and an unreachable NHTSA both
- * produce an empty list, and only one of them is a fact about the car.
- */
-export interface SafetyRatingReport {
-  variants: SafetyRating[];
-  checked: boolean;
-}
-
-/**
- * Where a known issue came from, which decides how much weight it carries.
- *
- * `curated` entries are written by us. `owner_reports` are aggregated from
- * complaints filed with NHTSA -- real, but unverified accounts from owners rather
- * than findings by anyone. The UI must say which is which; presenting a complaint
- * as an established fault would be the same mistake as inventing a valuation.
+ * Where a known issue came from, which decides how much weight it carries. `curated`
+ * entries are written by us; `owner_reports` are aggregated NHTSA complaints -- real
+ * but unverified accounts. The UI must say which is which.
  */
 export type KnownIssueSource = 'curated' | 'owner_reports';
 
@@ -220,11 +141,7 @@ export interface KnownIssue {
   label: string;
   severity: Severity;
   source: KnownIssueSource;
-  /**
-   * How many owners reported this system, for `owner_reports` entries. Absent for
-   * curated ones, where there is no count to give and a fabricated one would be
-   * worse than none.
-   */
+  /** How many owners reported this system. `owner_reports` only. */
   reportCount?: number;
   /** Reports that mentioned a crash or fire, and any casualties NHTSA recorded. */
   crashCount?: number;
@@ -234,23 +151,21 @@ export interface KnownIssue {
   /** ISO yyyy-mm-dd of the most recent reported incident. */
   latestIncidentOn?: string;
   /**
-   * When this system tends to fail, from odometer readings on the complaints.
-   *
-   * Absent until the bulk ingest has run for this model, and withheld when too few
-   * complaints reported mileage to say anything -- see MileageAtFailure.
+   * When this system tends to fail, from odometer readings on the complaints. Absent
+   * until the bulk ingest has run, and withheld when too few complaints reported
+   * mileage to say anything.
    */
   mileage?: MileageAtFailure;
 }
 
 /**
- * The mileage range a component gets reported at.
+ * The mileage range a component gets reported at. `lowMi`/`highMi` are the 25th and
+ * 75th percentiles, not the extremes, so one complaint at 600 miles does not stretch
+ * the range past usefulness.
  *
- * `lowMi` and `highMi` are the 25th and 75th percentiles rather than the extremes,
- * so one complaint at 600 miles does not stretch the range past usefulness.
- *
- * `sampleCount` is carried deliberately and is smaller than the group's
- * `reportCount`: only about two thirds of complaints include an odometer reading. A
- * range built from four readings and one built from forty should not look alike.
+ * `sampleCount` is smaller than the group's `reportCount` -- only about two thirds of
+ * complaints include an odometer reading -- and is carried so a range built from four
+ * readings does not look like one built from forty.
  */
 export interface MileageAtFailure {
   lowMi: number;
@@ -259,12 +174,7 @@ export interface MileageAtFailure {
   sampleCount: number;
 }
 
-/**
- * Known issues plus whether the complaint feed has been reached.
- *
- * Same reasoning as RecallReport: an empty list could mean "nothing reported" or
- * "we have never managed to ask", and only one of those is reassuring.
- */
+/** Known issues plus whether the complaint feed has been reached. See RecallReport. */
 export interface KnownIssueReport {
   issues: KnownIssue[];
   checked: boolean;
@@ -283,6 +193,24 @@ export interface ServiceRecord {
   maintenanceItemId?: string;
 }
 
+/**
+ * The whole repair catalog, with each entry saying whether it can be priced for the
+ * caller's own car. The list is NOT filtered to priced repairs: "what repair do you
+ * need?" is a question about the car in the driveway, and an owner needing brakes should
+ * see brakes on the list whether or not we can quote them.
+ *
+ * `checked` says whether the pricing vendor has ever answered for this model, because
+ * nothing priced cannot otherwise distinguish "no pricing for this car" from "never
+ * reached the vendor", and only the first is a fact about the vehicle.
+ *
+ * Pricing from a DIFFERENT car is never substituted -- `priced: false` is where that
+ * refusal surfaces. See apps/api/src/services/repairPricingSync.ts.
+ */
+export interface RepairCatalogReport {
+  repairs: RepairCatalogItem[];
+  checked: boolean;
+}
+
 export interface PartBenchmark {
   name: string;
   avgPrice: number;
@@ -290,7 +218,12 @@ export interface PartBenchmark {
 
 export interface LaborTask {
   name: string;
-  hours: number;
+  /**
+   * Absent when the source published a cost but not a duration, the normal case:
+   * Vehicle Databases gives labor as money only. The UI omits the figure rather than
+   * deriving one -- see apps/api/src/services/repairPricing.ts.
+   */
+  hours?: number;
 }
 
 export interface AssessmentQuote {
@@ -309,15 +242,23 @@ export interface Assessment {
   createdAt: string;
   recommendation: { headline: string; badge: string; body: string };
   parts: { items: PartBenchmark[]; total: number; low: number; high: number };
-  labor: { ratePerHour: number; estHours: number; tasks: LaborTask[]; total: number };
+  /**
+   * `estHours` is present wherever the hours vendor knows the job; `ratePerHour` is always
+   * absent, because no vendor we use publishes a shop rate and it must not be derived from
+   * the others (see apps/api/src/services/laborTimes.ts). They are therefore NOT absent
+   * together, and a consumer that tests for both gets neither. `total` is always real.
+   */
+  labor: { ratePerHour?: number; estHours?: number; tasks: LaborTask[]; total: number };
   fairTotalLow: number;
   fairTotalHigh: number;
-  /** Present only when the user supplied a shop quote. */
-  quote?: AssessmentQuote;
   /**
-   * Completion is deliberately independent of the verdict badge: the wireframes
-   * show an assessment that is both completed and still badged ASSESSED.
+   * Which model's pricing produced these figures and where it came from, e.g.
+   * `Vehicle Databases "Brakes - Replace Pads" for 2019 HONDA CIVIC (independent +
+   * dealer)`. On the wire because the benchmark is not always the owner's own car: a
+   * reference model stands in when the vendor cannot price theirs.
    */
+  benchmarkSource: string;
+  quote?: AssessmentQuote;
   completedAt?: string;
   completedCost?: number;
 }
@@ -335,12 +276,7 @@ export interface AccountFeature {
   status: FeatureStatus;
 }
 
-/**
- * Which tier the owner is on.
- *
- * `paid` means they tapped through the paywall, not that they were charged -- v1
- * charges nobody. See PaywallStatus.
- */
+/** `paid` means they tapped through the paywall, not that they were charged. */
 export type Plan = 'free' | 'paid';
 
 export interface Account {
@@ -352,14 +288,7 @@ export interface Account {
   features: AccountFeature[];
 }
 
-/**
- * What the paywall shows, and whether this owner is past it.
- *
- * The price is served rather than hardcoded in the client for two reasons: the
- * number is the independent variable of the whole experiment, so it has to be
- * changeable without a deploy; and the figure recorded against an unlock must be
- * the figure that was on screen, which is only guaranteed if one side owns it.
- */
+// What the paywall shows, and whether this owner is past it.
 export interface PaywallStatus {
   /** True once the owner has tapped unlock. Paid features are open to them. */
   unlocked: boolean;
@@ -376,4 +305,11 @@ export interface PaywallStatus {
 export interface RepairCatalogItem {
   id: string;
   name: string;
+  /**
+   * Whether we hold pricing for this repair on THIS car. Informational: the picker lets
+   * any repair be chosen regardless, because what the car needs is the owner's to say.
+   * False means POST /api/assessments will refuse it with a 404, and the client shows
+   * that on the following page rather than gating the choice.
+   */
+  priced: boolean;
 }

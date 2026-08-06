@@ -1,28 +1,20 @@
 /**
  * Postgres schema.
  *
- * OWNERSHIP MODEL -- read this before adding a table.
+ * OWNERSHIP MODEL -- read this before adding a table:
  *
- * Tables fall into two groups:
+ *   1. User-owned aggregate roots carry `userId` (vehicles, serviceRecords,
+ *      assessments, userFeatures). Every query against these MUST filter on userId.
+ *   2. Their children (vehicleValuePoints, maintenanceItems, vehicleRecallStatus,
+ *      assessmentParts, assessmentLaborTasks) do NOT. They are reachable only through
+ *      the parent, whose userId filter authorises them; denormalising it onto children
+ *      would create a second source of truth.
+ *   3. Global reference data has no owner: repairs, repairBenchmarks and their
+ *      children, modelKnownIssues, modelRecalls, modelOwnerReports. All keyed by
+ *      year/make/model, not by person.
  *
- *   1. User-owned aggregate roots carry `userId` directly: vehicles,
- *      serviceRecords, assessments, userFeatures. Every query
- *      against these MUST filter on userId.
- *
- *   2. Children of those roots (vehicleValuePoints, maintenanceItems,
- *      vehicleRecallStatus, assessmentParts, assessmentLaborTasks) do NOT carry
- *      userId. They are
- *      reachable only through their parent, and the parent's userId filter is
- *      what authorises them. Denormalising userId onto children would create a
- *      second source of truth that can disagree with the first.
- *
- *   3. Global reference data has no owner at all: repairs, repairBenchmarks and
- *      their children, modelKnownIssues, modelRecalls and modelOwnerReports. These
- *      are the same for every user. Known issues, safety recalls and owner
- *      complaints are keyed by year/make/model, not by person.
- *
- * MONEY is stored as integer whole dollars. The product never shows cents.
- * HOURS are numeric(4,2) because labor times are quoted in tenths of an hour.
+ * MONEY is integer whole dollars -- the product never shows cents. HOURS are
+ * numeric(4,2) because labor times are quoted in tenths of an hour.
  */
 import { relations, sql } from 'drizzle-orm';
 import {
@@ -56,10 +48,8 @@ export const users = pgTable(
   {
     id: uuid('id').primaryKey().defaultRandom(),
     /**
-     * The `sub` claim from the Supabase Auth JWT, linking this profile to the
-     * identity Supabase owns. Nullable because seeded and dev-stub users have no
-     * Supabase identity, and because we never want an auth outage to make
-     * existing rows unreadable.
+     * The `sub` claim from the Supabase Auth JWT. Nullable because seeded and dev-stub
+     * users have no Supabase identity.
      */
     supabaseUserId: uuid('supabase_user_id'),
     email: text('email').notNull(),
@@ -68,9 +58,8 @@ export const users = pgTable(
     /** Displayed as "Member since 2024"; the year is derived from this. */
     memberSince: date('member_since').notNull(),
     /**
-     * Free until the owner taps through the paywall. See services/paywall.ts --
-     * v1 charges nobody, so this records that the tap happened rather than that
-     * money changed hands.
+     * Free until the owner taps through the paywall. v1 charges nobody, so this
+     * records the tap rather than that money changed hands. See services/paywall.ts.
      */
     plan: planEnum('plan').notNull().default('free'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -102,18 +91,14 @@ export const userFeatures = pgTable(
 );
 
 /**
- * Every tap on the paywall's unlock button.
+ * Every tap on the paywall's unlock button -- the prototype's actual output. Nobody is
+ * charged in v1, so the tap is the only evidence of willingness to pay, and it is
+ * evidence for the number that was on screen: `priceCents` and `interval` are copied
+ * in so a mid-test price change leaves earlier rows meaning what they meant.
  *
- * This table is the prototype's actual output. Nobody is charged in v1, so the tap
- * is the only evidence of willingness to pay, and the number shown at the moment of
- * the tap is what it is evidence *for* -- hence `priceCents` and `interval` are
- * copied in rather than read from config at analysis time. Change the price
- * mid-test and earlier rows still mean what they meant.
- *
- * Append-only. Nothing updates or deletes a row, and a second tap by the same owner
- * is a second row: re-deciding at a new price is itself a finding. Cascades with
- * the user because it is their personal data, which does mean a deleted account
- * takes its intent history with it -- export before honouring a deletion request.
+ * Append-only, and a second tap by the same owner is a second row -- re-deciding at a
+ * new price is itself a finding. Cascades with the user, so a deleted account takes its
+ * intent history with it; export before honouring a deletion request.
  */
 export const paywallIntents = pgTable(
   'paywall_intents',
@@ -122,16 +107,14 @@ export const paywallIntents = pgTable(
     userId: uuid('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
-    /** Whole cents, as shown. Integer for the same reason every other price here is. */
+    /** Whole cents, as shown. */
     priceCents: integer('price_cents').notNull(),
     /** 'month' or 'year'. Plain text so a new cadence needs no migration. */
     interval: text('interval').notNull(),
     /**
-     * Where they tapped from: 'repair_cost_checker' (the gate on the page itself)
-     * or 'account' (the unlock button on Account). Plain text for the same reason.
-     * Worth keeping separate -- arriving from an Ask CA answer about a repair is a
-     * warmer signal than browsing the nav, and conversion by entry point is a
-     * question the PoC will want to ask.
+     * Where they tapped from: 'repair_cost_checker' (the gate on the page) or 'account'
+     * (the unlock button). Kept because conversion by entry point is a question the PoC
+     * will want to ask -- arriving from an Ask CA answer is a warmer signal than the nav.
      */
     source: text('source').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -154,21 +137,32 @@ export const vehicles = pgTable(
     make: text('make').notNull(),
     model: text('model').notNull(),
     trim: text('trim'),
-    // Nullable: onboarding lets an owner skip the VIN, and plenty cannot find it
-    // on the spot. Absent is recorded as absent rather than as a sentinel string.
+    // Nullable: onboarding lets an owner skip the VIN.
     vin: text('vin'),
     mileage: integer('mileage').notNull(),
     // Nullable: populated by a valuation source, absent for a freshly added car.
     estMarketValue: integer('est_market_value'),
     tradeInLow: integer('trade_in_low'),
     tradeInHigh: integer('trade_in_high'),
+    /**
+     * When the manufacturer's service schedule was fetched for THIS car, or null for never.
+     * Set on a conclusive answer only -- real intervals, or the vendor saying it has none --
+     * so a timeout is retried rather than remembered as a verdict.
+     *
+     * A column rather than something inferred from `maintenance_items`, because the seed also
+     * writes intervals and the rows cannot say which of them came from the manufacturer. See
+     * services/maintenanceScheduleSync.ts.
+     */
+    maintenanceScheduleCheckedAt: timestamp('maintenance_schedule_checked_at', {
+      withTimezone: true,
+    }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
     byUser: index('vehicles_user_idx').on(table.userId),
-    // A VIN is globally unique in reality, but scoping to the user avoids
-    // leaking whether another account already registered the same car. Postgres
-    // treats NULLs as distinct here, so skipping the VIN never trips the index.
+    // Scoped to the user, though a VIN is globally unique, so the index cannot leak
+    // whether another account registered the same car. Postgres treats NULLs as
+    // distinct, so skipping the VIN never trips it.
     vinPerUser: uniqueIndex('vehicles_user_vin_unique').on(table.userId, table.vin),
   }),
 );
@@ -193,15 +187,12 @@ export const vehicleValuePoints = pgTable(
 /**
  * A recurring upkeep job on one car -- oil, tyres, brake fluid.
  *
- * There is deliberately no stored status. Whether something is due is arithmetic on
- * the interval, the last time it was done, and today's odometer, so it is computed
- * on read (see services/maintenanceDue.ts). A stored status is a value nothing keeps
- * true: the previous version of this table held one, and the seed had to bake the
- * answer into the label ("Oil Change - Due in 1,200 mi") because nothing computed it.
+ * Deliberately no stored status: whether something is due is arithmetic on the
+ * interval, the last service and today's odometer, so it is computed on read (see
+ * services/maintenanceDue.ts). Nothing would keep a stored value true.
  *
- * Intervals are owner-supplied. The manufacturer's official schedule is licensed
- * data; when that is bought it fills in these same two columns and nothing else
- * changes.
+ * Intervals are owner-supplied. The manufacturer's official schedule is licensed data;
+ * buying it fills in these same two columns and nothing else changes.
  */
 export const maintenanceItems = pgTable(
   'maintenance_items',
@@ -211,10 +202,7 @@ export const maintenanceItems = pgTable(
       .notNull()
       .references(() => vehicles.id, { onDelete: 'cascade' }),
     label: text('label').notNull(),
-    /**
-     * How often the job is due. Either, both, or neither: with neither we say so
-     * rather than guessing, and with both whichever falls first wins.
-     */
+    /** Either, both, or neither. With both, whichever falls first wins. */
     intervalMiles: integer('interval_miles'),
     intervalMonths: integer('interval_months'),
     position: integer('position').notNull().default(0),
@@ -225,19 +213,12 @@ export const maintenanceItems = pgTable(
 );
 
 /**
- * What the owner says about a recall on *their* car.
+ * What the owner says about a recall on *their* car. NHTSA's feed is per-model, so it
+ * can say a campaign affects this model but never whether this car was repaired.
  *
- * NHTSA's feed is keyed by year/make/model, so it can say a campaign affects this
- * model but never whether this particular car was repaired -- only the manufacturer
- * knows that, and only for a fee. The owner knows too, so this records what they
- * tell us rather than leaving every recall permanently ambiguous.
- *
- * Keyed by NHTSA's campaign number rather than a `model_recalls.id`, because those
- * rows are mirrored data that a resync can replace. The campaign number is the
- * stable identity and survives.
- *
- * A missing row means "unknown", which is the honest default -- distinct from the
- * owner having told us it is outstanding.
+ * Keyed by NHTSA's campaign number rather than a `model_recalls.id`, because those rows
+ * are mirrored data a resync can replace. A missing row means "unknown", distinct from
+ * the owner having told us it is outstanding.
  */
 export const vehicleRecallStatus = pgTable(
   'vehicle_recall_status',
@@ -279,14 +260,9 @@ export const modelKnownIssues = pgTable(
 );
 
 /**
- * Safety recalls, mirrored from NHTSA.
- *
- * Like known issues these belong to the model rather than the owner: every 2019
- * Civic shares the same campaigns, so one row serves all of them and a sync costs
- * one upstream request per model rather than one per user.
- *
- * `campaignNumber` is NHTSA's own identifier and is what makes a campaign unique
- * within a model, so a re-sync updates rows in place instead of duplicating them.
+ * Safety recalls, mirrored from NHTSA. Model-scoped like known issues, so a sync costs
+ * one upstream request per model rather than one per user. `campaignNumber` is NHTSA's
+ * own identifier, so a re-sync updates rows in place instead of duplicating them.
  */
 export const modelRecalls = pgTable(
   'model_recalls',
@@ -318,16 +294,12 @@ export const modelRecalls = pgTable(
 );
 
 /**
- * Owner complaints filed with NHTSA, aggregated by the component they concern.
+ * Owner complaints filed with NHTSA, aggregated at sync time by component -- one row is
+ * one component for one model.
  *
- * The raw feed is one row per complaint; what the UI needs is "how often does this
- * system get reported", so aggregation happens at sync time and one row here is one
- * component for one model.
- *
- * These are *unverified owner reports*, not findings. Recalls are the official
- * counterpart. Every count is kept rather than collapsed into a severity, because
- * "12 owners reported this, 2 involved a crash" is the honest version and a lone
- * severity badge is not.
+ * These are *unverified owner reports*, not findings; recalls are the official
+ * counterpart. Every count is kept rather than collapsed into a severity, because "12
+ * owners reported this, 2 involved a crash" says more than a badge.
  */
 export const modelOwnerReports = pgTable(
   'model_owner_reports',
@@ -346,17 +318,13 @@ export const modelOwnerReports = pgTable(
     /** Most recent incident date across the complaints in this group. */
     latestIncidentOn: date('latest_incident_on'),
     /**
-     * Mileage at failure, from NHTSA's bulk complaint file.
+     * Mileage at failure, from NHTSA's bulk complaint file. The JSON API omits mileage,
+     * so these are filled by a separate ingest (scripts/ingestComplaintMileage.mts) and
+     * stay null until it has run for this model.
      *
-     * The JSON API omits mileage entirely, so these are filled in by a separate
-     * ingest (scripts/ingestComplaintMileage.mts) and stay null until it has run for
-     * this model. That is why they are nullable and counted separately from
-     * `reportCount`: only about two thirds of complaints report an odometer reading,
-     * and a range built from three of them should not masquerade as one built from
-     * thirty.
-     *
-     * Low and high are the 25th and 75th percentiles, not the extremes -- a single
-     * complaint at 600 miles should not widen the range the owner is shown.
+     * Counted separately from `reportCount` because only about two thirds of complaints
+     * report an odometer reading. Low and high are the 25th and 75th percentiles, not
+     * the extremes.
      */
     mileageSampleCount: integer('mileage_sample_count'),
     mileageLowMi: integer('mileage_low_mi'),
@@ -375,16 +343,10 @@ export const modelOwnerReports = pgTable(
 );
 
 /**
- * A few representative complaints behind each component group.
- *
- * The counts say how often a system is reported; these say what owners actually
- * describe -- "rear sub frame has significant rust, snapped while driving" is worth
- * more to someone deciding whether to see a mechanic than "6 reports" is. NHTSA
- * returns this prose in the same response the counts come from.
- *
- * A child of the aggregate rather than a column on it, matching how
- * vehicleValuePoints hangs off a vehicle: an ordered short list read with its
- * parent and never queried on its own.
+ * A few representative complaints behind each component group. The counts say how often
+ * a system is reported; these say what owners actually describe, which is worth more to
+ * someone deciding whether to see a mechanic. NHTSA returns the prose alongside the
+ * counts. An ordered short list read with its parent, never queried on its own.
  */
 export const modelOwnerReportQuotes = pgTable(
   'model_owner_report_quotes',
@@ -405,72 +367,19 @@ export const modelOwnerReportQuotes = pgTable(
 );
 
 /**
- * NHTSA NCAP crash-test ratings, one row per tested variant of a model.
- *
- * The grain is the variant, not the model, because NHTSA tests body styles and
- * drivetrains separately -- a 2019 F-150 has five cab configurations with different
- * rollover results. Averaging them would produce a rating for a truck nobody drives.
- *
- * `year`/`make`/`model` hold *our* lookup key rather than NHTSA's label, so a
- * vehicle whose model is "F-150" finds its rows. NHTSA's own variant name lives in
- * `description`, and `ncapVehicleId` is its stable identity for the variant -- the
- * same role `campaignNumber` plays for recalls.
- *
- * Every star rating is nullable because NHTSA publishes "Not Rated" for tests it
- * never ran. A null here means untested; it must never render as zero stars.
- */
-export const modelSafetyRatings = pgTable(
-  'model_safety_ratings',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    year: integer('year').notNull(),
-    make: text('make').notNull(),
-    model: text('model').notNull(),
-    /** NHTSA's VehicleId for this tested variant. Stable, and unique per model. */
-    ncapVehicleId: integer('ncap_vehicle_id').notNull(),
-    /** NHTSA's label, e.g. "2019 Ford F-150 Super Crew PU/CC 4x4". */
-    description: text('description').notNull(),
-    overallRating: integer('overall_rating'),
-    frontCrashRating: integer('front_crash_rating'),
-    sideCrashRating: integer('side_crash_rating'),
-    rolloverRating: integer('rollover_rating'),
-    /**
-     * Modelled rollover chance, 0-1. Null when the test was not run: NHTSA sends
-     * 0.0 in that case, which would otherwise read as "cannot roll over".
-     */
-    rolloverPossibility: numeric('rollover_possibility', { precision: 4, scale: 3 }),
-    /** 'standard' | 'optional' | 'no'. Null when NHTSA recorded nothing. */
-    forwardCollisionWarning: text('forward_collision_warning'),
-    laneDepartureWarning: text('lane_departure_warning'),
-    electronicStabilityControl: text('electronic_stability_control'),
-  },
-  (table) => ({
-    byModel: index('model_safety_ratings_model_idx').on(table.year, table.make, table.model),
-    variantPerModel: uniqueIndex('model_safety_ratings_variant_unique').on(
-      table.year,
-      table.make,
-      table.model,
-      table.ncapVehicleId,
-    ),
-  }),
-);
-
-/**
- * When each model was last checked against each upstream NHTSA feed.
- *
- * Kept separate from the mirrored rows because "nothing found" and "never checked"
- * are different facts, and the UI must not report the first while meaning the
- * second. A row with `succeededAt` and no matching rows is a genuine all-clear; no
- * row at all means nobody has looked yet.
- *
- * One table serves every feed -- see services/modelFeed.ts -- because the freshness
- * policy is a property of mirroring an upstream source, not of recalls specifically.
+ * When each model was last checked against each upstream NHTSA feed. Separate from the
+ * mirrored rows because "nothing found" and "never checked" are different facts: a row
+ * with `succeededAt` and no matching rows is a genuine all-clear, no row at all means
+ * nobody has looked. One table serves every feed -- see services/modelFeed.ts.
  */
 export const modelFeedSyncs = pgTable(
   'model_feed_syncs',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    /** 'recalls' | 'complaints'. Text rather than an enum so adding a feed needs no migration. */
+    /**
+     * 'recalls' | 'complaints' | 'repair_pricing'. Text rather than an enum so adding a feed
+     * needs no migration. The freshness window is per feed; see services/modelFeed.ts.
+     */
     feed: text('feed').notNull(),
     year: integer('year').notNull(),
     make: text('make').notNull(),
@@ -478,9 +387,10 @@ export const modelFeedSyncs = pgTable(
     /** Last attempt of any kind. Drives the retry cooldown after a failure. */
     checkedAt: timestamp('checked_at', { withTimezone: true }).notNull().defaultNow(),
     /**
-     * Last attempt that actually reached NHTSA. Null means never. Kept separate
-     * from `checkedAt` so a failed refresh cannot retract data we already earned --
-     * what we hold stays trustworthy until a later check replaces it.
+     * Last attempt that actually reached the vendor -- NHTSA for recalls and complaints,
+     * Vehicle Databases for pricing. Null means never. Separate from `checkedAt` so a failed
+     * refresh cannot retract data we already earned, and so the retry backoff can tell a
+     * vendor that blipped from one that has never answered.
      */
     succeededAt: timestamp('succeeded_at', { withTimezone: true }),
   },
@@ -509,10 +419,19 @@ export const repairs = pgTable(
 );
 
 /**
- * Benchmark pricing per repair -- the reference data the whole product rests on.
+ * Benchmark pricing per repair AND per model -- the data the whole product rests on.
  *
- * This is currently seeded by hand. Sourcing real parts pricing and OEM labor
- * times is the outstanding product risk; see the root README.
+ * `year`/`make`/`model` are part of the key, not decoration: an alternator for a Civic
+ * and one for an F-150 are different jobs at different prices, so "is my quote fair" is
+ * unanswerable without knowing whose car it is. Filled per model from Vehicle Databases
+ * (services/repairPricingSync.ts). A car with no row here is shown no pricing -- another
+ * model's figures are never substituted, however clearly they are labelled.
+ *
+ * Labor rate and hours are both nullable, for different reasons now. `laborEstHours` is
+ * filled from Open Labor Project where it knows the job (services/laborTimes.ts), and null
+ * where it does not. `laborRatePerHour` stays null everywhere: neither vendor publishes a
+ * shop rate, and VDB's labor dollars do not divide back into book time at any credible
+ * rate, so a quotient of the two must not be stored as one (see services/repairPricing.ts).
  */
 export const repairBenchmarks = pgTable(
   'repair_benchmarks',
@@ -521,23 +440,44 @@ export const repairBenchmarks = pgTable(
     repairId: uuid('repair_id')
       .notNull()
       .references(() => repairs.id, { onDelete: 'cascade' }),
+    /** The model these figures price. Uppercase, per services/modelFeed.ts. */
+    year: integer('year').notNull(),
+    make: text('make').notNull(),
+    model: text('model').notNull(),
     partsTotal: integer('parts_total').notNull(),
     partsLow: integer('parts_low').notNull(),
     partsHigh: integer('parts_high').notNull(),
-    laborRatePerHour: integer('labor_rate_per_hour').notNull(),
-    laborEstHours: numeric('labor_est_hours', { precision: 4, scale: 2 }).notNull(),
+    /** Null unless a source published a shop rate. None does. See the header. */
+    laborRatePerHour: integer('labor_rate_per_hour'),
+    /** Null where the hours vendor does not know the job. See the header. */
+    laborEstHours: numeric('labor_est_hours', { precision: 4, scale: 2 }),
     laborTotal: integer('labor_total').notNull(),
     fairTotalLow: integer('fair_total_low').notNull(),
     fairTotalHigh: integer('fair_total_high').notNull(),
     recommendationHeadline: text('recommendation_headline').notNull(),
     recommendationBadge: text('recommendation_badge').notNull(),
     recommendationBody: text('recommendation_body').notNull(),
+    /**
+     * Where the figures came from, e.g. "Vehicle Databases (independent + dealer)".
+     * Stored per row so a benchmark can say whether it is sourced or a stand-in.
+     */
+    source: text('source').notNull(),
   },
   (table) => ({
-    repairUnique: uniqueIndex('repair_benchmarks_repair_unique').on(table.repairId),
+    repairPerModel: uniqueIndex('repair_benchmarks_repair_model_unique').on(
+      table.repairId,
+      table.year,
+      table.make,
+      table.model,
+    ),
+    byModel: index('repair_benchmarks_model_idx').on(table.year, table.make, table.model),
   }),
 );
 
+/**
+ * Parts line items for a benchmark. Usually exactly one row -- VDB gives an aggregate
+ * parts figure per repair and no itemisation.
+ */
 export const benchmarkParts = pgTable(
   'benchmark_parts',
   {
@@ -562,7 +502,8 @@ export const benchmarkLaborTasks = pgTable(
       .notNull()
       .references(() => repairBenchmarks.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
-    hours: numeric('hours', { precision: 4, scale: 2 }).notNull(),
+    /** Null when the source priced the task without publishing its duration. */
+    hours: numeric('hours', { precision: 4, scale: 2 }),
     position: integer('position').notNull(),
   },
   (table) => ({
@@ -587,17 +528,15 @@ export const serviceRecords = pgTable(
     cost: integer('cost').notNull(),
     source: serviceSourceEnum('source').notNull(),
     /**
-     * Odometer reading when the work was done. Nullable because records created
-     * before this existed have none, and because someone logging an old receipt may
-     * genuinely not know -- but without it no interval can be measured, which is why
-     * the form asks for it.
+     * Odometer reading when the work was done. Nullable because older records have none
+     * and someone logging an old receipt may not know -- but without it no interval can
+     * be measured, which is why the form asks for it.
      */
     mileageAtService: integer('mileage_at_service'),
     /**
-     * The upkeep job this satisfies, when it satisfies one. Set explicitly rather
-     * than matched on the description, because guessing that "oil and filter" means
-     * the oil-change item is the kind of inference that is wrong just often enough
-     * to tell someone their brakes are fine when they are not.
+     * The upkeep job this satisfies, when it satisfies one. Set explicitly rather than
+     * matched on the description: guessing that "oil and filter" means the oil-change
+     * item is wrong just often enough to matter.
      *
      * Nulled rather than cascaded when the item goes: the work still happened.
      */
@@ -614,12 +553,10 @@ export const serviceRecords = pgTable(
 /* ------------------------------------------------------------- assessments */
 
 /**
- * An assessment SNAPSHOTS the benchmark it was built from.
- *
- * Benchmark pricing changes as reference data is refreshed, but an assessment
- * the user saved must keep showing the numbers they were shown. So every figure
- * is copied onto the assessment (and its child rows) at creation time rather
- * than joined live from repairBenchmarks.
+ * An assessment SNAPSHOTS the benchmark it was built from. Benchmark pricing changes as
+ * reference data is refreshed, but a saved assessment must keep showing the numbers the
+ * user was shown, so every figure is copied onto it and its children at creation time
+ * rather than joined live from repairBenchmarks.
  */
 export const assessments = pgTable(
   'assessments',
@@ -644,12 +581,20 @@ export const assessments = pgTable(
     partsLow: integer('parts_low').notNull(),
     partsHigh: integer('parts_high').notNull(),
 
-    laborRatePerHour: integer('labor_rate_per_hour').notNull(),
-    laborEstHours: numeric('labor_est_hours', { precision: 4, scale: 2 }).notNull(),
+    /** Nullable for the same reason as on repairBenchmarks: usually unpublished. */
+    laborRatePerHour: integer('labor_rate_per_hour'),
+    laborEstHours: numeric('labor_est_hours', { precision: 4, scale: 2 }),
     laborTotal: integer('labor_total').notNull(),
 
     fairTotalLow: integer('fair_total_low').notNull(),
     fairTotalHigh: integer('fair_total_high').notNull(),
+
+    /**
+     * Which model's pricing this was judged against, e.g. "2019 HONDA CIVIC", and where
+     * it came from. Snapshotted so an assessment built on the reference fallback rather
+     * than the owner's own car can say so after the fact.
+     */
+    benchmarkSource: text('benchmark_source').notNull().default('unknown'),
 
     /** All five quote columns are null together, or all non-null together. */
     quoteAmount: integer('quote_amount'),
@@ -661,8 +606,8 @@ export const assessments = pgTable(
     quoteFileName: text('quote_file_name'),
 
     /**
-     * Completion is independent of the verdict: the wireframes show an
-     * assessment badged ASSESSED that is also marked complete.
+     * Independent of the verdict: the wireframes show an assessment badged ASSESSED
+     * that is also marked complete.
      */
     completedAt: date('completed_at'),
     completedCost: integer('completed_cost'),
@@ -698,7 +643,8 @@ export const assessmentLaborTasks = pgTable(
       .notNull()
       .references(() => assessments.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
-    hours: numeric('hours', { precision: 4, scale: 2 }).notNull(),
+    /** Null when the source priced the task without publishing its duration. */
+    hours: numeric('hours', { precision: 4, scale: 2 }),
     position: integer('position').notNull(),
   },
   (table) => ({
@@ -710,8 +656,7 @@ export const assessmentLaborTasks = pgTable(
 
 /*
  * There is no chat table, on purpose. An Ask CA conversation clears when the owner
- * leaves the screen, so it is never written down -- see routes/chat.ts for why storing
- * it and deleting on exit is the less reliable way to get that behaviour.
+ * leaves the screen, so it is never written down. See routes/chat.ts.
  */
 
 /* -------------------------------------------------------------- relations */

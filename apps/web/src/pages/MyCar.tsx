@@ -39,9 +39,8 @@ export function MyCarPage() {
   const [editingRecord, setEditingRecord] = React.useState<ServiceRecord>();
 
   /**
-   * Records the owner's answer, then refetches so the list reorders and the badge
-   * changes from the server's view rather than an optimistic guess -- there are
-   * three states here and a safety warning is the wrong place to be clever.
+   * Records the owner's answer, then refetches so the list reorders from the server's view
+   * rather than an optimistic guess -- a safety warning is the wrong place to be clever.
    */
   async function handleRecallStatus(campaignNumber: string, repaired: boolean | undefined) {
     try {

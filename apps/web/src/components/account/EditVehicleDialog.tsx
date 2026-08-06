@@ -16,7 +16,7 @@ import { updateVehicle } from '@/lib/api';
 import { invalidateAll } from '@/lib/useApi';
 import type { Vehicle } from '@caradvocate/shared';
 
-/** NOTE: not in the wireframes -- fields mirror what the vehicle card displays. */
+
 export function EditVehicleDialog({ vehicle }: { vehicle: Vehicle }) {
   const [open, setOpen] = React.useState(false);
   const [model, setModel] = React.useState(vehicle.model);
@@ -34,13 +34,9 @@ export function EditVehicleDialog({ vehicle }: { vehicle: Vehicle }) {
     }
   }, [open, vehicle]);
 
-  /**
-   * Only offered when the car has none: a VIN identifies the vehicle, so filling
-   * a gap is useful but editing an established one is not.
-   */
+  /** Only offered when the car has none: filling a gap is useful, editing an established VIN is not. */
   const canAddVin = !vehicle.vin;
-  // The API requires exactly 17 characters, so block a partial entry here rather
-  // than letting it come back as a 422.
+  // The API requires exactly 17 characters;
   const vinIncomplete = canAddVin && vin.trim().length > 0 && vin.trim().length !== 17;
 
   async function handleSubmit(event: React.FormEvent) {
