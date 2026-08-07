@@ -1,11 +1,11 @@
-import { ArrowRight, Check } from "lucide-react";
-import { Link } from "react-router-dom";
-import { Badge } from "@/components/ui/badge";
-import { Card } from "@/components/ui/card";
-import { isCompleted, quoteStatusLabel, verdictBadge } from "@/lib/assessment";
-import { formatLongDate } from "@/lib/format";
-import { cn } from "@/lib/utils";
-import type { Assessment } from "@caradvocate/shared";
+import { ArrowRight, Check } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Badge } from '@/components/ui/badge';
+import { Card } from '@/components/ui/card';
+import { isCompleted, quoteStatusLabel, verdictBadge } from '@/lib/assessment';
+import { formatLongDate } from '@/lib/format';
+import { cn } from '@/lib/utils';
+import type { Assessment } from '@caradvocate/shared';
 
 interface AssessmentCardProps {
   assessment: Assessment;

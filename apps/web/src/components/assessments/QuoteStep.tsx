@@ -1,8 +1,8 @@
-import * as React from "react";
-import { FileText, Upload } from "lucide-react";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { cn } from "@/lib/utils";
+import * as React from 'react';
+import { FileText, Upload } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { cn } from '@/lib/utils';
 
 export type QuoteChoice = "yes" | "no";
 

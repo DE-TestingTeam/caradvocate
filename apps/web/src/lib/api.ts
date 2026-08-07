@@ -71,7 +71,7 @@ export function deleteMaintenanceItem(id: string): Promise<void> {
 
 /**
  * Curated known issues plus systems owners have complained about to NHTSA.
- * `checked` distinguishes "nothing reported" from "the feed was never reached".
+ * `checked` distinguishes "nothing reported" from 'the feed was never reached'.
  */
 export function getKnownIssues(): Promise<KnownIssueReport> {
   return http.get<KnownIssueReport>('/vehicle/known-issues');
@@ -159,7 +159,7 @@ export function completeAssessment(id: string, cost: number): Promise<Assessment
 
 /**
  * The repairs that can be priced for the owner's own car. `checked` tells "the vendor has no
- * pricing for this car" from "we have never reached the vendor", which the picker has to
+ * pricing for this car" from 'we have never reached the vendor', which the picker has to
  * say. Repairs priced against a different vehicle are never included.
  */
 export function getRepairCatalog(): Promise<RepairCatalogReport> {

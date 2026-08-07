@@ -1,8 +1,8 @@
-import * as React from "react";
-import { Check, Plus, Search } from "lucide-react";
-import type { RepairCatalogItem } from "@caradvocate/shared";
-import { Input } from "@/components/ui/input";
-import { cn } from "@/lib/utils";
+import * as React from 'react';
+import { Check, Plus, Search } from 'lucide-react';
+import type { RepairCatalogItem } from '@caradvocate/shared';
+import { Input } from '@/components/ui/input';
+import { cn } from '@/lib/utils';
 
 interface RepairPickerProps {
   items: RepairCatalogItem[];

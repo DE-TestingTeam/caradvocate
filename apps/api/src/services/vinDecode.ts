@@ -13,6 +13,7 @@
  * `undefined` and the UI falls back to manual entry.
  */
 import type { DecodedVin } from '@caradvocate/shared';
+import { fetchJson } from '../lib/fetchJson.js';
 import { HttpError } from '../lib/httpError.js';
 
 const VPIC_BASE = 'https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVinValues';
@@ -32,22 +33,7 @@ export async function decodeVin(vin: string): Promise<DecodedVin> {
 }
 
 async function fetchVpic(vin: string): Promise<unknown | undefined> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
-
-  try {
-    const response = await fetch(`${VPIC_BASE}/${encodeURIComponent(vin)}?format=json`, {
-      signal: controller.signal,
-      headers: { Accept: 'application/json' },
-    });
-    if (!response.ok) return undefined;
-    return (await response.json()) as unknown;
-  } catch {
-    // Offline, blocked, slow, or malformed JSON. All the same to the caller.
-    return undefined;
-  } finally {
-    clearTimeout(timer);
-  }
+  return fetchJson(`${VPIC_BASE}/${encodeURIComponent(vin)}?format=json`, TIMEOUT_MS);
 }
 
 /** Exported for testing. */

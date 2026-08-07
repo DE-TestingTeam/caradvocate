@@ -10,6 +10,8 @@
  * and how often, so this aggregates by component -- which also keeps a 344KB response for a
  * popular model out of the hot path.
  */
+import { fetchJson } from '../lib/fetchJson.js';
+
 const NHTSA_COMPLAINTS = 'https://api.nhtsa.gov/complaints/complaintsByVehicle';
 const TIMEOUT_MS = 10000;
 
@@ -94,27 +96,12 @@ export async function fetchComponentReports(
 }
 
 async function requestComplaints(lookup: ComplaintLookup): Promise<unknown> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
-
   const url = new URL(NHTSA_COMPLAINTS);
   url.searchParams.set('make', lookup.make);
   url.searchParams.set('model', lookup.model);
   url.searchParams.set('modelYear', String(lookup.year));
 
-  try {
-    const response = await fetch(url, {
-      signal: controller.signal,
-      headers: { Accept: 'application/json' },
-    });
-    if (!response.ok) return undefined;
-    return (await response.json()) as unknown;
-  } catch {
-    // Offline, blocked, slow, or malformed JSON. All the same to the caller.
-    return undefined;
-  } finally {
-    clearTimeout(timer);
-  }
+  return fetchJson(url, TIMEOUT_MS);
 }
 
 /**

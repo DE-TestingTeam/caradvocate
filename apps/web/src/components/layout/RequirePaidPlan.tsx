@@ -11,16 +11,16 @@
  * `unlocked` answer, so there is no local state that could dismiss it independent of that
  * answer, and no route to duck behind since the dialog's overlay covers the whole viewport.
  */
-import * as React from "react";
-import { Outlet, useOutletContext } from "react-router-dom";
-import { ErrorState } from "@/components/ErrorState";
-import { PaywallScreen } from "@/components/paywall/PaywallScreen";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { Skeleton } from "@/components/ui/skeleton";
-import { useToast } from "@/components/ui/toast";
-import { getPaywall, unlockPaywall } from "@/lib/api";
-import { invalidateAll, useApi } from "@/lib/useApi";
-import type { PricingModel } from "@caradvocate/shared";
+import * as React from 'react';
+import { Outlet, useOutletContext } from 'react-router-dom';
+import { ErrorState } from '@/components/ErrorState';
+import { PaywallScreen } from '@/components/paywall/PaywallScreen';
+import { Dialog, DialogContent } from '@/components/ui/dialog';
+import { Skeleton } from '@/components/ui/skeleton';
+import { useToast } from '@/components/ui/toast';
+import { getPaywall, unlockPaywall } from '@/lib/api';
+import { invalidateAll, useApi } from '@/lib/useApi';
+import type { PricingModel } from '@caradvocate/shared';
 
 export function RequirePaidPlan() {
   const { data, error } = useApi(getPaywall);

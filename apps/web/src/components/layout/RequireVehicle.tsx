@@ -1,14 +1,14 @@
-import { Navigate, Outlet, useOutletContext } from "react-router-dom";
-import type { Vehicle } from "@caradvocate/shared";
-import { CollapsibleSection } from "@/components/my-car/CollapsibleSection";
-import { ListSkeleton } from "@/components/my-car/ListSkeleton";
-import { Card, CardContent } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
-import { Skeleton } from "@/components/ui/skeleton";
-import { ErrorState } from "@/components/ErrorState";
-import { getVehicle } from "@/lib/api";
-import { ApiError } from "@/lib/http";
-import { useApi } from "@/lib/useApi";
+import { Navigate, Outlet, useOutletContext } from 'react-router-dom';
+import type { Vehicle } from '@caradvocate/shared';
+import { CollapsibleSection } from '@/components/my-car/CollapsibleSection';
+import { ListSkeleton } from '@/components/my-car/ListSkeleton';
+import { Card, CardContent } from '@/components/ui/card';
+import { Separator } from '@/components/ui/separator';
+import { Skeleton } from '@/components/ui/skeleton';
+import { ErrorState } from '@/components/ErrorState';
+import { getVehicle } from '@/lib/api';
+import { ApiError } from '@/lib/http';
+import { useApi } from '@/lib/useApi';
 
 interface VehicleContext {
   vehicle: Vehicle;

@@ -3,8 +3,8 @@ import {
   AccordionContent,
   AccordionItem,
   AccordionTrigger,
-} from "@/components/ui/accordion";
-import { Card, CardContent } from "@/components/ui/card";
+} from '@/components/ui/accordion';
+import { Card, CardContent } from '@/components/ui/card';
 import {
   Table,
   TableBody,
@@ -12,10 +12,10 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@/components/ui/table";
-import { PriceRangeBar } from "./PriceRangeBar";
-import { formatCurrency } from "@/lib/format";
-import type { Assessment } from "@caradvocate/shared";
+} from '@/components/ui/table';
+import { PriceRangeBar } from './PriceRangeBar';
+import { formatCurrency } from '@/lib/format';
+import type { Assessment } from '@caradvocate/shared';
 
 export function PartsBenchmarkCard({ assessment }: { assessment: Assessment }) {
   const { parts } = assessment;

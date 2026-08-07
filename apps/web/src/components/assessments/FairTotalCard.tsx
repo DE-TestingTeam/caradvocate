@@ -1,6 +1,6 @@
-import { Card, CardContent } from "@/components/ui/card";
-import { formatCurrency, formatCurrencyRange } from "@/lib/format";
-import type { Assessment } from "@caradvocate/shared";
+import { Card, CardContent } from '@/components/ui/card';
+import { formatCurrency, formatCurrencyRange } from '@/lib/format';
+import type { Assessment } from '@caradvocate/shared';
 
 export function FairTotalCard({ assessment }: { assessment: Assessment }) {
   return (

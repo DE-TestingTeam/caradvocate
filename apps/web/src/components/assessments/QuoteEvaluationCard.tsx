@@ -1,8 +1,8 @@
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
-import { quoteVerdictBadge } from "@/lib/assessment";
-import { formatCurrency, formatCurrencyRange } from "@/lib/format";
-import type { Assessment } from "@caradvocate/shared";
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent } from '@/components/ui/card';
+import { quoteVerdictBadge } from '@/lib/assessment';
+import { formatCurrency, formatCurrencyRange } from '@/lib/format';
+import type { Assessment } from '@caradvocate/shared';
 
 export function QuoteEvaluationCard({
   assessment,

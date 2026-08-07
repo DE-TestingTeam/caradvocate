@@ -1,19 +1,19 @@
-import * as React from "react";
-import { ArrowRight } from "lucide-react";
-import { useNavigate } from "react-router-dom";
-import { Button } from "@/components/ui/button";
+import * as React from 'react';
+import { ArrowRight } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Button } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
-import { completeAssessment } from "@/lib/api";
-import { completionCost } from "@/lib/assessment";
-import { formatCurrency, formatLongDate, todayIso } from "@/lib/format";
-import { invalidateAll } from "@/lib/useApi";
-import type { Assessment } from "@caradvocate/shared";
+} from '@/components/ui/dialog';
+import { completeAssessment } from '@/lib/api';
+import { completionCost } from '@/lib/assessment';
+import { formatCurrency, formatLongDate, todayIso } from '@/lib/format';
+import { invalidateAll } from '@/lib/useApi';
+import type { Assessment } from '@caradvocate/shared';
 
 interface RepairCompletedDialogProps {
   assessment: Assessment | undefined;

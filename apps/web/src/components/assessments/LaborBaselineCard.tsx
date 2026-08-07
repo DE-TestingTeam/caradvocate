@@ -3,10 +3,10 @@ import {
   AccordionContent,
   AccordionItem,
   AccordionTrigger,
-} from "@/components/ui/accordion";
-import { Card, CardContent } from "@/components/ui/card";
-import { formatCurrency, formatHours } from "@/lib/format";
-import type { Assessment } from "@caradvocate/shared";
+} from '@/components/ui/accordion';
+import { Card, CardContent } from '@/components/ui/card';
+import { formatCurrency, formatHours } from '@/lib/format';
+import type { Assessment } from '@caradvocate/shared';
 
 /**
  * The labor half of the baseline. No wireframe covers a partly-sourced card, and it is the

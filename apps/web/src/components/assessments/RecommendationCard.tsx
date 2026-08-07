@@ -1,6 +1,6 @@
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
-import type { Assessment } from "@caradvocate/shared";
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent } from '@/components/ui/card';
+import type { Assessment } from '@caradvocate/shared';
 
 export function RecommendationCard({ assessment }: { assessment: Assessment }) {
   const { recommendation } = assessment;

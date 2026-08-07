@@ -1,6 +1,6 @@
-import { Navigate, Outlet, useLocation } from "react-router-dom";
-import { Skeleton } from "@/components/ui/skeleton";
-import { useAuth } from "@/lib/auth";
+import { Navigate, Outlet, useLocation } from 'react-router-dom';
+import { Skeleton } from '@/components/ui/skeleton';
+import { useAuth } from '@/lib/auth';
 
 /**
  * Blocks the app until the user is authenticated. Not a security boundary: the API enforces

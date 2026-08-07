@@ -9,6 +9,8 @@
  * Defensive throughout: a timeout, a non-200 or an unexpected shape yields no recalls rather
  * than throwing, because a recall feed being down must not take My Car down with it.
  */
+import { fetchJson } from '../lib/fetchJson.js';
+
 const NHTSA_RECALLS = 'https://api.nhtsa.gov/recalls/recallsByVehicle';
 const TIMEOUT_MS = 8000;
 
@@ -42,27 +44,12 @@ export async function fetchRecalls(lookup: RecallLookup): Promise<FetchedRecall[
 }
 
 async function requestRecalls(lookup: RecallLookup): Promise<unknown | undefined> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
-
   const url = new URL(NHTSA_RECALLS);
   url.searchParams.set('make', lookup.make);
   url.searchParams.set('model', lookup.model);
   url.searchParams.set('modelYear', String(lookup.year));
 
-  try {
-    const response = await fetch(url, {
-      signal: controller.signal,
-      headers: { Accept: 'application/json' },
-    });
-    if (!response.ok) return undefined;
-    return (await response.json()) as unknown;
-  } catch {
-    // Offline, blocked, slow, or malformed JSON. All the same to the caller.
-    return undefined;
-  } finally {
-    clearTimeout(timer);
-  }
+  return fetchJson(url, TIMEOUT_MS);
 }
 
 /**

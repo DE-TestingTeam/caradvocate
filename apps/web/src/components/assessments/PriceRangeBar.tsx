@@ -1,4 +1,4 @@
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency } from '@/lib/format';
 
 interface PriceRangeBarProps {
   low: number;
