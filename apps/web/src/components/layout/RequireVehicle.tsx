@@ -1,6 +1,6 @@
 import { Navigate, Outlet, useOutletContext } from 'react-router-dom';
 import type { Vehicle } from '@caradvocate/shared';
-import { ColumnLabel, Section } from '@/components/my-car/Section';
+import { Section } from '@/components/my-car/Section';
 import { ListSkeleton } from '@/components/my-car/ListSkeleton';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -62,17 +62,15 @@ function MyCarSkeleton() {
         </div>
       </section>
 
-      <Section title="Recalls & maintenance">
-        <div className="grid gap-6 md:grid-cols-2">
-          <div>
-            <ColumnLabel>Open recalls</ColumnLabel>
-            <ListSkeleton rows={2} />
-          </div>
-          <div>
-            <ColumnLabel>Scheduled maintenance</ColumnLabel>
-            <ListSkeleton rows={4} />
-          </div>
-        </div>
+      {/* The action buttons are deliberately absent. They are static copy, so drawing them
+          here would look right -- but a control that appears before the data it acts on is a
+          control someone can press too early. The `min-h` on Section's header keeps the rule
+          in the same place either way, so nothing shifts when they arrive. */}
+      <Section title="Safety recalls">
+        <ListSkeleton rows={2} />
+      </Section>
+      <Section title="Scheduled maintenance">
+        <ListSkeleton rows={4} />
       </Section>
       <Section title="Known issues for your model">
         <ListSkeleton rows={3} />

@@ -89,10 +89,14 @@ export function LogServiceDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       {/* A controlled instance is opened by its parent -- a history row, or the
-          maintenance section -- so it must not render a trigger of its own. */}
+          maintenance section -- so it must not render a trigger of its own.
+
+          `sm`, because this trigger now sits on the Service history heading rule rather than
+          full-width under the list. A default-height button there would outweigh the heading
+          it sits beside. */}
       {!isControlled && (
         <DialogTrigger asChild>
-          <Button variant="secondary" className="w-full sm:w-auto">
+          <Button variant="secondary" size="sm">
             <Plus className="h-4 w-4" />
             Log a service
           </Button>

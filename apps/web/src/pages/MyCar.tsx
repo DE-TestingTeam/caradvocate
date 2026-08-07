@@ -1,6 +1,7 @@
 import * as React from 'react';
+import { Plus } from 'lucide-react';
 import { ErrorState } from '@/components/ErrorState';
-import { ColumnLabel, Section } from '@/components/my-car/Section';
+import { Section } from '@/components/my-car/Section';
 import { KnownIssuesList } from '@/components/my-car/KnownIssuesList';
 import { ListSkeleton } from '@/components/my-car/ListSkeleton';
 import { LogServiceDialog } from '@/components/my-car/LogServiceDialog';
@@ -111,46 +112,34 @@ export function MyCarPage() {
         </div>
       </section>
 
-      {/*
-        Recalls and upkeep share a section but not a list. Both answer "what needs doing?", so
-        reading them together is the point -- but recalls come from NHTSA and are the
-        manufacturer's admission of a defect, while upkeep is the owner's own schedule. Merging
-        the rows would put a safety recall and an oil change on the same footing.
-      */}
-      <Section title="Recalls & maintenance">
-        <div className="grid gap-6 md:grid-cols-2">
-          <div>
-            <ColumnLabel>Open recalls</ColumnLabel>
-            {recalls.error ? (
-              <ErrorState message={recalls.error.message} />
-            ) : recalls.data ? (
-              <RecallsList
-                report={recalls.data}
-                vin={vehicle.vin}
-                year={vehicle.year}
-                onStatusChange={handleRecallStatus}
-              />
-            ) : (
-              <ListSkeleton rows={2} />
-            )}
-          </div>
+      {/* Recalls come from NHTSA and stand on their own; maintenance is the owner's own
+          schedule. Separate sections, so a safety recall is never read as one more chore. */}
+      <Section title="Safety recalls">
+        {recalls.error ? (
+          <ErrorState message={recalls.error.message} />
+        ) : recalls.data ? (
+          <RecallsList report={recalls.data} vin={vehicle.vin} year={vehicle.year} onStatusChange={handleRecallStatus} />
+        ) : (
+          <ListSkeleton rows={2} />
+        )}
+      </Section>
 
-          <div>
-            <ColumnLabel>Scheduled maintenance</ColumnLabel>
-            {maintenance.error ? (
-              <ErrorState message={maintenance.error.message} />
-            ) : maintenance.data ? (
-              <>
-                <MaintenanceList items={maintenance.data} onEdit={setEditingJob} />
-                <Button variant="link" size="inline" className="mt-3" onClick={() => setAddingJob(true)}>
-                  Add an upkeep job
-                </Button>
-              </>
-            ) : (
-              <ListSkeleton rows={4} />
-            )}
-          </div>
-        </div>
+      <Section
+        title="Scheduled maintenance"
+        action={
+          <Button variant="secondary" size="sm" onClick={() => setAddingJob(true)}>
+            <Plus className="h-4 w-4" />
+            Add an upkeep job
+          </Button>
+        }
+      >
+        {maintenance.error ? (
+          <ErrorState message={maintenance.error.message} />
+        ) : maintenance.data ? (
+          <MaintenanceList items={maintenance.data} onEdit={setEditingJob} />
+        ) : (
+          <ListSkeleton rows={4} />
+        )}
       </Section>
 
       <Section title="Known issues for your model">
@@ -163,7 +152,9 @@ export function MyCarPage() {
         )}
       </Section>
 
-      <Section title="Service history">
+      {/* Uncontrolled, so this instance renders its own trigger -- which is what sits on the
+          heading rule. The controlled instance below, for editing an existing record, does not. */}
+      <Section title="Service history" action={<LogServiceDialog jobs={maintenance.data ?? []} />}>
         {history.error ? (
           <ErrorState message={history.error.message} />
         ) : history.data ? (
@@ -171,12 +162,6 @@ export function MyCarPage() {
         ) : (
           <ListSkeleton rows={5} />
         )}
-
-        {/* Uncontrolled, so it renders its own trigger -- the "Log a service" button that
-            closes out the history it appends to. */}
-        <div className="pt-2">
-          <LogServiceDialog jobs={maintenance.data ?? []} />
-        </div>
       </Section>
 
       <ProvenanceNote />
