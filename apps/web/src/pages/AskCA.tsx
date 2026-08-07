@@ -74,7 +74,7 @@ export function AskCAPage() {
     // and takes width instead, so that allowance would now just leave a gap under the composer.
     <div className="flex h-[calc(100dvh-5.5rem)] flex-col">
       <div className="shrink-0 border-b pb-4">
-        <h1 className="text-3xl font-bold tracking-tight">Ask CA</h1>
+        <h1 className="text-h1 font-bold">Ask CA</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           {`Ask anything about your ${vehicleName(vehicle)}`}
         </p>

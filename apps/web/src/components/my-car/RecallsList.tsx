@@ -133,7 +133,7 @@ export function RecallsList({
             href={nhtsaVinRecallUrl(vin)}
             target="_blank"
             rel="noopener noreferrer"
-            className="underline underline-offset-2 hover:text-foreground"
+            className="link-inline"
           >
             check your VIN with NHTSA
           </a>
@@ -167,7 +167,7 @@ function RepairStatus({
         <button
           type="button"
           onClick={() => onChange(recall.campaignNumber, true)}
-          className="underline underline-offset-2 hover:text-foreground"
+          className="link-inline"
         >
           Yes
         </button>
@@ -175,7 +175,7 @@ function RepairStatus({
         <button
           type="button"
           onClick={() => onChange(recall.campaignNumber, false)}
-          className="underline underline-offset-2 hover:text-foreground"
+          className="link-inline"
         >
           Not yet
         </button>
@@ -189,7 +189,7 @@ function RepairStatus({
       <button
         type="button"
         onClick={() => onChange(recall.campaignNumber, undefined)}
-        className="underline underline-offset-2 hover:text-foreground"
+        className="link-inline"
       >
         Undo
       </button>
@@ -245,7 +245,7 @@ function vinCheckPrompt(vin?: string) {
       href={nhtsaVinRecallUrl(vin)}
       target="_blank"
       rel="noopener noreferrer"
-      className="underline underline-offset-2 hover:text-foreground"
+      className="link-inline"
     >
       check your VIN with NHTSA
     </a>

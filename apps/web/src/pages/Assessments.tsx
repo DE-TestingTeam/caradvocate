@@ -23,11 +23,11 @@ export function AssessmentsPage() {
       />
 
       {/*
-        `brand` and `size="lg"`: this is the one action the page exists for, and the house green
-        is reserved for exactly that -- see the note on the Button variants. Full width below
-        `sm` so it is a thumb-sized target on a phone, then only as wide as it needs to be.
+        Solid and `lg`: this is the action the page exists for, and there is only one of it.
+        Full width below `sm` so it is a thumb-sized target on a phone, then only as wide as it
+        needs to be.
       */}
-      <Button asChild variant="brand" size="lg" className="w-full sm:w-auto">
+      <Button asChild size="lg" className="w-full sm:w-auto">
         <Link to="/assessments/new">
           <Plus className="h-4 w-4" />
           Check a repair
@@ -59,7 +59,7 @@ export function AssessmentsPage() {
             Nothing here yet — which is the good outcome. Next time a shop quotes you, check it
             here first.
           </p>
-          <Button asChild variant="brand" className="mt-5">
+          <Button asChild className="mt-5">
             <Link to="/assessments/new">
               <Plus className="h-4 w-4" />
               Check a repair

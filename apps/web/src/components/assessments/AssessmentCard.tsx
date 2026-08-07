@@ -1,6 +1,7 @@
 import { ArrowRight, Check } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { isCompleted, quoteStatusLabel, verdictBadge } from '@/lib/assessment';
 import { formatLongDate } from '@/lib/format';
@@ -46,14 +47,10 @@ export function AssessmentCard({
             Repair completed
           </span>
         ) : (
-          <button
-            type="button"
-            onClick={() => onMarkComplete(assessment)}
-            className="flex items-center gap-1.5 text-sm font-medium underline underline-offset-4 hover:no-underline"
-          >
+          <Button variant="link" size="inline" onClick={() => onMarkComplete(assessment)}>
             Mark repair as complete
-            <ArrowRight className="h-3.5 w-3.5" />
-          </button>
+            <ArrowRight />
+          </Button>
         )}
       </div>
     </Card>

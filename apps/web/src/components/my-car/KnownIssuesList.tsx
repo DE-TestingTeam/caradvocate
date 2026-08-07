@@ -47,7 +47,7 @@ export function KnownIssuesList({ report, vehicle }: { report: KnownIssueReport;
               href={nhtsaVehicleUrl(vehicle)}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 underline underline-offset-2 hover:text-foreground"
+              className="inline-flex items-center gap-1 link-inline"
             >
               look this model up on NHTSA directly
               <ExternalLink className="h-3 w-3" aria-hidden="true" />
@@ -91,7 +91,7 @@ export function KnownIssuesList({ report, vehicle }: { report: KnownIssueReport;
             href={nhtsaVehicleUrl(vehicle)}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 underline underline-offset-2 hover:text-foreground"
+            className="inline-flex items-center gap-1 link-inline"
           >
             Read them on NHTSA
             <ExternalLink className="h-3 w-3" aria-hidden="true" />

@@ -126,8 +126,28 @@
     @apply border-border;
   }
 
+
   body {
     @apply bg-background text-foreground antialiased;
     font-feature-settings: 'rlig' 1, 'calt' 1;
+  }
+}
+
+@layer components {
+  /**
+   * A link or action sitting INSIDE a sentence -- "check your VIN with NHTSA", "Yes / Not yet".
+   *
+   * These cannot be Buttons. `variant="link"` still brings the button's own font size with it,
+   * and these live in `text-xs` prose, so they have to inherit their size from the paragraph
+   * around them instead of declaring one. Hence a class rather than a component.
+   *
+   * `underline-offset-2` rather than the 4 used on standalone actions: at small sizes an offset
+   * of 4 detaches the rule far enough from the text that it stops reading as one thing.
+   *
+   * Underlined at rest, not on hover. In running text an action that only appears on hover does
+   * not exist on a touchscreen.
+   */
+  .link-inline {
+    @apply underline underline-offset-2 transition-colors hover:text-foreground;
   }
 }

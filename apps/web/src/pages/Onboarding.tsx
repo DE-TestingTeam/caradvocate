@@ -86,7 +86,7 @@ function ProfileStep({
 
   return (
     <>
-      <h1 className="mt-4 text-3xl font-bold tracking-tight">Welcome to CarAdvocate</h1>
+      <h1 className="mt-4 text-h1 font-bold">Welcome to CarAdvocate</h1>
       <p className="mt-1 text-muted-foreground">A couple of details, then let's add your car.</p>
 
       <Card className="mt-6">
@@ -207,16 +207,18 @@ function VehicleStep({ onBack, zip }: { onBack: () => void; zip: string }) {
 
   return (
     <>
+      {/* Matches the back link in PageHeader exactly. Going back is the same action wherever it
+          appears, so it should not be recognisable as a different control on this screen. */}
       <button
         type="button"
         onClick={onBack}
-        className="mt-4 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
+        className="mt-4 inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
       >
         <ArrowLeft className="h-4 w-4" />
         Back
       </button>
 
-      <h1 className="mt-2 text-3xl font-bold tracking-tight">Add your car</h1>
+      <h1 className="mt-2 text-h1 font-bold">Add your car</h1>
       <p className="mt-1 text-muted-foreground">
         This is what everything else is built around — your history, recalls, and repair pricing.
       </p>

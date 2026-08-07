@@ -3,15 +3,21 @@ import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '@/lib/utils';
 
 /**
- * `tracking-widest` rather than `tracking-wide`: uppercase at 12px needs the letters pushed well
- * apart or it reads as one block, and `widest` is already the convention every other uppercase
- * eyebrow in the app uses. Matching it is worth more than inventing a value here.
+ * Deliberately small. A badge annotates the row it sits on -- "Overdue", "Unknown" -- and it is
+ * never the thing being read first, so it should be the smallest legible thing on the row rather
+ * than competing with the label beside it.
+ *
+ * 10px matches the uppercase eyebrows elsewhere in the app. The tracking is `wider` (0.05em),
+ * not `widest` (0.1em): heavy tracking on a six-letter uppercase word costs real width, and a
+ * badge sitting next to a wrapping title is the one place that width is most expensive.
+ * `leading-4` keeps the pill's height off the font's natural line box, so `py-0.5` means what it
+ * says.
  *
  * Badges keep a rounded rectangle rather than becoming pills. Pills mean "pressable" in this
  * design -- see the note on Button -- and a badge is a label, not a control.
  */
 const badgeVariants = cva(
-  'inline-flex items-center rounded-sm border px-2.5 py-0.5 text-label font-semibold uppercase tracking-widest transition-colors focus:outline-none',
+  'inline-flex items-center rounded-sm border px-1.5 py-0.5 text-[0.625rem] font-semibold uppercase leading-4 tracking-wider transition-colors focus:outline-none',
   {
     variants: {
       variant: {

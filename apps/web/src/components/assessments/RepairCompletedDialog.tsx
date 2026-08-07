@@ -92,17 +92,18 @@ export function RepairCompletedDialog({
             Done
           </Button>
           {!error && (
-            <button
-              type="button"
-              className="mx-auto flex items-center gap-1.5 text-sm font-medium underline underline-offset-4"
+            <Button
+              variant="link"
+              size="inline"
+              className="mx-auto"
               onClick={() => {
                 onOpenChange(false);
                 navigate("/my-car");
               }}
             >
-              View Service History
-              <ArrowRight className="h-3.5 w-3.5" />
-            </button>
+              View service history
+              <ArrowRight />
+            </Button>
           )}
         </div>
       </DialogContent>

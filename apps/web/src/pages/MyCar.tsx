@@ -147,13 +147,9 @@ export function MyCarPage() {
         ) : maintenance.data ? (
           <>
             <MaintenanceList items={maintenance.data} onEdit={setEditingJob} />
-            <button
-              type="button"
-              onClick={() => setAddingJob(true)}
-              className="mt-3 text-sm underline underline-offset-4 hover:text-foreground"
-            >
+            <Button variant="link" size="inline" className="mt-3" onClick={() => setAddingJob(true)}>
               Add an upkeep job
-            </button>
+            </Button>
           </>
         ) : (
           <ListSkeleton rows={4} />

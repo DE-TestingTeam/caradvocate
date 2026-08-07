@@ -258,9 +258,10 @@ export function LoginPage() {
         </Button>
       </div>
 
-      <button
-        type="button"
-        className="mx-auto mt-4 text-sm underline underline-offset-4"
+      <Button
+        variant="link"
+        size="inline"
+        className="mx-auto mt-4"
         onClick={() => {
           setMode(mode === 'signin' ? 'signup' : 'signin');
           setError(undefined);
@@ -271,7 +272,7 @@ export function LoginPage() {
         }}
       >
         {mode === 'signin' ? 'Need an account? Sign up' : 'Already have an account? Sign in'}
-      </button>
+      </Button>
     </div>
   );
 }
