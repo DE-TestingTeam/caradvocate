@@ -16,11 +16,21 @@
  * An unreachable vendor sets nothing, so the next visit tries again rather than a bad
  * afternoon freezing a car's value for a month.
  *
- * THE TREND IS BUILT GOING FORWARD, NEVER BACKFILLED. MarketCheck has no history for a car
- * that has never been listed for sale -- only for VINs that turn up in its own dealer
- * listing data -- so there is no "what was this worth six months ago" to fetch. Every
- * successful check appends (or, within the same calendar month, updates) one point, capped
- * at MAX_POINTS so the "last 6 mo" label stays true.
+ * THE TREND IS BUILT GOING FORWARD, NEVER BACKFILLED. The predict endpoint prices a VIN as of
+ * today and takes no as-of date, so there is no "what was this worth six months ago" to ask
+ * for.
+ *
+ * MarketCheck does have a history API -- GET /v2/history/car/{vin}, listings since 2015 -- and
+ * it is the obvious thing to reach for here, so: it is the wrong data, not missing data. It
+ * returns LISTING records (what a dealer was asking while the car sat on a lot), not
+ * valuations. Two problems with charting it. It is empty for the ordinary case, a car its
+ * owner has driven for years and never listed; and where it is not empty, an asking price and
+ * a predicted private-party value are different quantities, so joining them into one line
+ * would draw a trend that never happened.
+ *
+ * Every successful check appends (or, within the same calendar month, updates) one point,
+ * capped at MAX_POINTS so the "last 6 mo" label stays true. A new car therefore shows one
+ * point and no line; ValueTrendPlaceholder in the web app is what fills that gap on screen.
  */
 import { asc, eq } from 'drizzle-orm';
 import type { Database } from '../db/index.js';

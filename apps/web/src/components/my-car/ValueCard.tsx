@@ -1,5 +1,5 @@
 import { Card, CardContent } from '@/components/ui/card';
-import { ValueTrendChart } from './ValueTrendChart';
+import { TREND_POINTS, ValueTrendChart, ValueTrendPlaceholder } from './ValueTrendChart';
 import { formatCurrency } from '@/lib/format';
 import type { Vehicle } from '@caradvocate/shared';
 
@@ -29,14 +29,18 @@ export function ValueCard({ vehicle }: { vehicle: Vehicle }) {
               Est. market value
             </div>
           </div>
-          {hasTrend && (
-            <div className="w-24 shrink-0 text-right">
+          {/* The slot is occupied either way, so the card does not change shape the month the
+              line first appears. */}
+          <div className="w-24 shrink-0 text-right">
+            {hasTrend ? (
               <ValueTrendChart data={vehicle.valueTrend} compact />
-              <div className="mt-1 text-[10px] font-medium uppercase tracking-widest text-muted-foreground">
-                30d trend
-              </div>
+            ) : (
+              <ValueTrendPlaceholder collected={vehicle.valueTrend.length} compact />
+            )}
+            <div className="mt-1 text-[10px] font-medium uppercase tracking-widest text-muted-foreground">
+              {hasTrend ? '30d trend' : 'Trend building'}
             </div>
-          )}
+          </div>
         </div>
 
         {hasTradeInRange && (
@@ -45,17 +49,38 @@ export function ValueCard({ vehicle }: { vehicle: Vehicle }) {
           </p>
         )}
 
-        {hasTrend && (
-          <div className="space-y-2 rounded-md border border-dashed bg-background/60 p-3">
-            <div className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
-              Value trend, last 6 mo
-            </div>
-            <ValueTrendChart data={vehicle.valueTrend} />
+        <div className="space-y-2 rounded-md border border-dashed bg-background/60 p-3">
+          <div className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
+            Value trend, last 6 mo
           </div>
-        )}
+          {hasTrend ? (
+            <ValueTrendChart data={vehicle.valueTrend} />
+          ) : (
+            <>
+              <ValueTrendPlaceholder collected={vehicle.valueTrend.length} />
+              {/*
+                Says plainly that the history does not exist rather than implying it is loading.
+                An owner who is told "no data" assumes something is broken; one who is told the
+                readings are monthly and counts the empty dots knows to come back.
+              */}
+              <p className="text-sm text-muted-foreground">
+                We check this car's value once a month and chart it from there. {readingsTaken(vehicle.valueTrend.length)}{' '}
+                — the line appears after the next check. There is no earlier history to fill in:
+                a valuation is priced as of the day it is taken.
+              </p>
+            </>
+          )}
+        </div>
       </CardContent>
     </Card>
   );
+}
+
+/** "One reading so far" reads better than "1 of 6" for the case that is almost always 1. */
+function readingsTaken(count: number): string {
+  if (count === 0) return 'The first reading is being taken now';
+  if (count === 1) return 'One reading so far';
+  return `${count} of ${TREND_POINTS} readings so far`;
 }
 
 function AwaitingValuation({
