@@ -7,7 +7,13 @@ export function ValueCard({ vehicle }: { vehicle: Vehicle }) {
   // A car the user just added has no valuation yet, and no trend to draw.
   // Say so rather than showing a zero or a made-up figure.
   if (vehicle.estMarketValue === undefined) {
-    return <AwaitingValuation missingVin={!vehicle.vin} missingZip={!vehicle.zip} />;
+    return (
+      <AwaitingValuation
+        missingVin={!vehicle.vin}
+        missingZip={!vehicle.zip}
+        unavailable={vehicle.valuationUnavailable ?? false}
+      />
+    );
   }
 
   const hasTrend = vehicle.valueTrend.length > 1;
@@ -52,8 +58,22 @@ export function ValueCard({ vehicle }: { vehicle: Vehicle }) {
   );
 }
 
-function AwaitingValuation({ missingVin, missingZip }: { missingVin: boolean; missingZip: boolean }) {
+function AwaitingValuation({
+  missingVin,
+  missingZip,
+  unavailable,
+}: {
+  missingVin: boolean;
+  missingZip: boolean;
+  unavailable: boolean;
+}) {
   const missing = [missingVin && 'VIN', missingZip && 'zip code'].filter(Boolean).join(' and ');
+
+  const message = missing
+    ? `Not available yet. Add your car's ${missing} in Account to get an estimate.`
+    : unavailable
+      ? "This car's value can't be estimated — usually a sign it's old enough to fall outside pricing data."
+      : "Not available yet. We're still pricing this car — check back shortly.";
 
   return (
     <Card className="bg-muted/40">
@@ -61,11 +81,7 @@ function AwaitingValuation({ missingVin, missingZip }: { missingVin: boolean; mi
         <div className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
           Est. market value
         </div>
-        <p className="text-sm text-muted-foreground">
-          {missing
-            ? `Not available yet. Add your car's ${missing} in Account to get an estimate.`
-            : "Not available yet. We're still pricing this car — check back shortly."}
-        </p>
+        <p className="text-sm text-muted-foreground">{message}</p>
       </CardContent>
     </Card>
   );

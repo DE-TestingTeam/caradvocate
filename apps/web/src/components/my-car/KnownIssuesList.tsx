@@ -3,6 +3,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { formatRecallComponent } from '@/lib/format';
 import { nhtsaVehicleUrl, type VehicleKey } from '@/lib/nhtsa';
+import { isOldVehicle } from '@/lib/vehicleAge';
 import type { KnownIssue, KnownIssueReport, Severity } from '@caradvocate/shared';
 
 const severityVariant: Record<Severity, 'destructive' | 'warning' | 'outline'> = {
@@ -20,18 +21,43 @@ const severityVariant: Record<Severity, 'destructive' | 'warning' | 'outline'> =
  * The NHTSA link has them in full.
  */
 export function KnownIssuesList({ report, vehicle }: { report: KnownIssueReport; vehicle: VehicleKey }) {
+  const oldVehicleCaveat = isOldVehicle(vehicle.year) && (
+    <p className="flex items-start gap-2 py-2 text-sm text-muted-foreground">
+      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning-strong" />
+      This model may be filed under a different name in NHTSA's records for a car this old, which can leave real
+      issues off this list.
+    </p>
+  );
+
   if (report.issues.length === 0) {
-    return report.checked ? (
-      <p className="py-2 text-sm text-muted-foreground">
-        Nothing on file for this model, and no owner complaints reported to NHTSA.
-      </p>
-    ) : (
-      <p className="flex items-start gap-2 py-2 text-sm text-muted-foreground">
-        {/* Same distinction as RecallsList: "nothing found" and "we could not look" read
-            identically as plain text, so this gets the icon the all-clear case does not. */}
-        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning-strong" />
-        Nothing on file for this model yet. Owner complaints could not be loaded, so this is not a clean bill of health.
-      </p>
+    return (
+      <>
+        {report.checked ? (
+          <p className="py-2 text-sm text-muted-foreground">
+            Nothing on file for this model, and no owner complaints reported to NHTSA.
+          </p>
+        ) : (
+          <p className="flex items-start gap-2 py-2 text-sm text-muted-foreground">
+            {/* Same distinction as RecallsList: "nothing found" and "we could not look" read
+                identically as plain text, so this gets the icon the all-clear case does not. */}
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning-strong" />
+            Nothing on file for this model yet. Owner complaints could not be loaded, so this is not a clean bill of
+            health. In the meantime,{' '}
+            <a
+              href={nhtsaVehicleUrl(vehicle)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 underline underline-offset-2 hover:text-foreground"
+            >
+              look this model up on NHTSA directly
+              <ExternalLink className="h-3 w-3" aria-hidden="true" />
+              <span className="sr-only">(opens in a new tab)</span>
+            </a>
+            {' '}— their site can surface a trim you weren't asked for that this list missed.
+          </p>
+        )}
+        {oldVehicleCaveat}
+      </>
     );
   }
 
@@ -54,6 +80,8 @@ export function KnownIssuesList({ report, vehicle }: { report: KnownIssueReport;
           </li>
         ))}
       </ul>
+
+      {oldVehicleCaveat}
 
       {reported && (
         <p className="mt-3 text-xs text-muted-foreground">

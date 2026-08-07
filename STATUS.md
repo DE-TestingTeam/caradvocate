@@ -7,7 +7,11 @@ Everything marked **Confirmed** was read directly in the source. Everything mark
 live environment (has this script been run against the real database?) rather than about
 the code.
 
-Last reviewed against the working tree on 6 August 2026.
+Last reviewed against the working tree on 7 August 2026. The 6 August pass covered the
+whole codebase; this pass re-verified the areas that changed since — vehicle valuation,
+the paywall and onboarding restructuring, and two NHTSA data-quality gaps found while
+testing real signups — against the source, a live database read, and the vendors
+themselves. Sections untouched by that work still reflect the 6 August pass.
 
 ---
 
@@ -68,7 +72,7 @@ looks right.
 |---|---|---|
 | Free / My Car | Single-vehicle profile | ✅ Built |
 | Free / My Car | User-entered service history | ✅ Built |
-| Free / My Car | Value + trend line | ❌ Screen built, no data |
+| Free / My Car | Value + trend line | ⚠️ Live via MarketCheck; needs VIN + zip, trade-in range still missing |
 | Free / My Car | Recall schedule | ✅ Built |
 | Free / My Car | Maintenance schedule | ⚠️ Tracker built, starts empty |
 | Free / My Car | Model known issues | ✅ Built |
@@ -99,10 +103,27 @@ says. Nothing reads symptoms, mileage, service history or complaint patterns to 
 This is the one gap where the product claim and the code genuinely disagree, rather than
 the feature merely being unfinished — and it is what the paywall sells.
 
-**2. Value + trend line — the screen is finished, the data source does not exist.** The
-card and both charts are built and the table is there, but only the demo seed ever writes
-a value point. A real signup sees "Not available yet" permanently. Needs a valuation
-vendor.
+**2. Value + trend line — resolved as of 7 August, with three real limits left.** MarketCheck
+now prices a real car from actual dealer listings (`services/marketCheck.ts`,
+`services/marketValueSync.ts`), refreshed monthly rather than once. Three things still keep
+it short of the original ask:
+
+- **Both a VIN and a zip code have to be on file.** MarketCheck's endpoint requires both to
+  localize the estimate, and onboarding lets an owner skip either — a car missing one shows
+  "not available yet" rather than a number, same as before this vendor existed.
+- **The trend cannot be backfilled.** MarketCheck has price history only for VINs that have
+  actually been listed for sale by a dealer; a car someone already owns comes back empty. The
+  "last 6 mo" line is built going forward, one point added (or updated) per month, starting
+  from whenever VIN and zip are both in place — not reconstructed from the past.
+- **Some vehicles get a conclusive "cannot be estimated," not a retry loop.** MarketCheck
+  returns a real HTTP 400 for a VIN old enough to fall outside its training data (a 1993
+  truck, confirmed) rather than a price. That is stored as distinct from "vendor
+  unreachable, will retry" (`Vehicle.valuationUnavailable`), so the card says so instead of
+  perpetually implying a price is still coming.
+
+**Not sourced yet: the trade-in range.** MarketCheck's percentile data (low/high across
+comparable listings) is a Premium-tier feature and the key here is not known to carry it —
+`tradeInLow`/`tradeInHigh` stay null for every real car until that is confirmed or upgraded.
 
 **3. Maintenance schedule — the tracker works, the schedule does not exist.** The
 due/overdue calculation is real and careful: mileage or time, whichever comes first, with
@@ -142,9 +163,10 @@ time). The vendor publishes one figure per job, not a decomposition.
 
 ### What kind of work each one is
 
-Gaps 2 and 3 are **procurement rather than engineering** — each waits on a data vendor,
-and the sync machinery to plug one in already exists and is shared by the recall,
-complaint and pricing feeds. Gap 5 is now **half procurement, half a product decision**:
+Gap 2 is resolved (see above); gap 3 is still **procurement rather than engineering** —
+it waits on a manufacturer-schedule vendor, and the sync machinery to plug one in already
+exists and is shared by the recall, complaint and pricing feeds. Gap 5 is now **half
+procurement, half a product decision**:
 the hours are in, the rate needs either a vendor, a hand-curated regional table, or asking
 the owner what their shop charges. Gap 4 is minor and may not be worth solving at all.
 
@@ -343,6 +365,7 @@ full.
 | **CarImages** | Studio photo on My Car |
 | **Vehicle Databases** | Real parts and labour pricing |
 | **Open Labor Project** | Labour hours per repair |
+| **MarketCheck** | Market value estimate on My Car |
 
 Which of these need a key, and what happens when one is unset, is in the README's
 environment-variable table — the single place that answers it, so the two cannot drift
@@ -373,6 +396,12 @@ Notes worth knowing:
   for 1,000 calls a day.
 - **Neither pricing vendor publishes an hourly labour rate**, so the app has none. See §3,
   gap 5.
+- **MarketCheck needs a VIN and a zip code on every call**, and is asked at most once a
+  month per car rather than once ever — a price moves with mileage and the market, unlike a
+  fixed factory schedule. Same three-outcome discipline as the other vendors: a price, a
+  conclusive "cannot decode this VIN" (cached, so a car that will never price is not
+  re-asked every visit — see §3, gap 2), or an outage that is retried rather than
+  remembered.
 
 ### Both pricing vendors are under review
 
@@ -470,17 +499,31 @@ The Repair Cost Checker is the only paid feature, and **it takes no money.** The
 shows a price; tapping unlock charges nothing, opens the feature permanently, and records
 the tap. The tap *is* the data — it measures willingness to pay without building billing.
 
-Two things make that number trustworthy, and both are already handled:
+**As of the merge folded in on 7 August, two offers are shown side by side, not one.** An
+Unlimited subscription and a cheaper Per-Incident subscription with a separate per-lookup
+fee for the parts benchmark — because which shape of pricing people prefer is itself part
+of what this prototype is testing. Both open all three paid features the same way; the
+per-incident fee is disclosed on screen but not actually metered yet in v1.
 
-- **The price is stored with the tap**, not looked up later. Change the price mid-test and
-  earlier records still mean what they meant.
+Two things make the recorded numbers trustworthy, and both are already handled:
+
+- **The price and which offer was chosen are stored with the tap**, not looked up later.
+  Change either price mid-test and earlier records still mean what they meant.
 - **The gate is enforced on the server** (a 402 response), not just hidden in the UI. A
   typed URL or a stale tab cannot hand someone the feature without a tap.
 
-**⚠️ The price is currently the placeholder, $14.99/month.** `PAYWALL_PRICE_CENTS` is not
-set in `.env`, so the default applies. This is the number the entire experiment is
-denominated in — set it deliberately before anyone sees it. The API prints it on every
-startup.
+**⚠️ Both prices are currently placeholders.** `PAYWALL_ALL_YOU_CAN_EAT_PRICE_CENTS`
+defaults to $99.00/year and `PAYWALL_PER_INCIDENT_PRICE_CENTS` to $35.00/year plus a
+$50.00 per-incident fee — none set in `.env`. These are the numbers the entire experiment
+is denominated in — set them deliberately before anyone sees them. The API prints both on
+every startup.
+
+**Also new: `services/featureCatalog.ts` replaces the `user_features` table.** The
+Account screen's Subscription list used to be rows written per-owner at signup
+(`provisionUser.ts`); it is now computed from `users.plan` alone, since every free row was
+identical for everyone and every paid row moved with one boolean anyway. Migration `0017`
+drops `user_features` entirely. **Needs checking:** this was read from the diff and the new
+service, not exercised by hand against a real Account screen since the merge.
 
 ---
 
@@ -510,17 +553,23 @@ than asserts, because whether a reply respected a guardrail is a judgement a rea
 second and a regex gets wrong. Run it after any change to the prompt, the model, or the effort
 and thinking settings.
 
-**A large amount of work is uncommitted.** Roughly 130 changed files, with nothing
-committed since "Implement paywall for Repair Cost Checker". Worth committing in pieces
-while the reasoning is fresh.
+**The 6 August backlog has landed.** The `mycar` branch (valuation, paywall, onboarding
+rework) merged into `develop` on 7 August. What is uncommitted now is small and specific:
+this pass's NHTSA edge-case fixes (`marketCheck.ts`'s third outcome, the age caveat and
+VIN-lookup fallback links in `RecallsList`/`KnownIssuesList`) and this file.
 
-**Migrations are applied on the shared database.** Checked directly on 6 August: `0013`
-(year/make/model on `repair_benchmarks`), `0014` (the crash-test table is gone) and `0015`
-(`vehicles.maintenance_schedule_checked_at`) are all present. The database reports 17 applied
-migrations against the 16 in this branch, and holds four tables this branch does not define
-(`extraction_runs`, `factory_schedule_items`, `schedule_review_queue`, `vehicle_generations`),
-so **the shared database is ahead of this branch** — someone is deploying migrations from
-another one. Worth knowing before generating a new migration here.
+**Migrations `0016` and `0017` are applied on the shared database — checked directly on 7
+August**, not inferred: `pricing_model` exists on both `users` and `paywall_intents`,
+`user_features` is gone, and `vehicles.zip` / `vehicles.market_value_checked_at` both
+exist and hold real data for at least one live account. `0013`–`0015` were confirmed on 6
+August and nothing since has touched them. **Still true and still worth knowing:** the
+shared database holds tables this branch does not define — **checked directly on 7
+August, and it is now six, not four**: the same `extraction_runs`,
+`factory_schedule_items`, `schedule_review_queue` and `vehicle_generations` from 6 August,
+plus `factory_schedule_services` and `schedule_requests`. Someone is actively deploying a
+separate migration line against this database (the factory-schedule pipeline mentioned
+nowhere else in this file) — worth a direct conversation before anyone here generates a
+new migration, since drizzle's own journal has no idea that line exists.
 
 **`db:pricing` still has to be run after `0013`.** The migration itself is applied (above),
 but until `db:pricing` runs against a database, the app serves old invented figures under a
@@ -543,9 +592,10 @@ rather than being folded into a code deploy.
 
 ### Gaps in the agreed feature list
 
-Covered in full in §3, and not repeated here: the necessity check, the value trend, the
-pre-filled maintenance schedule, parts itemisation, and the labour rate plus the front-end
-change needed to show the hours we now have.
+Covered in full in §3, and not repeated here: the necessity check, the pre-filled
+maintenance schedule, parts itemisation, and the labour rate plus the front-end change
+needed to show the hours we now have. (The value trend is no longer one of these — see §3,
+gap 2 — though the trade-in range within it still is.)
 
 *(Crash-test safety ratings were removed entirely — see §10.)*
 
@@ -558,6 +608,44 @@ also only flags quotes that are *too high*; a suspiciously low quote is reported
 **Quote upload stores the filename only.** There is no PDF or photo parsing — you type
 the total yourself.
 
+### Two NHTSA data-quality gaps, found testing real signups (7 August)
+
+Both surfaced from actual new accounts, not from reading the code, and both are now
+mitigated in the UI rather than fixed — because neither one is ours to fix.
+
+**1. NHTSA's own VIN decoder and its own recall/complaint catalog can name the same car
+differently.** A 1993 truck decoded to model `"GMT-400"` — an internal chassis platform
+code — while NHTSA's recall and complaint APIs only recognize that same truck under
+`"C/K"`, `"C10"`, `"C1500"` and similar. Queried with `GMT-400`, both feeds correctly
+return zero results, which is indistinguishable on screen from a genuinely clean car.
+Confirmed directly against NHTSA's endpoints, not assumed.
+
+Mitigation: `lib/vehicleAge.ts` flags any vehicle 20 model-years or older (a blunt,
+deliberately cheap stand-in — there is no way to detect a specific name mismatch without an
+extra vendor call per car) and `RecallsList`/`KnownIssuesList` show a caveat beside the
+list, whether it is empty or not, pointing at NHTSA's own VIN lookup as a second check.
+
+**2. NHTSA's recall/complaint API can fail for one specific year of an otherwise normal,
+current model — with a response shaped like success.** A 2014 Ford F-350 returned
+`HTTP 400` with body `{"Message":"Results returned successfully","results":[]}` for every
+spelling tried, including NHTSA's own cataloged cab-configuration names. The same query
+against 2010, 2013 and 2018 F-350s, and 2014 heavy trucks from three other manufacturers,
+all returned real data. This is a narrow gap in NHTSA's own database for that exact
+year/make/model — not a naming issue, not something any request-shape change fixes, and
+not something the app's retry logic can route around, since `model_feed_syncs` already
+correctly records this as "attempted, not succeeded" rather than caching a false
+all-clear. It will keep retrying on the standard cooldown, and will keep failing until
+NHTSA's own data changes.
+
+Mitigation: both list components now offer NHTSA's own VIN or model lookup as an
+immediate alternative whenever the feed itself has not succeeded, not only once the
+vehicle turns out to be old — that page queries NHTSA's manufacturer-fed system directly
+and is not subject to whatever is wrong with `recallsByVehicle` for this one row.
+
+**Needs checking:** whether other narrow year/model gaps like the second one exist for
+common trucks and vans, since the only way found so far was hitting one by chance on a
+real signup.
+
 ### Not built, and outside the agreed list
 
 Password reset, account deletion, quote-document parsing, and the "safe to drive" verdict
@@ -567,6 +655,12 @@ feature list in §3; they are noted because the README and the original spec men
 ### Product risks worth naming
 
 - **Coverage is per car**, which gates the whole paid tier — see the end of §3.
+- **NHTSA's own data has real, confirmed gaps that read as "nothing's wrong" unless
+  caveated.** Two distinct ones found so far, both in §9 — an old vehicle whose model name
+  doesn't match NHTSA's own catalog, and a specific 2014 Ford truck line NHTSA's API fails
+  for outright. Both are now caveated in the UI rather than fixed, since neither is fixable
+  on our end; a third, undiscovered gap would show as a silent all-clear until someone
+  hits it.
 - **The pricing supplier's call allowance is small enough to be the real limit.** Running
   out shows an owner "we couldn't reach our pricing source" on a feature they paid for.
 - **Neither pricing vendor is settled.** Both Vehicle Databases and Open Labor Project are

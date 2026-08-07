@@ -10,9 +10,11 @@
  * (VIN identifies the car, zip localizes the estimate), and onboarding lets an owner skip
  * either. A car missing one is left exactly as it was -- not an error, just unpriced.
  *
- * A TIMEOUT IS NOT AN ANSWER. Only a successful price sets the marker; an unreachable
- * vendor is left unmarked so the next visit tries again, rather than a bad afternoon
- * freezing a car's value for a month.
+ * A TIMEOUT IS NOT AN ANSWER, BUT "CANNOT DECODE THIS VIN" IS. The marker is set on either a
+ * price or MarketCheck's own conclusive no (`no_record` -- a VIN too old for their model,
+ * mostly), so a car it will never be able to price is not asked about on every page load.
+ * An unreachable vendor sets nothing, so the next visit tries again rather than a bad
+ * afternoon freezing a car's value for a month.
  *
  * THE TREND IS BUILT GOING FORWARD, NEVER BACKFILLED. MarketCheck has no history for a car
  * that has never been listed for sale -- only for VINs that turn up in its own dealer
@@ -43,9 +45,10 @@ export interface ValuationTarget {
 }
 
 /**
- * Makes sure this car's value is no more than a month stale. Returns whether a new price was
- * written, so a caller can re-read. Never throws -- a vendor that will not answer leaves the
- * existing value standing, which is better than nothing for a page about a car's worth.
+ * Makes sure this car's value is no more than a month stale. Returns whether the row changed
+ * -- a new price, or a conclusive "cannot price this one" -- so a caller can re-read. Never
+ * throws -- a vendor that will not answer leaves the existing value standing, which is
+ * better than nothing for a page about a car's worth.
  */
 export async function ensureMarketValue(
   db: Database,
@@ -63,6 +66,13 @@ export async function ensureMarketValue(
 
   const result = await fetchMarketValue({ vin: vehicle.vin, miles: vehicle.mileage, zip: vehicle.zip });
   if (result.outcome === 'unavailable') return false;
+
+  if (result.outcome === 'no_record') {
+    // Conclusive: MarketCheck cannot price this VIN at all. Marked so the card can say so
+    // instead of implying a price is still coming -- see `valuationUnavailable` in mappers.ts.
+    await db.update(vehicles).set({ marketValueCheckedAt: now }).where(eq(vehicles.id, vehicle.id));
+    return true;
+  }
 
   await db.transaction(async (tx) => {
     await tx

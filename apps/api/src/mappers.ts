@@ -34,6 +34,8 @@ export function toVehicle(
     estMarketValue: row.estMarketValue ?? undefined,
     tradeInLow: row.tradeInLow ?? undefined,
     tradeInHigh: row.tradeInHigh ?? undefined,
+    // Conclusive absence: checked at least once, and still no price. See marketValueSync.ts.
+    valuationUnavailable: row.estMarketValue == null && row.marketValueCheckedAt != null,
     valueTrend: [...valuePoints]
       .sort((a, b) => a.position - b.position)
       .map((point) => ({ month: point.monthLabel, value: point.value })),

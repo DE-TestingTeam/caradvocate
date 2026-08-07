@@ -105,7 +105,7 @@ export function MyCarPage() {
         {recalls.error ? (
           <ErrorState message={recalls.error.message} />
         ) : recalls.data ? (
-          <RecallsList report={recalls.data} vin={vehicle.vin} onStatusChange={handleRecallStatus} />
+          <RecallsList report={recalls.data} vin={vehicle.vin} year={vehicle.year} onStatusChange={handleRecallStatus} />
         ) : (
           <ListSkeleton rows={2} />
         )}

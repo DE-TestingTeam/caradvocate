@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { formatLongDate, formatRecallComponent, formatNhtsaProse } from '@/lib/format';
 import { nhtsaVinRecallUrl } from '@/lib/nhtsa';
 import { cn } from '@/lib/utils';
+import { isOldVehicle } from '@/lib/vehicleAge';
 import type { Recall, RecallReport } from '@caradvocate/shared';
 
 /**
@@ -14,28 +15,46 @@ import type { Recall, RecallReport } from '@caradvocate/shared';
 export function RecallsList({
   report,
   vin,
+  year,
   onStatusChange,
 }: {
   report: RecallReport;
   /** Enables the per-car VIN lookup link. Absent when the owner skipped the VIN. */
   vin?: string;
+  /** Decides whether the older-vehicle caveat below shows. See lib/vehicleAge.ts. */
+  year: number;
   onStatusChange: (campaignNumber: string, repaired: boolean | undefined) => void;
 }) {
+  const oldVehicleCaveat = isOldVehicle(year) && (
+    <p className="flex items-start gap-2 py-2 text-sm text-muted-foreground">
+      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning-strong" />
+      Recall records for a car this old are sometimes filed under a different name than the one on this page. If
+      you want certainty, {vinCheckPrompt(vin)}.
+    </p>
+  );
+
   if (report.recalls.length === 0) {
     // "Nothing found" and "we could not look" are different claims; only one is reassuring.
-    return report.checked ? (
-      <p className="flex items-center gap-2 py-2 text-sm text-muted-foreground">
-        <ShieldCheck className="h-4 w-4 shrink-0 text-muted-foreground" />
-        No open safety recalls for this model.
-      </p>
-    ) : (
-      <p className="flex items-start gap-2 py-2 text-sm text-muted-foreground">
-        {/* warning-strong, not warning: the fill amber is too faint at this size (see the
-            recall urgency icon below). This is not a recall's own urgency, but it should not
-            sit as calm as the all-clear case above it. */}
-        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning-strong" />
-        Could not reach the NHTSA recall database. This is not an all-clear — it will fill in once the check succeeds.
-      </p>
+    return (
+      <>
+        {report.checked ? (
+          <p className="flex items-center gap-2 py-2 text-sm text-muted-foreground">
+            <ShieldCheck className="h-4 w-4 shrink-0 text-muted-foreground" />
+            No open safety recalls for this model.
+          </p>
+        ) : (
+          <p className="flex items-start gap-2 py-2 text-sm text-muted-foreground">
+            {/* warning-strong, not warning: the fill amber is too faint at this size (see the
+                recall urgency icon below). This is not a recall's own urgency, but it should not
+                sit as calm as the all-clear case above it. */}
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning-strong" />
+            Could not reach the NHTSA recall database. This is not an all-clear — it will fill in once the check
+            succeeds. In the meantime, {vinCheckPrompt(vin)}, which asks NHTSA directly rather than by year, make
+            and model.
+          </p>
+        )}
+        {oldVehicleCaveat}
+      </>
     );
   }
 
@@ -123,6 +142,8 @@ export function RecallsList({
         )}
         . The work is free either way.
       </li>
+
+      {oldVehicleCaveat && <li>{oldVehicleCaveat}</li>}
     </ul>
   );
 }
@@ -210,5 +231,25 @@ function Detail({ label, children }: { label: string; children: React.ReactNode 
       <p className="text-xs uppercase tracking-wide text-muted-foreground">{label}</p>
       <p className="mt-0.5">{children}</p>
     </div>
+  );
+}
+
+/**
+ * NHTSA's VIN lookup queries their site directly rather than our year/make/model feed, so
+ * it is a real alternative -- not just a repeat of the same question -- whenever that feed
+ * has not answered, or answered under a model name that turns out to be wrong.
+ */
+function vinCheckPrompt(vin?: string) {
+  return vin ? (
+    <a
+      href={nhtsaVinRecallUrl(vin)}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="underline underline-offset-2 hover:text-foreground"
+    >
+      check your VIN with NHTSA
+    </a>
+  ) : (
+    'ask your dealer to check your VIN'
   );
 }

@@ -45,6 +45,14 @@ export interface Vehicle {
   estMarketValue?: number;
   tradeInLow?: number;
   tradeInHigh?: number;
+  /**
+   * True when the valuation source has given a conclusive "cannot price this one" --
+   * observed for a vehicle old enough to fall outside its data (a 1993 truck, for one).
+   * Only meaningful while `estMarketValue` is absent: it tells the UI not to imply a price
+   * is still coming. Absent/false covers both "never asked" (no VIN or zip yet) and "asked,
+   * vendor unreachable, will retry."
+   */
+  valuationUnavailable?: boolean;
   /** Ordered oldest -> newest. Empty until valuation history exists. */
   valueTrend: { month: string; value: number }[];
 }
