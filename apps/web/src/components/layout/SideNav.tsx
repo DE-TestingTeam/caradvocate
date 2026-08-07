@@ -1,22 +1,35 @@
 import * as React from 'react';
-import { Car, ClipboardList, LogOut, MessageSquare, PanelLeftClose, PanelLeftOpen, UserRound } from 'lucide-react';
+import {
+  Car,
+  ClipboardList,
+  LogOut,
+  Menu,
+  MessageSquare,
+  PanelLeftClose,
+  PanelLeftOpen,
+  UserRound,
+} from 'lucide-react';
 import { Link, NavLink } from 'react-router-dom';
 import crMonogram from '@/assets/logos/cr-monogram.png';
+import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { useAuth } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 
 /**
- * The app's navigation, down the left rather than across the top.
+ * The app's navigation, in two shapes.
  *
- * Two states, one of which is not the owner's to choose. Above `lg` the rail expands and
- * collapses on the toggle and the choice is remembered. Below `lg` it is always collapsed, and
- * the toggle is not rendered at all: a 240px sidebar on a phone leaves too little for the
- * content it is meant to be navigating, and a preference that survives a rotation into portrait
- * would put the owner somewhere they cannot use. Widening the window restores whatever they had
- * chosen before, so the preference is suspended rather than overwritten.
+ * At `lg` and above it is a rail down the left, which expands and collapses on a toggle with the
+ * choice remembered. Below `lg` it becomes a top bar with a hamburger, and the destinations move
+ * into a sheet that slides over the content.
  *
- * Collapsed still means visible. The labels go to screen readers via `sr-only` and to the mouse
- * via `title`, so the rail is navigable in both cases rather than being an icon puzzle.
+ * The narrow case is a sheet rather than a permanent icon rail because a rail costs its width on
+ * every screen, and on a phone that width is taken from the content the rail exists to navigate.
+ * A sheet costs nothing until it is asked for. It also means the labels are always readable there
+ * -- an icon-only rail is at its worst on the device where nobody can hover to find out what an
+ * icon means.
+ *
+ * One breakpoint governs both, so there is no width at which the rail and the top bar disagree
+ * about which of them is in charge.
  */
 
 const NAV_ITEMS = [
@@ -26,18 +39,28 @@ const NAV_ITEMS = [
   { to: '/account', label: 'Account', icon: UserRound },
 ] as const;
 
-/** Below this the rail is forced closed. Matches Tailwind's `lg`, so the CSS and JS agree. */
-const EXPANDABLE_ABOVE = '(min-width: 1024px)';
+/** Rail at and above this, hamburger below it. Matches Tailwind's `lg`, so CSS and JS agree. */
+const RAIL_ABOVE = '(min-width: 1024px)';
 
 const PREFERENCE_KEY = 'caradvocate.nav.expanded';
 
+/** Shared by every row in both shapes, so the rail and the sheet cannot drift apart. */
+function rowClass(showLabel: boolean, active = false) {
+  return cn(
+    'flex w-full items-center gap-3 rounded-md py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground',
+    showLabel ? 'px-3' : 'justify-center px-0',
+    active && 'bg-accent text-foreground',
+  );
+}
+
 export function SideNav() {
   const { signOut } = useAuth();
-  const canExpand = useMediaQuery(EXPANDABLE_ABOVE);
+  const showRail = useMediaQuery(RAIL_ABOVE);
   const [preferExpanded, setPreferExpanded] = React.useState(readPreference);
+  const [menuOpen, setMenuOpen] = React.useState(false);
 
   // The preference is only honoured where there is room for it.
-  const expanded = canExpand && preferExpanded;
+  const expanded = showRail && preferExpanded;
 
   React.useEffect(() => {
     try {
@@ -46,6 +69,72 @@ export function SideNav() {
       // Storage disabled. The rail still works, it just forgets between visits.
     }
   }, [preferExpanded]);
+
+  // Rotating a phone into landscape can cross the breakpoint mid-session. Without this the sheet
+  // stays mounted in state and reopens over the rail the next time the window narrows.
+  React.useEffect(() => {
+    if (showRail) setMenuOpen(false);
+  }, [showRail]);
+
+  if (!showRail) {
+    return (
+      <>
+        <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center justify-between gap-2 border-b bg-background px-2">
+          {/* Brand first in the markup as well as on screen, so the tab order runs left to
+              right rather than jumping to the control on the far side. */}
+          <Link to="/my-car" className="flex min-w-0 items-center gap-2 pl-1" title="CarAdvocate">
+            <img src={crMonogram} alt="" className="h-6 w-auto shrink-0" />
+            <span className="truncate text-lg font-bold tracking-tight">CarAdvocate</span>
+          </Link>
+
+          <button
+            type="button"
+            onClick={() => setMenuOpen(true)}
+            aria-label="Open menu"
+            aria-expanded={menuOpen}
+            // 40px square: the smallest comfortable touch target, and the one control on this
+            // bar that has to be hittable with a thumb.
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          >
+            <Menu className="h-5 w-5" aria-hidden="true" />
+          </button>
+        </header>
+
+        <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
+          {/* Enters from the right, the side its hamburger sits on -- a panel that crossed the
+              screen to arrive from the opposite edge would not read as belonging to the control
+              that opened it.
+
+              `p-0` so the rows can run edge to edge under their own padding, the way they do in
+              the rail. Radix needs a title even when the design has no room to show one. */}
+          <SheetContent side="right" className="w-72 gap-0 p-0">
+            <SheetTitle className="sr-only">Main menu</SheetTitle>
+
+            <nav aria-label="Main" className="flex h-full flex-col">
+              <div className="flex h-14 shrink-0 items-center border-b px-4">
+                <img src={crMonogram} alt="" className="h-6 w-auto shrink-0" />
+                <span className="ml-2 truncate text-lg font-bold tracking-tight">CarAdvocate</span>
+              </div>
+
+              {/* Every tap here navigates, and a menu still sitting over the page it just moved
+                  you to reads as though the tap missed. */}
+              <NavList showLabel onNavigate={() => setMenuOpen(false)} />
+
+              <div className="shrink-0 border-t p-2">
+                <SignOutButton
+                  showLabel
+                  onSignOut={() => {
+                    setMenuOpen(false);
+                    void signOut();
+                  }}
+                />
+              </div>
+            </nav>
+          </SheetContent>
+        </Sheet>
+      </>
+    );
+  }
 
   return (
     <nav
@@ -56,11 +145,7 @@ export function SideNav() {
       )}
     >
       <div className={cn('flex h-14 shrink-0 items-center border-b', expanded ? 'px-4' : 'justify-center')}>
-        <Link
-          to="/my-car"
-          className="flex min-w-0 items-center gap-2"
-          title="CarAdvocate"
-        >
+        <Link to="/my-car" className="flex min-w-0 items-center gap-2" title="CarAdvocate">
           {/*
             Supplied artwork, uncropped in the original: the mark occupies about 1621x989 of a
             2000px square, so sizing the file as-is would render it a third the height it looks.
@@ -79,66 +164,65 @@ export function SideNav() {
         </Link>
       </div>
 
-      <ul className="flex-1 space-y-1 overflow-y-auto p-2">
-        {NAV_ITEMS.map((item) => (
-          <li key={item.to}>
-            <NavLink
-              to={item.to}
-              title={expanded ? undefined : item.label}
-              className={({ isActive }) =>
-                cn(
-                  'flex items-center gap-3 rounded-md py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground',
-                  expanded ? 'px-3' : 'justify-center px-0',
-                  isActive && 'bg-accent text-foreground',
-                )
-              }
-            >
-              <item.icon className="h-5 w-5 shrink-0" aria-hidden="true" />
-              <span className={cn('truncate', !expanded && 'sr-only')}>{item.label}</span>
-            </NavLink>
-          </li>
-        ))}
-      </ul>
+      <NavList showLabel={expanded} />
 
       <div className="shrink-0 space-y-1 border-t p-2">
+        <SignOutButton showLabel={expanded} onSignOut={() => void signOut()} />
+
         <button
           type="button"
-          onClick={() => void signOut()}
-          title={expanded ? undefined : 'Sign out'}
-          className={cn(
-            'flex w-full items-center gap-3 rounded-md py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground',
-            expanded ? 'px-3' : 'justify-center px-0',
-          )}
+          onClick={() => setPreferExpanded((was) => !was)}
+          aria-expanded={expanded}
+          title={expanded ? 'Collapse menu' : 'Expand menu'}
+          className={rowClass(expanded)}
         >
-          <LogOut className="h-5 w-5 shrink-0" aria-hidden="true" />
-          <span className={cn('truncate', !expanded && 'sr-only')}>Sign out</span>
+          {expanded ? (
+            <PanelLeftClose className="h-5 w-5 shrink-0" aria-hidden="true" />
+          ) : (
+            <PanelLeftOpen className="h-5 w-5 shrink-0" aria-hidden="true" />
+          )}
+          <span className={cn('truncate', !expanded && 'sr-only')}>Collapse menu</span>
         </button>
-
-        {/*
-          Only where the choice is real. Rendering a disabled toggle below `lg` would advertise
-          a control that does nothing, which is worse than not offering it.
-        */}
-        {canExpand && (
-          <button
-            type="button"
-            onClick={() => setPreferExpanded((was) => !was)}
-            aria-expanded={expanded}
-            title={expanded ? 'Collapse menu' : 'Expand menu'}
-            className={cn(
-              'flex w-full items-center gap-3 rounded-md py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground',
-              expanded ? 'px-3' : 'justify-center px-0',
-            )}
-          >
-            {expanded ? (
-              <PanelLeftClose className="h-5 w-5 shrink-0" aria-hidden="true" />
-            ) : (
-              <PanelLeftOpen className="h-5 w-5 shrink-0" aria-hidden="true" />
-            )}
-            <span className={cn('truncate', !expanded && 'sr-only')}>Collapse menu</span>
-          </button>
-        )}
       </div>
     </nav>
+  );
+}
+
+/**
+ * The destinations. Collapsed, the labels go to screen readers via `sr-only` and to the mouse via
+ * `title`, so the rail stays navigable rather than being an icon puzzle.
+ */
+function NavList({ showLabel, onNavigate }: { showLabel: boolean; onNavigate?: () => void }) {
+  return (
+    <ul className="flex-1 space-y-1 overflow-y-auto p-2">
+      {NAV_ITEMS.map((item) => (
+        <li key={item.to}>
+          <NavLink
+            to={item.to}
+            onClick={onNavigate}
+            title={showLabel ? undefined : item.label}
+            className={({ isActive }) => rowClass(showLabel, isActive)}
+          >
+            <item.icon className="h-5 w-5 shrink-0" aria-hidden="true" />
+            <span className={cn('truncate', !showLabel && 'sr-only')}>{item.label}</span>
+          </NavLink>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function SignOutButton({ showLabel, onSignOut }: { showLabel: boolean; onSignOut: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onSignOut}
+      title={showLabel ? undefined : 'Sign out'}
+      className={rowClass(showLabel)}
+    >
+      <LogOut className="h-5 w-5 shrink-0" aria-hidden="true" />
+      <span className={cn('truncate', !showLabel && 'sr-only')}>Sign out</span>
+    </button>
   );
 }
 

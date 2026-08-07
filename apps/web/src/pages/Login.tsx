@@ -2,7 +2,6 @@ import * as React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/lib/auth';
@@ -130,7 +129,7 @@ export function LoginPage() {
         ambiguous, which is the usual convention for a co-branded lockup.
 
         Centred: with the subtitle gone there is nothing else at this width to align a ragged
-        left edge against, and the card below is centred in the column already.
+        left edge against, and the form below is centred in the column already.
 
         `alt=""` on purpose -- it is a brand mark beside the heading that names the product,
         and announcing "Consumer Reports" here adds nothing the user acts on.
@@ -141,125 +140,123 @@ export function LoginPage() {
         <h1 className="text-2xl font-bold tracking-tight">CarAdvocate</h1>
       </div>
 
-      <Card className="mt-8">
-        <CardContent className="p-4 sm:p-6">
-          {/* `noValidate` hands validation to the code above, so the messages match the ones
-              shown everywhere else rather than the browser's own bubbles. */}
-          <form onSubmit={handleSubmit} noValidate className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                ref={emailRef}
-                id="email"
-                name="email"
-                type="email"
-                autoComplete="email"
-                autoFocus
-                required
-                aria-invalid={fieldErrors.email ? true : undefined}
-                aria-describedby={fieldErrors.email ? 'email-error' : undefined}
-                value={email}
-                onChange={(e) => {
-                  setEmail(e.target.value);
-                  if (fieldErrors.email) setFieldErrors((prev) => ({ ...prev, email: undefined }));
-                }}
-                placeholder="you@example.com"
-                className={fieldErrors.email ? 'border-destructive' : undefined}
-              />
-              {fieldErrors.email && (
-                <p id="email-error" className="text-sm text-destructive">
-                  {fieldErrors.email}
-                </p>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <div className="relative">
-                <Input
-                  ref={passwordRef}
-                  id="password"
-                  name="password"
-                  type={showPassword ? 'text' : 'password'}
-                  autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
-                  required
-                  aria-invalid={fieldErrors.password ? true : undefined}
-                  aria-describedby={passwordDescribedBy}
-                  value={password}
-                  onChange={(e) => {
-                    setPassword(e.target.value);
-                    if (fieldErrors.password) setFieldErrors((prev) => ({ ...prev, password: undefined }));
-                  }}
-                  // `pr-10` keeps typed characters clear of the reveal button.
-                  className={fieldErrors.password ? 'border-destructive pr-10' : 'pr-10'}
-                />
-                {/*
-                  Stays focusable rather than being hidden from the tab order -- someone typing a
-                  password blind is exactly who needs to reach this without a mouse.
-                */}
-                <button
-                  type="button"
-                  onClick={() => setShowPassword((visible) => !visible)}
-                  aria-label={showPassword ? 'Hide password' : 'Show password'}
-                  aria-pressed={showPassword}
-                  className="absolute inset-y-0 right-0 flex w-10 items-center justify-center rounded-r-md text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
-              </div>
-              {fieldErrors.password && (
-                <p id="password-error" className="text-sm text-destructive">
-                  {fieldErrors.password}
-                </p>
-              )}
-              {/* Helper text, not a placeholder: the rule has to survive the user typing. */}
-              {passwordHintId && (
-                <p id={passwordHintId} className="text-sm text-muted-foreground">
-                  At least {MIN_PASSWORD_LENGTH} characters.
-                </p>
-              )}
-            </div>
-
-            {error && (
-              <p role="alert" className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm">
-                {error}
+      <div className="mt-8">
+        {/* `noValidate` hands validation to the code above, so the messages match the ones
+            shown everywhere else rather than the browser's own bubbles. */}
+        <form onSubmit={handleSubmit} noValidate className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="email">Email</Label>
+            <Input
+              ref={emailRef}
+              id="email"
+              name="email"
+              type="email"
+              autoComplete="email"
+              autoFocus
+              required
+              aria-invalid={fieldErrors.email ? true : undefined}
+              aria-describedby={fieldErrors.email ? 'email-error' : undefined}
+              value={email}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                if (fieldErrors.email) setFieldErrors((prev) => ({ ...prev, email: undefined }));
+              }}
+              placeholder="you@example.com"
+              className={fieldErrors.email ? 'border-destructive' : undefined}
+            />
+            {fieldErrors.email && (
+              <p id="email-error" className="text-sm text-destructive">
+                {fieldErrors.email}
               </p>
             )}
-            {notice && (
-              <p className="rounded-md border bg-muted p-3 text-sm text-muted-foreground">{notice}</p>
-            )}
-
-            {/* Disabled only while a request is in flight, which is the one case where the
-                reason is self-evident from the label. */}
-            <Button type="submit" className="w-full" disabled={busy}>
-              {busy ? 'Working…' : mode === 'signin' ? 'Sign in' : 'Create account'}
-            </Button>
-          </form>
-
-          <div className="my-4 flex items-center gap-3">
-            <div className="h-px flex-1 bg-border" />
-            <span className="text-xs uppercase tracking-widest text-muted-foreground">or</span>
-            <div className="h-px flex-1 bg-border" />
           </div>
 
-          {/*
-            Stays neutral. Google's sign-in branding expects a white or grey button, and putting
-            our own colour on someone else's identity provider misrepresents whose it is.
-          */}
-          <Button
-            type="button"
-            variant="outline"
-            className="w-full"
-            disabled={busy}
-            onClick={() => {
-              setError(undefined);
-              signInWithGoogle().catch((cause: Error) => setError(humanizeAuthError(cause.message)));
-            }}
-          >
-            Continue with Google
+          <div className="space-y-2">
+            <Label htmlFor="password">Password</Label>
+            <div className="relative">
+              <Input
+                ref={passwordRef}
+                id="password"
+                name="password"
+                type={showPassword ? 'text' : 'password'}
+                autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
+                required
+                aria-invalid={fieldErrors.password ? true : undefined}
+                aria-describedby={passwordDescribedBy}
+                value={password}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  if (fieldErrors.password) setFieldErrors((prev) => ({ ...prev, password: undefined }));
+                }}
+                // `pr-10` keeps typed characters clear of the reveal button.
+                className={fieldErrors.password ? 'border-destructive pr-10' : 'pr-10'}
+              />
+              {/*
+                Stays focusable rather than being hidden from the tab order -- someone typing a
+                password blind is exactly who needs to reach this without a mouse.
+              */}
+              <button
+                type="button"
+                onClick={() => setShowPassword((visible) => !visible)}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                aria-pressed={showPassword}
+                className="absolute inset-y-0 right-0 flex w-10 items-center justify-center rounded-r-md text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
+            {fieldErrors.password && (
+              <p id="password-error" className="text-sm text-destructive">
+                {fieldErrors.password}
+              </p>
+            )}
+            {/* Helper text, not a placeholder: the rule has to survive the user typing. */}
+            {passwordHintId && (
+              <p id={passwordHintId} className="text-sm text-muted-foreground">
+                At least {MIN_PASSWORD_LENGTH} characters.
+              </p>
+            )}
+          </div>
+
+          {error && (
+            <p role="alert" className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm">
+              {error}
+            </p>
+          )}
+          {notice && (
+            <p className="rounded-md border bg-muted p-3 text-sm text-muted-foreground">{notice}</p>
+          )}
+
+          {/* Disabled only while a request is in flight, which is the one case where the
+              reason is self-evident from the label. */}
+          <Button type="submit" className="w-full" disabled={busy}>
+            {busy ? 'Working…' : mode === 'signin' ? 'Sign in' : 'Create account'}
           </Button>
-        </CardContent>
-      </Card>
+        </form>
+
+        <div className="my-4 flex items-center gap-3">
+          <div className="h-px flex-1 bg-border" />
+          <span className="text-xs uppercase tracking-widest text-muted-foreground">or</span>
+          <div className="h-px flex-1 bg-border" />
+        </div>
+
+        {/*
+          Stays neutral. Google's sign-in branding expects a white or grey button, and putting
+          our own colour on someone else's identity provider misrepresents whose it is.
+        */}
+        <Button
+          type="button"
+          variant="outline"
+          className="w-full"
+          disabled={busy}
+          onClick={() => {
+            setError(undefined);
+            signInWithGoogle().catch((cause: Error) => setError(humanizeAuthError(cause.message)));
+          }}
+        >
+          Continue with Google
+        </Button>
+      </div>
 
       <button
         type="button"
