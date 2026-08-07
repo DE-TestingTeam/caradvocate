@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { Car, ClipboardList, LogOut, MessageSquare, PanelLeftClose, PanelLeftOpen, UserRound } from 'lucide-react';
 import { Link, NavLink } from 'react-router-dom';
-import crMonogram from '@/assets/cr-monogram.png';
+import crMonogram from '@/assets/logos/cr-monogram.png';
 import { useAuth } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 
