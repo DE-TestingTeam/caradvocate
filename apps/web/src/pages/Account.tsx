@@ -14,6 +14,13 @@ import { useToast } from '@/components/ui/toast';
 import { getAccount, getPaywall, getVehicle, unlockPaywall } from '@/lib/api';
 import { formatMileage, formatPrice, maskVinTail, vehicleName } from '@/lib/format';
 import { invalidateAll, useApi } from '@/lib/useApi';
+import { cn } from '@/lib/utils';
+import type { PricingModel } from '@caradvocate/shared';
+
+const PRICING_MODEL_NAME: Record<PricingModel, string> = {
+  all_you_can_eat: 'Unlimited',
+  per_incident: 'Per-Incident',
+};
 
 /**
  * Unlocks from Account rather than the Repair Cost Checker gate, recorded with its own source: a
@@ -21,13 +28,14 @@ import { invalidateAll, useApi } from '@/lib/useApi';
  */
 function UnlockButton() {
   const { data: paywall } = useApi(getPaywall);
+  const [selected, setSelected] = React.useState<PricingModel>('all_you_can_eat');
   const [unlocking, setUnlocking] = React.useState(false);
   const toast = useToast();
 
   async function handleUnlock() {
     setUnlocking(true);
     try {
-      await unlockPaywall('account');
+      await unlockPaywall('account', selected);
       invalidateAll();
     } catch (cause) {
       toast(cause instanceof Error ? cause.message : 'Could not unlock that.');
@@ -38,12 +46,29 @@ function UnlockButton() {
 
   if (!paywall) return <Skeleton className="h-10 w-full" />;
 
-  const price = formatPrice(paywall.priceCents, paywall.currency);
+  const chosen = paywall.offers.find((offer) => offer.model === selected) ?? paywall.offers[0];
+  const price = formatPrice(chosen.priceCents, chosen.currency);
 
   return (
     <div className="space-y-2">
+      <div className="flex gap-2">
+        {paywall.offers.map((offer) => (
+          <button
+            key={offer.model}
+            type="button"
+            onClick={() => setSelected(offer.model)}
+            aria-pressed={offer.model === selected}
+            className={cn(
+              'flex-1 rounded-md border px-2 py-1.5 text-xs',
+              offer.model === selected ? 'border-primary bg-primary/5 font-semibold' : 'border-input',
+            )}
+          >
+            {PRICING_MODEL_NAME[offer.model]} — {formatPrice(offer.priceCents, offer.currency)}/{offer.interval}
+          </button>
+        ))}
+      </div>
       <Button className="w-full" onClick={handleUnlock} disabled={unlocking}>
-        {unlocking ? 'Unlocking…' : `Unlock the Repair Cost Checker — ${price}/${paywall.interval}`}
+        {unlocking ? 'Unlocking…' : `Unlock the Repair Cost Checker — ${price}/${chosen.interval}`}
       </Button>
       <p className="text-xs text-muted-foreground">
         You will not be charged. Unlocking is free while CarAdvocate is in preview.
@@ -132,7 +157,9 @@ export function AccountPage() {
                 <div className="flex items-start justify-between gap-3">
                   <h2 className="text-lg font-semibold tracking-tight">Subscription</h2>
                   <Badge variant="outline" className="shrink-0">
-                    {account.plan === 'paid' ? 'Paid plan' : 'Free plan'}
+                    {account.plan === 'paid' && account.pricingModel
+                      ? `Paid — ${PRICING_MODEL_NAME[account.pricingModel]}`
+                      : 'Free plan'}
                   </Badge>
                 </div>
                 <div>

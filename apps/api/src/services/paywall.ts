@@ -3,26 +3,27 @@
  * immediately -- the tap itself is the data, which is what lets the prototype measure
  * willingness to pay without building billing or handling card data.
  *
+ * Two offers are shown side by side rather than one -- an Unlimited subscription and a
+ * cheaper Per-Incident subscription with a separate per-lookup fee for the parts benchmark --
+ * because which shape of pricing people prefer is itself part of what this prototype is
+ * testing. The per-incident fee is disclosed but not metered: nothing in v1 charges per use,
+ * so picking either offer opens all three paid features the same way. Metering is the natural
+ * next step once the model that wins is known.
+ *
  * This file is the experiment rather than the product, with two consequences: the recorded
- * price travels with the tap (see paywallIntents), since reading it from config at analysis
- * time would re-label every historical row the first time the price changed; and the gate
- * has to be real, enforced on the server (middleware/requirePaid.ts) and not only in the
+ * price and model travel with the tap (see paywallIntents), since reading them from config at
+ * analysis time would re-label every historical row the first time either changed; and the
+ * gate has to be real, enforced on the server (middleware/requirePaid.ts) and not only in the
  * client, or some owners get the feature without deciding to.
  *
  * Not a licence check: no expiry, no receipt, nothing to verify, because nothing was sold.
  * Unlocking is one-way and permanent.
  */
-import { and, eq } from 'drizzle-orm';
-import type { PaywallStatus } from '@caradvocate/shared';
+import { eq } from 'drizzle-orm';
+import type { PaywallStatus, PricingModel, PricingOffer } from '@caradvocate/shared';
 import type { Database } from '../db/index.js';
-import { paywallIntents, userFeatures, users } from '../db/schema.js';
+import { paywallIntents, users } from '../db/schema.js';
 import { env } from '../env.js';
-
-/**
- * The paid feature, named as the spec names it. One string, because v1 has exactly one paid
- * surface, and the Account screen's per-feature row has to agree with the gate.
- */
-export const PAID_FEATURE = 'Repair Cost Checker';
 
 /**
  * What unlocking opens, in the order the paywall lists them. Worded as the owner's benefit
@@ -38,20 +39,34 @@ const INCLUDES = [
 /** Where an unlock was tapped from. Recorded so conversion can be read by entry point. */
 export type IntentSource = 'repair_cost_checker' | 'account';
 
-/** The offer as shown, independent of any particular owner. */
-function offer(): Omit<PaywallStatus, 'unlocked'> {
-  return {
-    priceCents: env.PAYWALL_PRICE_CENTS,
-    currency: 'USD',
-    interval: env.PAYWALL_INTERVAL,
-    includes: INCLUDES,
-  };
+/** Both offers as shown, independent of any particular owner. */
+function offers(): PricingOffer[] {
+  return [
+    {
+      model: 'all_you_can_eat',
+      priceCents: env.PAYWALL_ALL_YOU_CAN_EAT_PRICE_CENTS,
+      currency: 'USD',
+      interval: env.PAYWALL_ALL_YOU_CAN_EAT_INTERVAL,
+    },
+    {
+      model: 'per_incident',
+      priceCents: env.PAYWALL_PER_INCIDENT_PRICE_CENTS,
+      currency: 'USD',
+      interval: env.PAYWALL_PER_INCIDENT_INTERVAL,
+      perIncidentFeeCents: env.PAYWALL_PER_INCIDENT_FEE_CENTS,
+    },
+  ];
 }
 
-/** The offer as one line, for the startup banner. */
+/** Both offers as one line, for the startup banner. */
 export function describePrice(): string {
-  const { priceCents, currency, interval } = offer();
-  return `${(priceCents / 100).toFixed(2)} ${currency} / ${interval}`;
+  return offers()
+    .map((o) => {
+      const base = `${(o.priceCents / 100).toFixed(2)} ${o.currency} / ${o.interval}`;
+      const fee = o.perIncidentFeeCents ? ` + ${(o.perIncidentFeeCents / 100).toFixed(2)} ${o.currency}/incident` : '';
+      return `${o.model}: ${base}${fee}`;
+    })
+    .join(', ');
 }
 
 /** Whether this owner is past the paywall. */
@@ -67,13 +82,25 @@ export async function isUnlocked(db: Database, userId: string): Promise<boolean>
 
 /** The paywall as this owner would see it. */
 export async function paywallStatusFor(db: Database, userId: string): Promise<PaywallStatus> {
-  return { unlocked: await isUnlocked(db, userId), ...offer() };
+  const [row] = await db
+    .select({ plan: users.plan, pricingModel: users.pricingModel })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+
+  return {
+    unlocked: row?.plan === 'paid',
+    pricingModel: row?.pricingModel ?? undefined,
+    offers: offers(),
+    includes: INCLUDES,
+  };
 }
 
 /**
  * Records the tap and opens the feature. The intent row is written whether or not the owner
- * was already unlocked, because a second tap at a different price is a finding rather than a
- * duplicate. The plan and the Account feature row move together so the two cannot disagree.
+ * was already unlocked, because a second tap at a different offer is a finding rather than a
+ * duplicate. `users.pricingModel` moves with `plan` so the Account screen's "which plan are
+ * you on" answer never has to be re-derived from intent history.
  *
  * Returns the resulting status, so the client renders from the server's answer.
  */
@@ -81,27 +108,22 @@ export async function recordUnlock(
   db: Database,
   userId: string,
   source: IntentSource,
+  model: PricingModel,
 ): Promise<PaywallStatus> {
-  const shown = offer();
+  const chosen = offers().find((o) => o.model === model);
+  if (!chosen) throw new Error(`Unknown pricing model: ${model}`);
 
   await db.transaction(async (tx) => {
     await tx.insert(paywallIntents).values({
       userId,
-      priceCents: shown.priceCents,
-      interval: shown.interval,
+      pricingModel: model,
+      priceCents: chosen.priceCents,
+      interval: chosen.interval,
       source,
     });
 
-    await tx.update(users).set({ plan: 'paid' }).where(eq(users.id, userId));
-
-    // Only the paid row: a stale 'Locked' would tell the owner the feature is shut while the
-    // gate lets them through, but widening this would relabel 'My Car' and 'Ask CA', which
-    // are 'Included' and were never gated.
-    await tx
-      .update(userFeatures)
-      .set({ status: 'Active' })
-      .where(and(eq(userFeatures.userId, userId), eq(userFeatures.name, PAID_FEATURE)));
+    await tx.update(users).set({ plan: 'paid', pricingModel: model }).where(eq(users.id, userId));
   });
 
-  return { unlocked: true, ...shown };
+  return { unlocked: true, pricingModel: model, offers: offers(), includes: INCLUDES };
 }

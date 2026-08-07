@@ -16,16 +16,17 @@ import { OnboardingPage } from '@/pages/Onboarding';
 export default function App() {
   return (
     <Routes>
-      {/* Public: the only route reachable without a session, and the only one
-          without nav chrome. */}
+      {/* No nav chrome: signed out on /login, or signed in but not through onboarding yet.
+          There is nowhere for the rail to point them while either is true. */}
       <Route element={<AppShell chrome={false} />}>
         <Route path="/login" element={<LoginPage />} />
+        <Route element={<AuthGate />}>
+          <Route path="/onboarding" element={<OnboardingPage />} />
+        </Route>
       </Route>
 
       <Route element={<AppShell />}>
         <Route element={<AuthGate />}>
-          {/* Signed in, but may not have added a car yet. */}
-          <Route path="/onboarding" element={<OnboardingPage />} />
           {/* Account works without a vehicle, so it sits outside RequireVehicle. */}
           <Route path="/account" element={<AccountPage />} />
 

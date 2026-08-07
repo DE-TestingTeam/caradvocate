@@ -6,9 +6,12 @@
  *
  * THIS IS NOT A PHOTO OF THEIR CAR. CarImages serves one photo per *generation* -- not the
  * owner's trim or colour, and for a model it has nothing for, a generic stand-in it gives us
- * no way to identify. The app says so rather than leaving it implied -- now behind an "i" on
- * the photo instead of a line of caption under it, so the header is not carrying a sentence of
+ * no way to identify. The app says so rather than leaving it implied -- behind an "i" on the
+ * photo instead of a line of caption under it, so the header is not carrying a sentence of
  * small print. See PhotoDisclaimer for why that is hover *and* tap rather than hover alone.
+ *
+ * An interactive 3D model (`modelUrl`) is also available from the API -- see git history on
+ * this file for the <model-viewer> version -- but the still photo is what's shown for now.
  */
 import { ImageOff, Info } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -53,10 +56,10 @@ export function VehicleImage({ vehicle }: { vehicle: Vehicle }) {
 }
 
 /**
- * The "not your car" caveat, behind an "i" on the corner of the photo.
+ * The "not your car" caveat, behind an "i" on the corner of the image.
  *
  * Hover is not enough on its own. This is the one thing on the page correcting an assumption
- * the photo actively invites, and a touch screen has no hover -- so a hover-only tooltip would
+ * the image actively invites, and a touch screen has no hover -- so a hover-only tooltip would
  * hide it from every phone, which is most of them. It opens on hover, on keyboard focus and on
  * tap: the panel is tied to `focus-within`, and tapping the button focuses it.
  *

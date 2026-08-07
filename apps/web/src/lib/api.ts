@@ -16,6 +16,7 @@ import type {
   NewVehicleInput,
   UpdateMaintenanceItemInput,
   UpdateServiceRecordInput,
+  PricingModel,
   RecallReport,
   RepairCatalogReport,
   ServiceRecord,
@@ -109,10 +110,11 @@ export function getPaywall(): Promise<PaywallStatus> {
 
 /**
  * Records a tap on unlock and opens the paid features. Charges nothing -- the tap is the
- * signal. Pass the screen the owner was actually on: the prototype reads conversion by it.
+ * signal. Pass the screen the owner was actually on and the offer they picked: the prototype
+ * reads conversion by both.
  */
-export function unlockPaywall(source: 'repair_cost_checker' | 'account'): Promise<PaywallStatus> {
-  return http.post<PaywallStatus>('/paywall/unlock', { source });
+export function unlockPaywall(source: 'repair_cost_checker' | 'account', model: PricingModel): Promise<PaywallStatus> {
+  return http.post<PaywallStatus>('/paywall/unlock', { source, model });
 }
 
 /* -------------------------------------------------------- service history */

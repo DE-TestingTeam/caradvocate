@@ -97,6 +97,9 @@ export const vinSchema = z
   .length(17, 'A VIN is exactly 17 characters')
   .regex(/^[A-HJ-NPR-Z0-9]+$/, 'A VIN cannot contain the letters I, O or Q');
 
+/** A 5-digit US zip. Optional everywhere it appears -- see `zip` on the Vehicle contract. */
+export const zipSchema = z.string().trim().regex(/^\d{5}$/, 'Enter a 5-digit zip code');
+
 export const newVehicleSchema = z.object({
   year: z
     .number()
@@ -110,6 +113,8 @@ export const newVehicleSchema = z.object({
   /** Optional: plenty of owners cannot find their VIN on the spot. */
   vin: vinSchema.optional(),
   mileage: z.number().int().min(0).max(2_000_000),
+  /** Optional: needed to price the car, but nobody should be blocked on it at onboarding. */
+  zip: zipSchema.optional(),
 });
 
 export const updateAccountSchema = z
@@ -127,6 +132,7 @@ export const updateVehicleSchema = z
     trim: z.string().trim().max(80).optional(),
     vin: z.string().trim().length(17, 'A VIN is 17 characters'),
     mileage: z.number().int().min(0).max(2_000_000),
+    zip: zipSchema,
   })
   .partial()
   .refine((body) => Object.keys(body).length > 0, 'Provide at least one field to update');

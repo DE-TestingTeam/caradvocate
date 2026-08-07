@@ -1,4 +1,4 @@
-import { ExternalLink } from 'lucide-react';
+import { AlertTriangle, ExternalLink } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { formatRecallComponent } from '@/lib/format';
@@ -26,7 +26,10 @@ export function KnownIssuesList({ report, vehicle }: { report: KnownIssueReport;
         Nothing on file for this model, and no owner complaints reported to NHTSA.
       </p>
     ) : (
-      <p className="py-2 text-sm text-muted-foreground">
+      <p className="flex items-start gap-2 py-2 text-sm text-muted-foreground">
+        {/* Same distinction as RecallsList: "nothing found" and "we could not look" read
+            identically as plain text, so this gets the icon the all-clear case does not. */}
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning-strong" />
         Nothing on file for this model yet. Owner complaints could not be loaded, so this is not a clean bill of health.
       </p>
     );

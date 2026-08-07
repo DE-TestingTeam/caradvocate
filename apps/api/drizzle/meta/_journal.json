@@ -113,6 +113,20 @@
       "when": 1785961401211,
       "tag": "0015_vehicle_schedule_checked_at",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1786051147098,
+      "tag": "0016_vehicle_zip_market_value",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1786109359073,
+      "tag": "0017_paywall_pricing_models",
+      "breakpoints": true
     }
   ]
 }

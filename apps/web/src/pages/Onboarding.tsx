@@ -1,19 +1,146 @@
 import * as React from 'react';
-import { Loader2, Search } from 'lucide-react';
+import { ArrowLeft, Loader2, Search } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { createVehicle, decodeVin } from '@/lib/api';
-import { invalidateAll } from '@/lib/useApi';
+import { createVehicle, decodeVin, getAccount, updateAccount } from '@/lib/api';
+import { invalidateAll, useApi } from '@/lib/useApi';
+
+type Step = 'profile' | 'vehicle';
 
 /**
- * Adds the user's car. Manual entry is the primary path because it always works; the VIN lookup
- * is an accelerator that prefills the same fields, so when the external decode is unavailable the
- * form is already there and nothing is blocked.
+ * Two steps, not one long form: a name is a different, quicker decision than a car's details,
+ * and asking for both at once would make the first screen look bigger than it is. The profile
+ * step saves on "Continue" rather than waiting for the very end, so an owner who never finishes
+ * adding a car still has a name on file rather than losing the whole visit.
  */
 export function OnboardingPage() {
+  const [step, setStep] = React.useState<Step>('profile');
+  // Collected on the profile step, but only spent on the vehicle step (as part of
+  // `createVehicle`), so it lives here rather than in either step alone.
+  const [zip, setZip] = React.useState('');
+
+  return (
+    <div className="mx-auto w-full max-w-lg">
+      {/* Two steps is too few to earn a full stepper (per UX guidance, that pays off past
+          ~3) but still worth naming, so an owner knows a car question is coming right after
+          this one. */}
+      <p className="text-sm font-medium text-muted-foreground">Step {step === 'profile' ? 1 : 2} of 2</p>
+      <div className="mt-2 flex gap-1.5">
+        <div className="h-1.5 flex-1 rounded-full bg-primary" />
+        <div className={`h-1.5 flex-1 rounded-full ${step === 'vehicle' ? 'bg-primary' : 'bg-muted'}`} />
+      </div>
+
+      {step === 'profile' ? (
+        <ProfileStep onContinue={() => setStep('vehicle')} zip={zip} onZipChange={setZip} />
+      ) : (
+        <VehicleStep onBack={() => setStep('profile')} zip={zip} />
+      )}
+    </div>
+  );
+}
+
+function ProfileStep({
+  onContinue,
+  zip,
+  onZipChange,
+}: {
+  onContinue: () => void;
+  zip: string;
+  onZipChange: (zip: string) => void;
+}) {
+  const { data: account } = useApi(getAccount);
+
+  const [name, setName] = React.useState('');
+  const [phone, setPhone] = React.useState('');
+  const [saving, setSaving] = React.useState(false);
+  const [error, setError] = React.useState<string>();
+
+  // Phone (but not name) is worth prefilling: provisioning has no real phone number to
+  // guess at, so an empty field here always means "never entered", while a guessed name
+  // would sit in the field looking already-answered and inviting a driveby save.
+  React.useEffect(() => {
+    if (account) setPhone(account.phone);
+  }, [account]);
+
+  const canContinue = name.trim().length > 0;
+
+  async function handleSubmit(event: React.FormEvent) {
+    event.preventDefault();
+    if (!canContinue || saving) return;
+
+    setSaving(true);
+    setError(undefined);
+
+    try {
+      await updateAccount({ name: name.trim(), phone: phone.trim() });
+      invalidateAll();
+      onContinue();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not save your details.');
+      setSaving(false);
+    }
+  }
+
+  return (
+    <>
+      <h1 className="mt-4 text-3xl font-bold tracking-tight">Welcome to CarAdvocate</h1>
+      <p className="mt-1 text-muted-foreground">A couple of details, then let's add your car.</p>
+
+      <Card className="mt-6">
+        <CardContent className="p-4 sm:p-6">
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="onboarding-name">Your name</Label>
+              <Input
+                id="onboarding-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Alex Rivera"
+                autoFocus
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="onboarding-phone">Phone (optional)</Label>
+              <Input
+                id="onboarding-phone"
+                type="tel"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="(555) 018-2245"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="onboarding-zip">Zip code (optional)</Label>
+              <p className="text-sm text-muted-foreground">Used to estimate your car's market value.</p>
+              <Input
+                id="onboarding-zip"
+                inputMode="numeric"
+                value={zip}
+                onChange={(e) => onZipChange(e.target.value.replace(/\D/g, '').slice(0, 5))}
+                placeholder="80215"
+              />
+            </div>
+
+            {error && (
+              <p role="alert" className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm">
+                {error}
+              </p>
+            )}
+
+            <Button type="submit" size="lg" className="w-full" disabled={!canContinue || saving}>
+              {saving ? 'Saving…' : 'Continue'}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+    </>
+  );
+}
+
+function VehicleStep({ onBack, zip }: { onBack: () => void; zip: string }) {
   const navigate = useNavigate();
 
   const [vin, setVin] = React.useState('');
@@ -30,6 +157,7 @@ export function OnboardingPage() {
   const [error, setError] = React.useState<string>();
 
   const vinLooksComplete = vin.trim().length === 17;
+  const zipLooksComplete = /^\d{5}$/.test(zip.trim());
   const canSave =
     Number(year) >= 1900 && make.trim().length > 0 && model.trim().length > 0 && mileage !== '' && Number(mileage) >= 0;
 
@@ -67,6 +195,7 @@ export function OnboardingPage() {
         trim: trim.trim() || undefined,
         vin: vinLooksComplete ? vin.trim().toUpperCase() : undefined,
         mileage: Number(mileage),
+        zip: zipLooksComplete ? zip.trim() : undefined,
       });
       invalidateAll();
       navigate('/my-car', { replace: true });
@@ -77,8 +206,17 @@ export function OnboardingPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-lg">
-      <h1 className="text-3xl font-bold tracking-tight">Add your car</h1>
+    <>
+      <button
+        type="button"
+        onClick={onBack}
+        className="mt-4 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        Back
+      </button>
+
+      <h1 className="mt-2 text-3xl font-bold tracking-tight">Add your car</h1>
       <p className="mt-1 text-muted-foreground">
         This is what everything else is built around — your history, recalls, and repair pricing.
       </p>
@@ -101,6 +239,7 @@ export function OnboardingPage() {
                   maxLength={17}
                   className="pl-9 font-mono"
                   autoComplete="off"
+                  autoFocus
                 />
               </div>
               <Button type="button" variant="secondary" disabled={!vinLooksComplete || decoding} onClick={handleDecode}>
@@ -166,6 +305,6 @@ export function OnboardingPage() {
           </form>
         </CardContent>
       </Card>
-    </div>
+    </>
   );
 }

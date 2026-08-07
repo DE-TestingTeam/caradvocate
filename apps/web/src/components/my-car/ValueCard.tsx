@@ -7,7 +7,7 @@ export function ValueCard({ vehicle }: { vehicle: Vehicle }) {
   // A car the user just added has no valuation yet, and no trend to draw.
   // Say so rather than showing a zero or a made-up figure.
   if (vehicle.estMarketValue === undefined) {
-    return <AwaitingValuation />;
+    return <AwaitingValuation missingVin={!vehicle.vin} missingZip={!vehicle.zip} />;
   }
 
   const hasTrend = vehicle.valueTrend.length > 1;
@@ -52,7 +52,9 @@ export function ValueCard({ vehicle }: { vehicle: Vehicle }) {
   );
 }
 
-function AwaitingValuation() {
+function AwaitingValuation({ missingVin, missingZip }: { missingVin: boolean; missingZip: boolean }) {
+  const missing = [missingVin && 'VIN', missingZip && 'zip code'].filter(Boolean).join(' and ');
+
   return (
     <Card className="bg-muted/40">
       <CardContent className="space-y-1 p-4 sm:p-6">
@@ -60,8 +62,9 @@ function AwaitingValuation() {
           Est. market value
         </div>
         <p className="text-sm text-muted-foreground">
-          Not available yet. Vehicle valuation is not connected to a data source, so there is no estimate for this
-          car.
+          {missing
+            ? `Not available yet. Add your car's ${missing} in Account to get an estimate.`
+            : "Not available yet. We're still pricing this car — check back shortly."}
         </p>
       </CardContent>
     </Card>

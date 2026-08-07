@@ -43,9 +43,11 @@ documents each variable. Only the first two are required.
 | `ANTHROPIC_API_KEY` | Ask CA uses canned replies | Ask CA answers with Claude |
 | `CARIMAGES_API_KEY` | My Car shows a placeholder | studio photo of the model |
 | `VEHICLEDATABASES_API_KEY` | only the seeded demo car has pricing | repair pricing for the owner's own model |
+| `MARKET_CHECK_API_KEY` | only the seeded demo car has a market value | live market value + trend for a car with a VIN and zip |
 | `OPEN_LABOR_PROJECT_API_KEY` | benchmarks show labor dollars, no hours | labor hours beside the pricing |
-| `PAYWALL_PRICE_CENTS` | **`1499` — a placeholder** | the price the paywall shows |
-| `PAYWALL_INTERVAL` | `month` | `month` or `year` |
+| `PAYWALL_ALL_YOU_CAN_EAT_PRICE_CENTS` / `PAYWALL_ALL_YOU_CAN_EAT_INTERVAL` | **`9900` / `year` — placeholders** | the Unlimited offer's price and cadence |
+| `PAYWALL_PER_INCIDENT_PRICE_CENTS` / `PAYWALL_PER_INCIDENT_INTERVAL` | **`3500` / `year` — placeholders** | the Per-Incident offer's subscription price and cadence |
+| `PAYWALL_PER_INCIDENT_FEE_CENTS` | **`5000` — a placeholder** | what Per-Incident charges per parts-benchmark lookup |
 
 Sign-in is mandatory everywhere, including localhost — there is no bypass mode. Never
 put the Supabase `service_role` key in `.env`; the anon key is public by design, that
