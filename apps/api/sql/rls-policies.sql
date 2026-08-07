@@ -25,16 +25,21 @@
 --
 --   auth.uid() -> users.supabase_user_id -> users.id -> vehicles.user_id -> ...
 --
--- Four shapes result, and all 21 tables fall into one of them:
+-- Four shapes result, and every table falls into one of them:
 --
 --   users                                          matched on supabase_user_id
 --   vehicles assessments service_records           direct   user_id
---     user_features paywall_intents
+--     paywall_intents
 --   maintenance_items vehicle_recall_status        join via vehicles
 --     vehicle_value_points
 --   assessment_parts assessment_labor_tasks        join via assessments
 --   repairs repair_benchmarks benchmark_*          shared catalog, no owner
 --     model_* (except model_feed_syncs)
+--
+-- Two tables are deliberately absent from all four, and must stay absent: ask_transcripts
+-- and ask_transcript_sources. They are a QA log, not the owner's data to read back -- the
+-- app has no screen for them (schema.ts), so a SELECT policy would grant a capability
+-- nothing needs and hand the browser the most sensitive rows in the database.
 --
 -- KNOWN LIMITATION -- read before relying on this
 --

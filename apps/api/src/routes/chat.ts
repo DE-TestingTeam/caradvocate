@@ -1,8 +1,13 @@
 /**
- * Ask CA conversations are deliberately not stored, so there is no GET here and no chat
- * table. Persisting and deleting on exit fails exactly when it matters -- a closed tab, a
- * refresh or a crash skips the cleanup, and every miss leaves rows that reappear as history.
- * The client holds the turns while the screen is open and sends them with the next question.
+ * Ask CA conversations are not stored AS HISTORY, so there is still no GET here. Persisting
+ * and deleting on exit fails exactly when it matters -- a closed tab, a refresh or a crash
+ * skips the cleanup, and every miss leaves rows that reappear as history. The client holds the
+ * turns while the screen is open and sends them with the next question.
+ *
+ * Every exchange IS written to `ask_transcripts` for review, which is a different thing and
+ * safe for the same reason the above is not: nothing reads those rows back into the app. The
+ * write happens after the answer is on the wire and cannot fail the request -- see
+ * services/askTranscripts.ts.
  *
  * The tradeoff: history arrives from the client, so an owner could hand the model turns it
  * never produced. That only lets them mislead themselves -- the grounding facts still come
@@ -25,7 +30,15 @@ import { sendChatMessageSchema } from '@caradvocate/shared';
 import type { ChatMessage } from '@caradvocate/shared';
 import { askLimit } from '../middleware/askLimit.js';
 import { validateBody } from '../middleware/validate.js';
-import { askCarAdvocate, askIsConfigured, TIMED_OUT, type AskReply, type AskTiming } from '../services/askClaude.js';
+import {
+  askCarAdvocate,
+  askIsConfigured,
+  MODEL,
+  TIMED_OUT,
+  type AskReply,
+  type AskTiming,
+} from '../services/askClaude.js';
+import { record, type AskOutcome } from '../services/askTranscripts.js';
 import { nextReply } from '../services/chatReplies.js';
 import { buildVehicleContext } from '../services/vehicleContext.js';
 import { requireOwnVehicle } from './helpers.js';
@@ -46,8 +59,14 @@ const FAILED = 'Something went wrong reaching the assistant, so this question ha
 const TOO_SLOW = 'That took too long to answer, so it has been stopped. Try asking again — shorter questions come back faster.';
 
 /**
- * Answers one question. Nothing is written to the database. Claude answers when
- * ANTHROPIC_API_KEY is set (services/askClaude.ts); without a key, canned replies.
+ * Answers one question. Claude answers when ANTHROPIC_API_KEY is set
+ * (services/askClaude.ts); without a key, canned replies.
+ *
+ * The only write is the QA transcript, and it is the last thing every branch does. Note what is
+ * NOT stored: the facts block that grounded the answer. It runs to kilobytes per exchange and is
+ * mostly reference data the database still holds, so `ask_transcript_sources` records which
+ * blocks the model leaned on instead. A reviewer who needs the exact wording of a block can
+ * rebuild it from the transcript's `vehicle_id`.
  */
 // Validation first, then the throttle. The throttle exists to bound what the model costs, and a
 // malformed request never reaches the model -- charging it against the owner's allowance would
@@ -65,11 +84,27 @@ chatRouter.post('/', validateBody(sendChatMessageSchema), askLimit, async (req, 
   // confident canned answers about a vehicle that did not exist.
   const vehicle = await requireOwnVehicle(req);
 
+  // Every branch below records the exchange through this, so the shared identity of the
+  // conversation is stated once. Recording is deliberately the last thing each branch does.
+  const transcript = (outcome: AskOutcome, reply: AskReply | null, extra: TranscriptExtra = {}) =>
+    record(req.db, {
+      userId: vehicle.userId,
+      vehicleId: vehicle.id,
+      question: text,
+      reply,
+      outcome,
+      historyMessages: recent.length,
+      ...extra,
+    });
+
   if (!askIsConfigured()) {
     // Which canned reply comes next is read off the conversation in hand, not a stored count.
     const reply = nextReply(recent.filter((turn: { role: string }) => turn.role === 'assistant').length);
     openStream(res);
     sendMessage(res, text, reply);
+    // Recorded, though no model wrote it. A row that is absent is indistinguishable from a
+    // question nobody asked; `outcome: 'canned'` says plainly that this one is not evidence.
+    await transcript('canned', reply);
     return res.end();
   }
 
@@ -93,18 +128,43 @@ chatRouter.post('/', validateBody(sendChatMessageSchema), askLimit, async (req, 
 
     logTiming(timing);
     sendMessage(res, text, reply);
+    // After the answer is on the wire, on purpose: a QA write must never sit between the model
+    // finishing and the owner reading it.
+    await transcript('answered', reply, { model: MODEL, timing });
   } catch (cause) {
     // The owner leaving is not a failure, and there is nobody left to tell.
-    if (!aborted.signal.aborted) {
+    if (aborted.signal.aborted) {
+      // Still worth a row. Nobody saw an answer, so there is none to store, but a climbing
+      // abandoned rate is the clearest signal that answers are taking too long.
+      await transcript('abandoned', null, { model: MODEL });
+    } else {
       console.error(`Ask CA failed: ${cause instanceof Error ? cause.message : String(cause)}`);
       // A `delta` preview may already be on screen. Sending the final message replaces it, which
       // is why the client renders from `message` and never from the deltas it has accumulated.
-      sendMessage(res, text, { role: 'assistant', text: failureText(cause) });
+      const reply: AskReply = { role: 'assistant', text: failureText(cause) };
+      sendMessage(res, text, reply);
+      // The sentence the owner actually got, under the outcome that explains it -- so a review
+      // queue can separate "the model refused" from "the vendor was down" without parsing prose.
+      await transcript(outcomeOf(cause), reply, { model: MODEL });
     }
   }
 
   res.end();
 });
+
+/** The per-branch half of a transcript: what varies between a canned reply and a real call. */
+type TranscriptExtra = { model?: string; timing?: AskTiming };
+
+/**
+ * The machine-readable counterpart to failureText: same three cases, so the stored outcome and
+ * the sentence the owner read can never describe different failures.
+ */
+function outcomeOf(cause: unknown): AskOutcome {
+  if (!(cause instanceof Error)) return 'failed';
+  if (cause.message === TIMED_OUT) return 'timed_out';
+  if (cause.message.includes('declined')) return 'declined';
+  return 'failed';
+}
 
 /**
  * Which sentence the owner gets. A safety-filter refusal already explains itself and says to

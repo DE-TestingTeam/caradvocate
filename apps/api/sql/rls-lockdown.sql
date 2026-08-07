@@ -58,6 +58,8 @@ begin;
 -- the hole, and having both means a stray future GRANT does not silently reopen it.
 -- ----------------------------------------------------------------------------
 
+alter table public.ask_transcript_sources    enable row level security;
+alter table public.ask_transcripts           enable row level security;
 alter table public.assessment_labor_tasks    enable row level security;
 alter table public.assessment_parts          enable row level security;
 alter table public.assessments               enable row level security;
@@ -73,11 +75,14 @@ alter table public.paywall_intents           enable row level security;
 alter table public.repair_benchmarks         enable row level security;
 alter table public.repairs                   enable row level security;
 alter table public.service_records           enable row level security;
-alter table public.user_features             enable row level security;
 alter table public.users                     enable row level security;
 alter table public.vehicle_recall_status     enable row level security;
 alter table public.vehicle_value_points      enable row level security;
 alter table public.vehicles                  enable row level security;
+
+-- `user_features` used to be on this list and is not any more: migration 0017 dropped it.
+-- `alter table` on a table that does not exist is an error, not a no-op, so leaving the line
+-- in aborted the whole transaction and quietly stopped the lockdown from ever applying.
 
 -- ----------------------------------------------------------------------------
 -- 2. Take away the stock grants.
@@ -110,7 +115,9 @@ commit;
 -- ============================================================================
 -- VERIFY
 --
--- Expect 21 rows, rls_enabled = true, policies = 0 on every one:
+-- Expect 21 rows, rls_enabled = true, policies = 0 on every one (19 tables the app uses
+-- today, plus the two ask_transcript* tables added in 0018; the count is unchanged from the
+-- original 21 because user_features went away in 0017):
 --
 --   select c.relname,
 --          c.relrowsecurity as rls_enabled,

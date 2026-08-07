@@ -75,6 +75,13 @@ const DEADLINE_MS = 45_000;
 /** Recognised by routes/chat.ts, which turns it into something the owner can act on. */
 export const TIMED_OUT = 'Ask CA took too long to answer';
 
+/**
+ * Which model answers. Exported so a recorded transcript names the model that actually produced
+ * it (services/askTranscripts.ts) -- a change here would otherwise make every old row look like
+ * it came from the new model.
+ */
+export const MODEL = 'claude-sonnet-5';
+
 export interface AskInput {
   /** The owner's question. */
   question: string;
@@ -235,7 +242,7 @@ export async function askCarAdvocate(input: AskInput): Promise<{ reply: AskReply
 
   const startedAt = Date.now();
   const stream = anthropic().messages.stream({
-    model: 'claude-sonnet-5',
+    model: MODEL,
     max_tokens: MAX_TOKENS,
     thinking: THINKING,
     // No server-side `fallbacks`: it is documented only for the models carrying elevated

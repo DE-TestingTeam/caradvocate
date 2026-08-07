@@ -127,6 +127,13 @@
       "when": 1786109359073,
       "tag": "0017_paywall_pricing_models",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1786123248212,
+      "tag": "0018_ask_transcripts",
+      "breakpoints": true
     }
   ]
 }

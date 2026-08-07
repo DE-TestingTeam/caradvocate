@@ -57,6 +57,7 @@ async function truncateAll(db: Database): Promise<void> {
     truncate table
       ${t.assessmentLaborTasks}, ${t.assessmentParts}, ${t.assessments},
       ${t.serviceRecords}, ${t.maintenanceItems}, ${t.vehicleValuePoints}, ${t.vehicles},
+      ${t.askTranscriptSources}, ${t.askTranscripts},
       ${t.users},
       ${t.benchmarkLaborTasks}, ${t.benchmarkParts}, ${t.repairBenchmarks}, ${t.repairs},
       ${t.modelKnownIssues}

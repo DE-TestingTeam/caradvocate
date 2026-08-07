@@ -4,11 +4,14 @@
  * OWNERSHIP MODEL -- read this before adding a table:
  *
  *   1. User-owned aggregate roots carry `userId` (vehicles, serviceRecords,
- *      assessments, paywallIntents). Every query against these MUST filter on userId.
+ *      assessments, paywallIntents, askTranscripts). Every query the APP serves against
+ *      these MUST filter on userId. askTranscripts is the one table the app never reads
+ *      back at all -- it exists to be reviewed offline, and that review is deliberately
+ *      cross-user, so it is the single exception to the filter rule.
  *   2. Their children (vehicleValuePoints, maintenanceItems, vehicleRecallStatus,
- *      assessmentParts, assessmentLaborTasks) do NOT. They are reachable only through
- *      the parent, whose userId filter authorises them; denormalising it onto children
- *      would create a second source of truth.
+ *      assessmentParts, assessmentLaborTasks, askTranscriptSources) do NOT. They are
+ *      reachable only through the parent, whose userId filter authorises them;
+ *      denormalising it onto children would create a second source of truth.
  *   3. Global reference data has no owner: repairs, repairBenchmarks and their
  *      children, modelKnownIssues, modelRecalls, modelOwnerReports. All keyed by
  *      year/make/model, not by person.
@@ -663,12 +666,117 @@ export const assessmentLaborTasks = pgTable(
   }),
 );
 
-/* ------------------------------------------------------------------- chat */
+/* ---------------------------------------------------------------- ask ca qa */
 
-/*
- * There is no chat table, on purpose. An Ask CA conversation clears when the owner
- * leaves the screen, so it is never written down. See routes/chat.ts.
+/**
+ * Every Ask CA exchange, kept so the answers can be reviewed. One row is one question and
+ * the answer that went back to the owner.
+ *
+ * THIS IS NOT CONVERSATION HISTORY, and the distinction is the only reason it is safe to add
+ * after `chat_messages` was dropped in migration 0010. That table WAS the history the screen
+ * rendered, kept alive by a delete-on-exit that a closed tab or a crash skipped -- so every
+ * miss resurfaced as turns the owner thought they had left behind. Nothing reads these rows
+ * back: there is no GET, no mapper turns one into a `ChatMessage`, and the live turns still
+ * live in the client and still arrive with the next question (routes/chat.ts). The worst a
+ * stale row here can do is sit in a review queue.
+ *
+ * Append-only. A re-asked question is a second row, because what changed between two attempts
+ * is the interesting part. Failures are recorded too -- an answer that never came is the most
+ * important thing QA can see, and `outcome` is what makes that queryable.
+ *
+ * PERSONAL DATA. Owners describe their cars, their money and sometimes themselves. Rows
+ * cascade with the user so a deleted account takes its transcripts with it, and they want a
+ * retention window rather than living forever -- see services/askTranscripts.ts.
  */
+export const askTranscripts = pgTable(
+  'ask_transcripts',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** The car the question was grounded against. Every Ask CA request has one. */
+    vehicleId: uuid('vehicle_id')
+      .notNull()
+      .references(() => vehicles.id, { onDelete: 'cascade' }),
+    question: text('question').notNull(),
+    /**
+     * The answer as the owner saw it -- the validated reply on success, and the actual
+     * sentence shown on a failure or a refusal, not a code. Reviewing what was displayed is
+     * the point.
+     *
+     * Null only when the exchange was abandoned: the owner closed the tab before any
+     * validated answer existed, so there is nothing to have shown them.
+     */
+    answer: text('answer'),
+    /**
+     * How the exchange ended: 'answered', 'canned' (no API key -- a dev run, not a finding),
+     * 'declined' (safety filter), 'timed_out', 'failed', 'abandoned'. Text rather than an enum
+     * so a newly distinguished failure mode needs no migration, matching `model_feed_syncs.feed`.
+     */
+    outcome: text('outcome').notNull(),
+    /** The urgency badge on the answer, when it carried one. Null together. */
+    urgencyLevel: severityEnum('urgency_level'),
+    urgencyText: text('urgency_text'),
+    /**
+     * The label of the "start an assessment" button, when the answer offered one. Kept because
+     * an answer that pushes toward the paid flow is one worth reading closely.
+     */
+    ctaLabel: text('cta_label'),
+    /**
+     * How many prior messages went up with this question. A bad answer on turn one and a bad
+     * answer on turn nine are different bugs, and the count is the cheapest way to tell them
+     * apart after the fact.
+     */
+    historyMessages: integer('history_messages').notNull(),
+    /** Which model answered, e.g. 'claude-sonnet-5'. Null for a canned reply. */
+    model: text('model'),
+    /**
+     * What the call cost and how long it took. Null where no call happened -- canned replies,
+     * and failures that never reached the model. Previously console.log only, which meant a
+     * slow answer could not be found again after the fact.
+     */
+    latencyMs: integer('latency_ms'),
+    inputTokens: integer('input_tokens'),
+    outputTokens: integer('output_tokens'),
+    cacheReadTokens: integer('cache_read_tokens'),
+    cacheWriteTokens: integer('cache_write_tokens'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    // Newest first is how a review queue is read.
+    byCreated: index('ask_transcripts_created_idx').on(table.createdAt),
+    // "Every answer that failed last week", the query QA actually runs.
+    byOutcome: index('ask_transcripts_outcome_idx').on(table.outcome, table.createdAt),
+    byUser: index('ask_transcripts_user_idx').on(table.userId, table.createdAt),
+  }),
+);
+
+/**
+ * The "Based on" lines shown under one answer -- which blocks of the facts the model said it
+ * leaned on.
+ *
+ * Recorded because it is the difference between an answer that was right and one that was
+ * right by luck: a confident reply citing nothing, or citing recalls when the question was
+ * about upkeep, is visible here and nowhere else.
+ */
+export const askTranscriptSources = pgTable(
+  'ask_transcript_sources',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    transcriptId: uuid('transcript_id')
+      .notNull()
+      .references(() => askTranscripts.id, { onDelete: 'cascade' }),
+    /** A `ChatSourceKind`: 'vehicle' | 'recalls' | 'owner_reports' | 'upkeep' | 'service_history'. */
+    kind: text('kind').notNull(),
+    /** The line as displayed, e.g. "125 owner reports for this model". */
+    label: text('label').notNull(),
+    position: integer('position').notNull(),
+  },
+  (table) => ({
+    byTranscript: index('ask_transcript_sources_transcript_idx').on(table.transcriptId, table.position),
+  }),
+);
 
 /* -------------------------------------------------------------- relations */
 
@@ -676,6 +784,20 @@ export const usersRelations = relations(users, ({ many }) => ({
   vehicles: many(vehicles),
   serviceRecords: many(serviceRecords),
   assessments: many(assessments),
+  askTranscripts: many(askTranscripts),
+}));
+
+export const askTranscriptsRelations = relations(askTranscripts, ({ one, many }) => ({
+  owner: one(users, { fields: [askTranscripts.userId], references: [users.id] }),
+  vehicle: one(vehicles, { fields: [askTranscripts.vehicleId], references: [vehicles.id] }),
+  sources: many(askTranscriptSources),
+}));
+
+export const askTranscriptSourcesRelations = relations(askTranscriptSources, ({ one }) => ({
+  transcript: one(askTranscripts, {
+    fields: [askTranscriptSources.transcriptId],
+    references: [askTranscripts.id],
+  }),
 }));
 
 export const vehiclesRelations = relations(vehicles, ({ one, many }) => ({

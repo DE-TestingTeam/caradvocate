@@ -13,6 +13,12 @@ the paywall and onboarding restructuring, and two NHTSA data-quality gaps found 
 testing real signups — against the source, a live database read, and the vendors
 themselves. Sections untouched by that work still reflect the 6 August pass.
 
+**Amended later on 7 August:** Ask CA exchanges are now recorded for quality assurance
+(migration `0018`, not yet applied — see §9). This reverses a standing "nothing is stored"
+claim that ran through §4, §6 and §9, so those three sections were rewritten rather than
+annotated. A schema audit in the same pass found two dead columns and one live bug in
+`sql/rls-lockdown.sql`; both are noted where they belong below.
+
 ---
 
 ## 1. What the app is
@@ -194,17 +200,22 @@ and it is told it may not go beyond them.**
 **1. You type a question.** The browser adds your message to the screen immediately and
 sends it to the API, together with the conversation so far.
 
-**2. The conversation is held by the browser, not the server.** There is no chat table
-and no way to fetch old conversations. This is deliberate — the code comment explains that
-saving-and-deleting fails exactly when it matters (a closed tab or a crash skips the cleanup,
-and the leftover rows come back as "history"). The last 10 messages are sent with each new
-question so follow-ups make sense.
+**2. The conversation is held by the browser, not the server.** There is no way to fetch an
+old conversation — no GET, and no screen that could show one. This is deliberate: the code
+comment explains that saving-and-deleting fails exactly when it matters (a closed tab or a
+crash skips the cleanup, and the leftover rows come back as "history"). The last 10 messages
+are sent with each new question so follow-ups make sense.
 
 The browser keeps the transcript **for the life of the tab**, so going to My Car to check a
 recall and coming back does not throw the thread away. It is held in `sessionStorage`, not
 `localStorage`: it survives navigation and a refresh, and the browser drops it when the tab
 closes. Signing out clears it too, so the next person to sign in on a shared machine does not
-inherit it. Still nothing on the server, and still nothing in the account.
+inherit it.
+
+**Separately, every exchange is now written down for review** — see the new subsection at the
+end of this section. The two are not in tension, and the distinction is the whole design: what
+the *owner* sees is still only what their tab is holding, and nothing the server keeps can ever
+come back to them as history.
 
 **3. The API checks who you are** and looks up your car.
 
@@ -314,6 +325,50 @@ Three more behaviour rules worth knowing:
 - **A safety filter declines the question** → you are told to rephrase.
 - **You have no car on file** → that error is deliberately *not* caught, because it is a
   setup problem and "something went wrong reaching the assistant" would hide it.
+
+### Every exchange is recorded for quality assurance (new, 7 August)
+
+**Confirmed in the source; not yet applied to any database.** You cannot review the quality of
+an answer you never kept, so `ask_transcripts` now stores one row per exchange: the question,
+the answer as the owner saw it, and enough context to judge it.
+
+| Recorded | Why it is worth having |
+|---|---|
+| Question and answer | The review itself. On a failure, the actual sentence shown — not a code |
+| `outcome` | `answered`, `canned`, `declined`, `timed_out`, `failed`, `abandoned`. Makes "every answer that failed last week" one query |
+| Urgency band and button label | Spots an answer that badged something high-urgency when it should not have |
+| Which facts it leaned on | A child table, `ask_transcript_sources`. The difference between right and right by luck |
+| Duration and token counts | Previously `console.log` only, so a slow or expensive answer could not be found again |
+| How many prior messages | A bad answer on turn one and a bad answer on turn nine are different bugs |
+| Which model answered | So changing the model does not make old rows look like they came from the new one |
+
+Three properties are load-bearing, and each one is why this is safe where the old
+`chat_messages` table was not:
+
+- **Nothing reads it back.** No GET, no mapper turning a row into a chat message, no screen.
+  Migration `0010` dropped `chat_messages` because that table *was* the history the screen
+  rendered, kept tidy by a delete-on-exit that a closed tab or crash skipped — so every miss
+  resurfaced as turns the owner thought they had left behind. A write-only log cannot do that;
+  the worst a stale row does is sit in a review queue.
+- **Recording can never cost someone an answer.** The write happens after the reply is on the
+  wire, and `services/askTranscripts.ts` swallows its own failures and logs them. A missing
+  transcript is a gap in a review queue; a 500 on a delivered answer would be a real fault.
+- **Failures are recorded too**, including `abandoned` when the owner closes the tab mid-answer.
+  That row carries no answer — there was none — but a climbing abandoned rate is the clearest
+  signal available that answers are too slow.
+
+**What is deliberately not stored: the facts block that grounded the answer.** It runs to
+kilobytes per exchange and is mostly reference data the database still holds, so the source rows
+record *which* blocks were used instead. A reviewer who needs a block's exact wording rebuilds it
+from the transcript's `vehicle_id`. Storing the full prompt is a small change if the review turns
+out to need it, at a large storage cost.
+
+**⚠️ This is personal data, and one decision is outstanding.** Owners describe their cars, their
+money and sometimes themselves. Two things are handled: rows cascade with the user, so deleting
+an account takes its transcripts, and the tables are deliberately excluded from
+`sql/rls-policies.sql` so no browser key can ever read them. **What does not exist yet is a
+retention window** — transcripts currently live forever. 90 days is a reasonable default, but the
+number is a product decision nobody has made. Decide it before the log has anything real in it.
 
 ### Cost and speed
 
@@ -458,9 +513,12 @@ The shape of it:
   `/api/auth/config` are public.
 - **Shared validation.** The rules for what a valid request looks like live in
   `packages/shared` and are used by both sides, so they cannot drift apart.
-- **20 database tables**, in three groups: things you own (car, service records,
+- **21 database tables**, in four groups: things you own (car, service records,
   assessments), things about a *model* that everyone with that car shares (recalls,
-  complaints, pricing), and the reference catalogue of repairs.
+  complaints, pricing), the reference catalogue of repairs, and — new on 7 August — the Ask
+  CA review log, which belongs to nobody's screen. (The count was wrong before this pass, not
+  just out of date: it read 20 when `user_features` had already gone in `0017`, leaving 19.
+  Migration `0018` adds two.)
 - **Assessments are snapshots.** When you run a repair check, the prices are copied into
   the assessment. Refreshing supplier pricing later never changes what you were shown.
 
@@ -471,8 +529,9 @@ The shape of it:
 - `/api/vehicle` — your car, VIN decode, maintenance jobs, recalls and your answers to
   them, photo, known issues
 - `/api/service-records` — log, edit, delete service history
-- `/api/chat` — Ask CA (POST only; nothing is stored, so there is no GET). The one endpoint
-  that streams its reply rather than returning it in one piece
+- `/api/chat` — Ask CA (POST only. There is still no GET: the exchange is written to the
+  review log, and nothing can read it back out). The one endpoint that streams its reply
+  rather than returning it in one piece
 - `/api/assessments` — the Repair Cost Checker (**paywalled**)
 - `/api/repairs` — which repairs we can price for your car
 - `/api/paywall` — the price on screen, and recording an unlock
@@ -541,7 +600,11 @@ calls.
 
 `npm run test:chat` is the test plan, executable: 46 assertions across validation, access
 control, throttling, the event-stream wire format, reply integrity, the facts block, transcript
-storage and the streaming decoder. It exits non-zero on failure. Run it twice — plain, and with
+storage and the streaming decoder. It exits non-zero on failure. Its "transcript storage"
+section is the **browser's** `sessionStorage` thread, not the new server-side review log — the
+word now means two different things, and nothing yet covers the log. **Needs checking:** the
+46 assertions still pass unchanged (nothing in them asserted that the server stores nothing),
+but that was read from the source rather than run, since the suite costs model calls. Run it twice — plain, and with
 `ANTHROPIC_API_KEY=` — because the canned-reply path is a separate branch and has caught real
 bugs the configured path did not. Every case it covers, and every case it deliberately leaves to
 a browser, is listed in its header and printed at the end of each run.
@@ -556,7 +619,18 @@ and thinking settings.
 **The 6 August backlog has landed.** The `mycar` branch (valuation, paywall, onboarding
 rework) merged into `develop` on 7 August. What is uncommitted now is small and specific:
 this pass's NHTSA edge-case fixes (`marketCheck.ts`'s third outcome, the age caveat and
-VIN-lookup fallback links in `RecallsList`/`KnownIssuesList`) and this file.
+VIN-lookup fallback links in `RecallsList`/`KnownIssuesList`), the Ask CA review log
+(`schema.ts`, `services/askTranscripts.ts`, `routes/chat.ts`, migration `0018`, and the
+`rls-lockdown.sql` fix), and this file. `npm run typecheck` passes across every workspace.
+
+**⚠️ Migration `0018` (the Ask CA review log) is written but NOT applied anywhere.** Nothing
+is being recorded until `npm run db:migrate --workspace @caradvocate/api` runs against the
+shared database. Until then the code writes to two tables that do not exist — which fails
+safely, because `services/askTranscripts.ts` catches its own errors, so every answer still
+works and every transcript is silently dropped with a line in the API log. Worth knowing that
+the failure mode is quiet: a review queue that stays empty looks the same as nobody asking
+questions. See the note below about a separate migration line running against this same
+database — that is worth resolving before applying this one.
 
 **Migrations `0016` and `0017` are applied on the shared database — checked directly on 7
 August**, not inferred: `pricing_model` exists on both `users` and `paywall_intents`,
@@ -577,7 +651,16 @@ real-looking label. **Needs checking:** whether it has been run since `0013` lan
 
 **⚠️ Row-level security is off, and this is now confirmed rather than suspected.** Checked
 directly on 6 August: **0 of 26 tables** in the shared database have RLS enabled, and no
-policies exist. `apps/api/sql/rls-lockdown.sql` has never been run there.
+policies exist. `apps/api/sql/rls-lockdown.sql` has never been run there. (That count will be
+28 once `0018` is applied; the migration switches RLS on for its own two tables, since Postgres
+has no default for it.)
+
+**And the lockdown script would have failed if anyone had tried.** Found in this pass, now
+fixed: it still listed `user_features`, which migration `0017` dropped. `alter table` on a
+missing table is an error rather than a no-op, and the script runs inside one transaction, so
+that single line aborted the entire lockdown — every table left open. If anyone believes they
+have already run this, they have not; check for RLS directly rather than trusting the memory of
+a run.
 
 This is not a theoretical gap. The Supabase anon key is public by design — it ships in the
 browser bundle — and with RLS off it is enough to read every table directly, bypassing the API
@@ -605,8 +688,18 @@ gap 2 — though the trade-in range within it still is.)
 range and nothing else — no regional labour rates, no history for the specific shop. It
 also only flags quotes that are *too high*; a suspiciously low quote is reported as fair.
 
-**Quote upload stores the filename only.** There is no PDF or photo parsing — you type
-the total yourself.
+**Quote upload stores the filename only — and nothing ever reads it back.** There is no PDF or
+photo parsing; you type the total yourself. Found in this pass: `assessments.quote_file_name` is
+written when an assessment is created and then never read anywhere. It is not in the shared
+domain type, so it never even reaches the browser. It is a dead column rather than a
+half-finished feature, and can be dropped whenever someone is writing a migration anyway.
+
+**`labor_rate_per_hour` is dead in the database too, for a different reason.** Every real code
+path writes `null` on purpose (there is no vendor rate to write — §3, gap 5); only the demo seed
+puts a number in. The consequence is worth stating plainly because it is invisible otherwise:
+the "Labor Rate … · Est. Time …" line in `LaborBaselineCard` is gated on that value, so **it has
+never rendered for a real car and never will** until either a rate source appears or the card is
+changed to show hours alone.
 
 ### Two NHTSA data-quality gaps, found testing real signups (7 August)
 
@@ -676,10 +769,15 @@ feature list in §3; they are noted because the README and the original spec men
 - **An answer is abandoned after 45 seconds.** Measured answers land around 5 seconds and the
   slowest observed was 17, so the ceiling only fires on a genuine hang; without it the SDK would
   wait ten minutes and retry twice.
-- **Ask CA conversations are never stored**, which is right for privacy but means there is
-  no record of what people actually ask. The browser now keeps a transcript for the life of the
-  tab so navigation does not lose it, but nothing reaches the server or the account, so this is
-  still true of the business.
+- **Ask CA exchanges are now recorded, and the risk has inverted.** This used to read "never
+  stored, so there is no record of what people actually ask" — that gap is closed (§4), and the
+  new exposure is the opposite one: the database will hold what owners typed about their cars,
+  their money and sometimes themselves, with no retention window and no expiry. It is
+  API-only and excluded from the browser-readable policies, but it is the most sensitive table
+  in the schema and it currently keeps everything forever. Set a retention period.
+- **The review log makes the RLS gap above worse, not merely unchanged.** While the second
+  door is open, "the anon key can read every table" now includes people's chat transcripts.
+  Applying `rls-lockdown.sql` was already the top item; this raises what it costs to skip.
 
 ### One thing that has never been verified against the real thing
 
