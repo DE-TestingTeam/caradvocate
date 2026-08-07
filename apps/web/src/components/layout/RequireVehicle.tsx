@@ -1,9 +1,8 @@
 import { Navigate, Outlet, useOutletContext } from 'react-router-dom';
 import type { Vehicle } from '@caradvocate/shared';
-import { CollapsibleSection } from '@/components/my-car/CollapsibleSection';
+import { ColumnLabel, Section } from '@/components/my-car/Section';
 import { ListSkeleton } from '@/components/my-car/ListSkeleton';
 import { Card, CardContent } from '@/components/ui/card';
-import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ErrorState } from '@/components/ErrorState';
 import { getVehicle } from '@/lib/api';
@@ -42,39 +41,45 @@ export function useVehicle(): Vehicle {
  */
 function MyCarSkeleton() {
   return (
-    <div className="space-y-8">
-      <section className="space-y-4 lg:flex lg:items-center lg:gap-6 lg:space-y-0">
-        <div className="lg:w-1/2 lg:shrink-0">
-          <Skeleton className="aspect-[3/2] w-full rounded-lg" />
-        </div>
-        <div className="space-y-2 lg:min-w-0 lg:flex-1">
-          <Skeleton className="h-8 w-3/4" />
-          <Skeleton className="h-4 w-1/2" />
-          <Skeleton className="mt-3 h-9 w-40" />
+    <div className="space-y-10">
+      <section className="grid gap-6 lg:grid-cols-2 lg:items-start">
+        <Skeleton className="aspect-[3/2] w-full rounded-lg" />
+
+        <div className="min-w-0 space-y-4">
+          <div className="space-y-2">
+            <Skeleton className="h-9 w-3/4" />
+            <Skeleton className="h-4 w-1/2" />
+          </div>
+
+          {/* The value card now sits in the hero rather than below it, so the skeleton has to
+              as well -- this block is only worth having if it mirrors the real page exactly. */}
+          <Card className="bg-muted/40">
+            <CardContent className="space-y-2 p-4 sm:p-6">
+              <Skeleton className="h-10 w-36" />
+              <Skeleton className="h-3 w-28" />
+            </CardContent>
+          </Card>
         </div>
       </section>
 
-      <Separator />
-
-      <Card className="bg-muted/40">
-        <CardContent className="space-y-2 p-4 sm:p-6">
-          <Skeleton className="h-10 w-36" />
-          <Skeleton className="h-3 w-28" />
-        </CardContent>
-      </Card>
-
-      <CollapsibleSection title="Safety Recalls">
-        <ListSkeleton rows={2} />
-      </CollapsibleSection>
-      <CollapsibleSection title="Scheduled Maintenance">
-        <ListSkeleton rows={4} />
-      </CollapsibleSection>
-      <CollapsibleSection title="Known Issues for Your Model">
+      <Section title="Recalls & maintenance">
+        <div className="grid gap-6 md:grid-cols-2">
+          <div>
+            <ColumnLabel>Open recalls</ColumnLabel>
+            <ListSkeleton rows={2} />
+          </div>
+          <div>
+            <ColumnLabel>Scheduled maintenance</ColumnLabel>
+            <ListSkeleton rows={4} />
+          </div>
+        </div>
+      </Section>
+      <Section title="Known issues for your model">
         <ListSkeleton rows={3} />
-      </CollapsibleSection>
-      <CollapsibleSection title="Service & Repair History">
+      </Section>
+      <Section title="Service history">
         <ListSkeleton rows={5} />
-      </CollapsibleSection>
+      </Section>
     </div>
   );
 }

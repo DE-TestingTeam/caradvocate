@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { ErrorState } from '@/components/ErrorState';
-import { CollapsibleSection } from '@/components/my-car/CollapsibleSection';
+import { ColumnLabel, Section } from '@/components/my-car/Section';
 import { KnownIssuesList } from '@/components/my-car/KnownIssuesList';
 import { ListSkeleton } from '@/components/my-car/ListSkeleton';
 import { LogServiceDialog } from '@/components/my-car/LogServiceDialog';
@@ -11,7 +11,6 @@ import { ServiceHistory } from '@/components/my-car/ServiceHistory';
 import { ValueCard } from '@/components/my-car/ValueCard';
 import { VehicleImage } from '@/components/my-car/VehicleImage';
 import { Button } from '@/components/ui/button';
-import { Separator } from '@/components/ui/separator';
 import { useVehicle } from '@/components/layout/RequireVehicle';
 import { useToast } from '@/components/ui/toast';
 import {
@@ -82,66 +81,79 @@ export function MyCarPage() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-10">
       {/*
-        Stacked on phones and tablets, side by side from `lg`. The photo is 3:2 and the details
-        beside it are three short lines, so they are centred against it rather than pinned to
-        the top -- top-aligned left a column of empty space under the button that read as
-        something failing to load.
+        The masthead: photo on the left, identity and worth on the right. Stacked below `lg`.
 
-        `lg:min-w-0` on the text column: a flex child defaults to min-width:auto, which refuses
-        to shrink below its longest word, and a long make and model would push the photo narrow
-        rather than wrapping.
+        `lg:items-start` rather than centred. The right column is now the taller of the two --
+        name, plate line and the whole value card -- so centring would float the photo in the
+        middle of it with dead space above and below.
+
+        `min-w-0` on the right column: a grid child defaults to a floor of its content's width,
+        and the value card's big currency figure would refuse to shrink, pushing the photo
+        narrow instead of wrapping.
       */}
-      <section className="space-y-4 lg:flex lg:items-center lg:gap-6 lg:space-y-0">
-        <div className="lg:w-1/2 lg:shrink-0">
-          <VehicleImage vehicle={vehicle} />
-        </div>
+      <section className="grid gap-6 lg:grid-cols-2 lg:items-start">
+        <VehicleImage vehicle={vehicle} />
 
-        <div className="lg:min-w-0 lg:flex-1">
-          {/* This is the screen's one big number-equivalent -- the thing you came to look at --
-              so it takes `text-h1` rather than a section heading size. */}
-          <h1 className="text-h1 font-bold">{vehicleName(vehicle)}</h1>
-          <p className="mt-2 text-body text-muted-foreground">
-            {formatMileage(vehicle.mileage)}
-            {/* No VIN is a normal state for a car added without one. */}
-            {vehicle.vin && ` · VIN: ${maskVin(vehicle.vin)}`}
-          </p>
+        <div className="min-w-0 space-y-4">
+          <div>
+            {/* The one h1 on the page. Everything below is a signpost within it. */}
+            <h1 className="text-h1 font-bold">{vehicleName(vehicle)}</h1>
+            <p className="mt-2 text-body text-muted-foreground">
+              {formatMileage(vehicle.mileage)}
+              {/* No VIN is a normal state for a car added without one. */}
+              {vehicle.vin && ` · VIN: ${maskVin(vehicle.vin)}`}
+            </p>
+          </div>
+
+          <ValueCard vehicle={vehicle} />
         </div>
       </section>
 
-      <Separator />
+      {/*
+        Recalls and upkeep share a section but not a list. Both answer "what needs doing?", so
+        reading them together is the point -- but recalls come from NHTSA and are the
+        manufacturer's admission of a defect, while upkeep is the owner's own schedule. Merging
+        the rows would put a safety recall and an oil change on the same footing.
+      */}
+      <Section title="Recalls & maintenance">
+        <div className="grid gap-6 md:grid-cols-2">
+          <div>
+            <ColumnLabel>Open recalls</ColumnLabel>
+            {recalls.error ? (
+              <ErrorState message={recalls.error.message} />
+            ) : recalls.data ? (
+              <RecallsList
+                report={recalls.data}
+                vin={vehicle.vin}
+                year={vehicle.year}
+                onStatusChange={handleRecallStatus}
+              />
+            ) : (
+              <ListSkeleton rows={2} />
+            )}
+          </div>
 
-      <ValueCard vehicle={vehicle} />
+          <div>
+            <ColumnLabel>Scheduled maintenance</ColumnLabel>
+            {maintenance.error ? (
+              <ErrorState message={maintenance.error.message} />
+            ) : maintenance.data ? (
+              <>
+                <MaintenanceList items={maintenance.data} onEdit={setEditingJob} />
+                <Button variant="link" size="inline" className="mt-3" onClick={() => setAddingJob(true)}>
+                  Add an upkeep job
+                </Button>
+              </>
+            ) : (
+              <ListSkeleton rows={4} />
+            )}
+          </div>
+        </div>
+      </Section>
 
-      {/* Recalls come from NHTSA and stand on their own; maintenance is still
-          unsourced, so they are separate sections rather than one merged list. */}
-      <CollapsibleSection title="Safety recalls">
-        {recalls.error ? (
-          <ErrorState message={recalls.error.message} />
-        ) : recalls.data ? (
-          <RecallsList report={recalls.data} vin={vehicle.vin} year={vehicle.year} onStatusChange={handleRecallStatus} />
-        ) : (
-          <ListSkeleton rows={2} />
-        )}
-      </CollapsibleSection>
-
-      <CollapsibleSection title="Scheduled maintenance">
-        {maintenance.error ? (
-          <ErrorState message={maintenance.error.message} />
-        ) : maintenance.data ? (
-          <>
-            <MaintenanceList items={maintenance.data} onEdit={setEditingJob} />
-            <Button variant="link" size="inline" className="mt-3" onClick={() => setAddingJob(true)}>
-              Add an upkeep job
-            </Button>
-          </>
-        ) : (
-          <ListSkeleton rows={4} />
-        )}
-      </CollapsibleSection>
-
-      <CollapsibleSection title="Known issues for your model">
+      <Section title="Known issues for your model">
         {issues.error ? (
           <ErrorState message={issues.error.message} />
         ) : issues.data ? (
@@ -149,9 +161,9 @@ export function MyCarPage() {
         ) : (
           <ListSkeleton rows={3} />
         )}
-      </CollapsibleSection>
+      </Section>
 
-      <CollapsibleSection title="Service history">
+      <Section title="Service history">
         {history.error ? (
           <ErrorState message={history.error.message} />
         ) : history.data ? (
@@ -159,11 +171,15 @@ export function MyCarPage() {
         ) : (
           <ListSkeleton rows={5} />
         )}
-      </CollapsibleSection>
+
+        {/* Uncontrolled, so it renders its own trigger -- the "Log a service" button that
+            closes out the history it appends to. */}
+        <div className="pt-2">
+          <LogServiceDialog jobs={maintenance.data ?? []} />
+        </div>
+      </Section>
 
       <ProvenanceNote />
-
-      <LogServiceDialog jobs={maintenance.data ?? []} />
 
       {/* Edit dialogs live here rather than inside each row, so one mounted dialog
           serves the whole list instead of one per item. */}
