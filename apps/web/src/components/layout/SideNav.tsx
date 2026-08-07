@@ -35,7 +35,11 @@ import { cn } from '@/lib/utils';
 const NAV_ITEMS = [
   { to: '/my-car', label: 'My Car', icon: Car },
   { to: '/ask', label: 'Ask CA', icon: MessageSquare },
-  { to: '/assessments', label: 'Repair Assessment', icon: ClipboardList },
+  /**
+   * "Repairs", not "Repair Assessment". It is what someone would say out loud, and the screen
+   * can explain that it is an assessment once they are on it. The route is unchanged.
+   */
+  { to: '/assessments', label: 'Repairs', icon: ClipboardList },
   { to: '/account', label: 'Account', icon: UserRound },
 ] as const;
 
@@ -44,12 +48,18 @@ const RAIL_ABOVE = '(min-width: 1024px)';
 
 const PREFERENCE_KEY = 'caradvocate.nav.expanded';
 
-/** Shared by every row in both shapes, so the rail and the sheet cannot drift apart. */
+/**
+ * Shared by every row in both shapes, so the rail and the sheet cannot drift apart.
+ *
+ * Active rows take the brand green. With primary actions now in near-black, "where you are" is
+ * one of the few jobs the house colour still holds, and it should mean the same thing in the
+ * rail and in the sheet.
+ */
 function rowClass(showLabel: boolean, active = false) {
   return cn(
-    'flex w-full items-center gap-3 rounded-md py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground',
+    'flex w-full items-center gap-3 rounded-lg py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground',
     showLabel ? 'px-3' : 'justify-center px-0',
-    active && 'bg-accent text-foreground',
+    active && 'bg-brand/10 text-brand hover:bg-brand/10 hover:text-brand',
   );
 }
 
@@ -79,7 +89,9 @@ export function SideNav() {
   if (!showRail) {
     return (
       <>
-        <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center justify-between gap-2 border-b bg-background px-2">
+        {/* Translucent with a blur, so content scrolling underneath stays faintly visible
+            rather than disappearing behind a hard edge. */}
+        <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center justify-between gap-2 border-b bg-background/90 px-2 backdrop-blur">
           {/* Brand first in the markup as well as on screen, so the tab order runs left to
               right rather than jumping to the control on the far side. */}
           <Link to="/my-car" className="flex min-w-0 items-center gap-2 pl-1" title="CarAdvocate">
@@ -94,7 +106,7 @@ export function SideNav() {
             aria-expanded={menuOpen}
             // 40px square: the smallest comfortable touch target, and the one control on this
             // bar that has to be hittable with a thumb.
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-pill text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
           >
             <Menu className="h-5 w-5" aria-hidden="true" />
           </button>

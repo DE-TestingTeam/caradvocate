@@ -23,8 +23,16 @@ export function AppShell({ chrome = true }: { chrome?: boolean }) {
     <div className="flex h-screen flex-col lg:flex-row">
       {chrome && <SideNav />}
       <main className="min-h-0 flex-1 overflow-y-auto">
-        {/* Content keeps its own measure, centred in whatever the rail leaves behind. */}
-        <div className="mx-auto w-full max-w-3xl px-4 pb-16 pt-6">
+        {/*
+          Content keeps its own measure, centred in whatever the rail leaves behind.
+
+          `max-w-5xl` (1024px), up from `max-w-3xl` (768px): 768px is a comfortable measure for
+          a single column of prose, but every screen here is really a set of panels, and at the
+          old width they could only ever stack. The wider column lets them sit two-up from `md`
+          without the text inside any one of them running long, because each panel now sets its
+          own measure rather than inheriting the page's.
+        */}
+        <div className="mx-auto w-full max-w-5xl px-4 pb-16 pt-6 lg:pt-10">
           <Outlet />
         </div>
       </main>

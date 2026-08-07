@@ -2,8 +2,16 @@ import * as React from 'react';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '@/lib/utils';
 
+/**
+ * `tracking-widest` rather than `tracking-wide`: uppercase at 12px needs the letters pushed well
+ * apart or it reads as one block, and `widest` is already the convention every other uppercase
+ * eyebrow in the app uses. Matching it is worth more than inventing a value here.
+ *
+ * Badges keep a rounded rectangle rather than becoming pills. Pills mean "pressable" in this
+ * design -- see the note on Button -- and a badge is a label, not a control.
+ */
 const badgeVariants = cva(
-  'inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wide transition-colors focus:outline-none',
+  'inline-flex items-center rounded-sm border px-2.5 py-0.5 text-label font-semibold uppercase tracking-widest transition-colors focus:outline-none',
   {
     variants: {
       variant: {

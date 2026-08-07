@@ -6,7 +6,6 @@ import { RepairCompletedDialog } from '@/components/assessments/RepairCompletedD
 import { ErrorState } from '@/components/ErrorState';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { listAssessments } from '@/lib/api';
 import { useApi } from '@/lib/useApi';
@@ -19,18 +18,23 @@ export function AssessmentsPage() {
   return (
     <div>
       <PageHeader
-        title="Repair Assessment"
-        subtitle="Check if a repair is necessary and get benchmark pricing"
+        title="Repairs"
+        subtitle="Find out whether a repair is actually necessary, and what a fair price looks like."
       />
 
-      <Button asChild size="lg" className="w-full">
+      {/*
+        `brand` and `size="lg"`: this is the one action the page exists for, and the house green
+        is reserved for exactly that -- see the note on the Button variants. Full width below
+        `sm` so it is a thumb-sized target on a phone, then only as wide as it needs to be.
+      */}
+      <Button asChild variant="brand" size="lg" className="w-full sm:w-auto">
         <Link to="/assessments/new">
           <Plus className="h-4 w-4" />
-          New assessment
+          Check a repair
         </Link>
       </Button>
 
-      <h2 className="mb-3 mt-8 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+      <h2 className="mb-3 mt-10 text-label font-semibold uppercase tracking-widest text-muted-foreground">
         Previous assessments
       </h2>
 
@@ -44,18 +48,24 @@ export function AssessmentsPage() {
         </div>
       )}
 
+      {/*
+        The empty state sits on linen rather than on a white card. An empty card on an off-white
+        page looks like content that failed to arrive; a tinted panel reads as a deliberate
+        placeholder, which is what this is.
+      */}
       {data && data.length === 0 && (
-        <Card className="p-6 text-center">
-          <p className="text-sm text-muted-foreground">
-            No assessments yet. Start one to see whether a repair is necessary and what a fair price looks like.
+        <div className="rounded-lg bg-muted p-8 text-center">
+          <p className="mx-auto max-w-sm text-body text-muted-foreground">
+            Nothing here yet — which is the good outcome. Next time a shop quotes you, check it
+            here first.
           </p>
-          <Button asChild className="mt-4">
+          <Button asChild variant="brand" className="mt-5">
             <Link to="/assessments/new">
               <Plus className="h-4 w-4" />
-              New assessment
+              Check a repair
             </Link>
           </Button>
-        </Card>
+        </div>
       )}
 
       {data && data.length > 0 && (

@@ -22,56 +22,104 @@
   :root {
     /* ---------------------------------------------------------------- brand */
 
-    /** Consumer Reports green, #00803E. 5.05:1 against white, so white text on it is legible. */
+    /**
+     * Consumer Reports green, #00803E. 5.05:1 against white, so white text on it is legible.
+     *
+     * It no longer carries primary actions. Green now marks IDENTITY -- the logo, the focus
+     * ring, the active nav row -- and near-black carries the actions instead. The reason is
+     * that a saturated house colour on every button is the thing that stops photography and
+     * status colour from meaning anything: when the chrome is already loud, a red recall badge
+     * has nothing to be louder than. Putting the chrome in greyscale is what buys those
+     * signals their contrast back.
+     *
+     * To undo: point `--primary` back at `var(--brand)`. Nothing else depends on this choice.
+     */
     --brand: 149 100% 25.1%;
 
     /**
-     * The greyscale, lightest to darkest. Named by role rather than by number, because
-     * `--grey-300` tells you nothing about where it belongs and this ramp has only four steps.
+     * The greyscale, lightest to darkest, and WARM -- every step sits between hue 15 and 30
+     * rather than on the neutral axis. That warmth is the whole trick. A neutral grey surface
+     * reads as a screen; a warm one reads as paper, and the app is asking to be trusted about
+     * a car, which is a paper-and-clipboard kind of trust.
+     *
+     * Named by role rather than by number, because `--grey-300` tells you nothing about where
+     * it belongs.
      */
-    --grey-surface: 0 3.4% 94.3%; /* #F1F0F0 -- fills: cards, inactive rows, subtle panels */
-    --grey-line: 240 0.7% 72.7%; /* #B9B9BA -- borders and dividers. 1.96:1: NOT for text */
-    --grey-text: 0 0% 31.4%; /*    #505050 -- secondary text. 8.06:1 on white, 7.09:1 on surface */
-    --grey-ink: 0 0% 0%; /*        black   -- primary text */
+    --grey-surface: 0 3.4% 94.3%; /*   #F1F0F0 -- fills: inactive rows, subtle panels */
+    --grey-line: 20 5.3% 88.8%; /*     #E4E2E1 -- borders and dividers. 1.26:1: NOT for text */
+    --grey-muted: 22.5 4.8% 67.1%; /*  #AFAAA7 -- placeholders and disabled. NOT for body text */
+    --grey-text: 30 2% 40%; /*         #686664 -- secondary text. 5.57:1 on page, 4.84:1 on linen */
+    --grey-ink: 0 1.8% 10.8%; /*       #1C1B1B -- primary text and primary buttons */
+
+    /**
+     * The paper tones. Sections alternate between the page background and linen, and that
+     * change of ground IS the section divider -- which is why there are fewer rules and
+     * separators in this design than the last one.
+     */
+    --linen: 42.9 17.1% 92%; /*        #EEECE7 -- panel fills, quiet callouts */
+    --linen-light: 36 33.3% 97.1%; /*  #FAF8F5 -- alternating section bands */
+    --off-white: 0 0% 98.8%; /*        #FCFCFC -- the page. Deliberately not pure white, so a
+                                        white card can sit on it and be seen without a shadow */
 
     /* ------------------------------------------------------------- semantic */
 
-    --background: 0 0% 100%;
+    --background: var(--off-white);
     --foreground: var(--grey-ink);
 
+    /** Cards are pure white ON the off-white page. That 1.2% step plus a 1px line is the whole
+        separation -- no shadow needed, which is why `Card` no longer carries one. */
     --card: 0 0% 100%;
     --card-foreground: var(--grey-ink);
     --popover: 0 0% 100%;
     --popover-foreground: var(--grey-ink);
 
-    /** The brand green carries primary actions. White on it clears AA for body text. */
-    --primary: var(--brand);
+    /** Near-black carries primary actions. See the note on `--brand` above. */
+    --primary: var(--grey-ink);
     --primary-foreground: 0 0% 100%;
 
     --secondary: var(--grey-surface);
     --secondary-foreground: var(--grey-ink);
-    --muted: var(--grey-surface);
+    /** Muted panels take the warm tone rather than the neutral one -- this is where the paper
+        feel actually shows up, since it is the fill behind most quiet content. */
+    --muted: var(--linen);
     --muted-foreground: var(--grey-text);
     --accent: var(--grey-surface);
     --accent-foreground: var(--grey-ink);
 
     --border: var(--grey-line);
     --input: var(--grey-line);
-    /** Focus rings follow the brand, so keyboard focus is unmistakably ours and not a default. */
+    /** Focus rings follow the brand, so keyboard focus is unmistakably ours and not a default.
+        With primary now near-black, this is where the green earns its keep. */
     --ring: var(--brand);
 
     /**
-     * Not part of the brand palette, and left alone deliberately. A verdict the owner needs to
+     * Not part of the greyscale, and left saturated deliberately. A verdict the owner needs to
      * act on should not be a shade of the house colour -- red has to read as red and amber as
-     * amber, whatever the branding does around them.
+     * amber, whatever the branding does around them. These are warmed to sit with the greys
+     * (the red is a burnt orange-red rather than a pillar-box one) but they are still the only
+     * saturated things on the screen, which is the point.
      */
-    --destructive: 0 52% 44%;
+    --destructive: 17.7 80.2% 35.7%; /* #A43D12 -- 6.45:1 on white */
     --destructive-foreground: 0 0% 98%;
-    --warning: 38 92% 50%;
-    --warning-strong: 32 75% 40%;
-    --warning-foreground: 0 0% 9%;
+    --success: 96.7 31.6% 30.4%; /*     #486635 -- 6.51:1 on white */
+    --success-foreground: 0 0% 100%;
+    --warning: 43.2 72.8% 59.6%; /*     #E3B94D -- a fill, not a text colour */
+    --warning-strong: 32 75% 40%; /*    legible as an icon or text colour, where DEFAULT is not */
+    --warning-foreground: 0 1.8% 10.8%;
 
-    --radius: 0.5rem;
+    /**
+     * 0.75rem, up from 0.5rem. Buttons opt out of this entirely and go fully round -- see
+     * `rounded-pill` in the Tailwind config.
+     */
+    --radius: 0.75rem;
+
+    /**
+     * One duration and one curve for the whole app. The curve is front-loaded: it covers most
+     * of the distance almost immediately, then settles. That is what makes an interface feel
+     * instant without feeling abrupt, and it is worth more than any single colour choice here.
+     */
+    --ease: cubic-bezier(0.241, 0.969, 0.635, 0.997);
+    --duration: 350ms;
   }
 
   * {

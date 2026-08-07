@@ -28,6 +28,34 @@ import { formatMileage, maskVin, vehicleName } from '@/lib/format';
 import { invalidateAll, useApi } from '@/lib/useApi';
 import type { MaintenanceItem, ServiceRecord } from '@caradvocate/shared';
 
+/**
+ * Where the numbers on this page came from, and what they are not.
+ *
+ * A financial product would carry a regulator and a coverage limit here. Nothing like that
+ * applies to a car app, and borrowing the language would be worse than saying nothing -- but the
+ * principle underneath it does transfer: name your sources, and state the limits of what you are
+ * telling someone, in the place they are reading it rather than in a terms page.
+ *
+ * Quiet on purpose -- `text-label` in secondary grey, below the fold of everything actionable.
+ * Quiet is not the same as hidden: it is on the page, in the owner's reading order, and it says
+ * the unflattering part out loud.
+ */
+function ProvenanceNote() {
+  return (
+    <footer className="border-t pt-6 text-label leading-relaxed text-muted-foreground">
+      <p>
+        Recall data comes from the US National Highway Traffic Safety Administration. Known issues
+        are drawn from owner complaints filed with NHTSA for this year, make and model. Maintenance
+        intervals are the ones you entered, measured against your own service history.
+      </p>
+      <p className="mt-2">
+        This is information to argue with a shop using, not a diagnosis. It is not a substitute for
+        an inspection by a qualified mechanic.
+      </p>
+    </footer>
+  );
+}
+
 export function MyCarPage() {
   // Resolved by RequireVehicle, so there is no loading or error state to handle.
   const vehicle = useVehicle();
@@ -73,8 +101,10 @@ export function MyCarPage() {
         </div>
 
         <div className="lg:min-w-0 lg:flex-1">
-          <h1 className="text-3xl font-bold tracking-tight">{vehicleName(vehicle)}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
+          {/* This is the screen's one big number-equivalent -- the thing you came to look at --
+              so it takes `text-h1` rather than a section heading size. */}
+          <h1 className="text-h1 font-bold">{vehicleName(vehicle)}</h1>
+          <p className="mt-2 text-body text-muted-foreground">
             {formatMileage(vehicle.mileage)}
             {/* No VIN is a normal state for a car added without one. */}
             {vehicle.vin && ` · VIN: ${maskVin(vehicle.vin)}`}
@@ -101,7 +131,7 @@ export function MyCarPage() {
 
       {/* Recalls come from NHTSA and stand on their own; maintenance is still
           unsourced, so they are separate sections rather than one merged list. */}
-      <CollapsibleSection title="Safety Recalls">
+      <CollapsibleSection title="Safety recalls">
         {recalls.error ? (
           <ErrorState message={recalls.error.message} />
         ) : recalls.data ? (
@@ -111,7 +141,7 @@ export function MyCarPage() {
         )}
       </CollapsibleSection>
 
-      <CollapsibleSection title="Scheduled Maintenance">
+      <CollapsibleSection title="Scheduled maintenance">
         {maintenance.error ? (
           <ErrorState message={maintenance.error.message} />
         ) : maintenance.data ? (
@@ -130,7 +160,7 @@ export function MyCarPage() {
         )}
       </CollapsibleSection>
 
-      <CollapsibleSection title="Known Issues for Your Model">
+      <CollapsibleSection title="Known issues for your model">
         {issues.error ? (
           <ErrorState message={issues.error.message} />
         ) : issues.data ? (
@@ -140,7 +170,7 @@ export function MyCarPage() {
         )}
       </CollapsibleSection>
 
-      <CollapsibleSection title="Service & Repair History">
+      <CollapsibleSection title="Service history">
         {history.error ? (
           <ErrorState message={history.error.message} />
         ) : history.data ? (
@@ -149,6 +179,8 @@ export function MyCarPage() {
           <ListSkeleton rows={5} />
         )}
       </CollapsibleSection>
+
+      <ProvenanceNote />
 
       <LogServiceDialog jobs={maintenance.data ?? []} />
 
