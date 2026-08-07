@@ -4,29 +4,17 @@
  * session but no profile, and no webhook to go down.
  *
  * Three cases, in order: already linked, return it; same email but unlinked, adopt it (so a
- * seeded or pre-auth profile keeps its data); nothing, create it and its default features.
+ * seeded or pre-auth profile keeps its data); nothing, create it.
  */
 import { eq } from 'drizzle-orm';
 import type { Database } from '../db/index.js';
-import { userFeatures, users } from '../db/schema.js';
-import { PAID_FEATURE } from '../services/paywall.js';
+import { users } from '../db/schema.js';
 import type { VerifiedIdentity } from './verifyToken.js';
 
 export interface ProfileRef {
   id: string;
   email: string;
 }
-
-/**
- * The subscription rows the Account screen renders. The Repair Cost Checker starts `Locked`
- * -- a new account is behind the paywall until they tap through, and services/paywall.ts
- * flips this row when they do.
- */
-const DEFAULT_FEATURES = [
-  { name: 'My Car', status: 'Included' as const, position: 0 },
-  { name: 'Ask CA', status: 'Included' as const, position: 1 },
-  { name: PAID_FEATURE, status: 'Locked' as const, position: 2 },
-];
 
 export async function provisionUser(db: Database, identity: VerifiedIdentity): Promise<ProfileRef> {
   const linked = await db
@@ -51,30 +39,22 @@ export async function provisionUser(db: Database, identity: VerifiedIdentity): P
     return byEmail[0];
   }
 
-  // Profile and features written together, so Account can never render a user with no
-  // subscription rows.
-  return db.transaction(async (tx) => {
-    const [created] = await tx
-      .insert(users)
-      .values({
-        supabaseUserId: identity.supabaseUserId,
-        email: identity.email,
-        // Supabase does not collect a name at signup; the user sets it on Account.
-        name: defaultNameFor(identity.email),
-        phone: '',
-        memberSince: new Date().toISOString().slice(0, 10),
-        // Every real signup starts behind the paywall -- this is the cohort the prototype
-        // measures, so it must not be pre-unlocked.
-        plan: 'free',
-      })
-      .returning({ id: users.id, email: users.email });
+  const [created] = await db
+    .insert(users)
+    .values({
+      supabaseUserId: identity.supabaseUserId,
+      email: identity.email,
+      // Supabase does not collect a name at signup; the user sets it on Account.
+      name: defaultNameFor(identity.email),
+      phone: '',
+      memberSince: new Date().toISOString().slice(0, 10),
+      // Every real signup starts behind the paywall -- this is the cohort the prototype
+      // measures, so it must not be pre-unlocked.
+      plan: 'free',
+    })
+    .returning({ id: users.id, email: users.email });
 
-    await tx.insert(userFeatures).values(
-      DEFAULT_FEATURES.map((feature) => ({ ...feature, userId: created.id })),
-    );
-
-    return created;
-  });
+  return created;
 }
 
 /** "alex.rivera@email.com" -> "Alex Rivera", as a starting point they can edit. */

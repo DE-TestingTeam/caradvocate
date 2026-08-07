@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { ErrorState } from '@/components/ErrorState';
 import { CollapsibleSection } from '@/components/my-car/CollapsibleSection';
 import { KnownIssuesList } from '@/components/my-car/KnownIssuesList';
+import { ListSkeleton } from '@/components/my-car/ListSkeleton';
 import { LogServiceDialog } from '@/components/my-car/LogServiceDialog';
 import { MaintenanceItemDialog } from '@/components/my-car/MaintenanceItemDialog';
 import { MaintenanceList } from '@/components/my-car/MaintenanceList';
@@ -13,7 +14,6 @@ import { ValueCard } from '@/components/my-car/ValueCard';
 import { VehicleImage } from '@/components/my-car/VehicleImage';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
-import { Skeleton } from '@/components/ui/skeleton';
 import { useVehicle } from '@/components/layout/RequireVehicle';
 import { useToast } from '@/components/ui/toast';
 import {
@@ -168,16 +168,6 @@ export function MyCarPage() {
         open={editingRecord !== undefined}
         onOpenChange={(open) => !open && setEditingRecord(undefined)}
       />
-    </div>
-  );
-}
-
-function ListSkeleton({ rows }: { rows: number }) {
-  return (
-    <div className="space-y-2">
-      {Array.from({ length: rows }).map((_, i) => (
-        <Skeleton key={i} className="h-14 w-full rounded-lg" />
-      ))}
     </div>
   );
 }

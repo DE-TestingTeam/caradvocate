@@ -26,10 +26,11 @@ import {
 import { toKnownIssue, toKnownIssueFromReports, toRecall, toVehicle } from '../mappers.js';
 import { validateBody } from '../middleware/validate.js';
 import { userIdOf } from '../middleware/currentUser.js';
-import { fetchVehicleImage } from '../services/carImages.js';
+import { fetchVehicleImage, fetchVehicleModel } from '../services/carImages.js';
 import { getOwnerReports } from '../services/complaintSync.js';
 import { loadMaintenanceItems, toMaintenanceItem } from '../services/maintenanceDue.js';
 import { ensureMaintenanceSchedule } from '../services/maintenanceScheduleSync.js';
+import { ensureMarketValue } from '../services/marketValueSync.js';
 import { modelMatches, type ModelKey } from '../services/modelFeed.js';
 import { getModelRecalls } from '../services/recallSync.js';
 import { decodeVin } from '../services/vinDecode.js';
@@ -53,7 +54,10 @@ function loadValuePoints(db: Database, vehicleId: string) {
 }
 
 vehicleRouter.get('/', async (req, res) => {
-  const vehicle = await requireOwnVehicle(req);
+  let vehicle = await requireOwnVehicle(req);
+  if (await ensureMarketValue(req.db, vehicle)) {
+    vehicle = await requireOwnVehicle(req);
+  }
   const points = await loadValuePoints(req.db, vehicle.id);
 
   res.json(toVehicle(vehicle, points));
@@ -62,12 +66,15 @@ vehicleRouter.get('/', async (req, res) => {
 vehicleRouter.patch('/', validateBody(updateVehicleSchema), async (req, res) => {
   const vehicle = await requireOwnVehicle(req);
 
-  const [updated] = await req.db
+  let [updated] = await req.db
     .update(vehicles)
     .set(req.body)
     .where(eq(vehicles.id, vehicle.id))
     .returning();
 
+  if (await ensureMarketValue(req.db, updated)) {
+    updated = await requireOwnVehicle(req);
+  }
   const points = await loadValuePoints(req.db, updated.id);
 
   res.json(toVehicle(updated, points));
@@ -102,6 +109,7 @@ vehicleRouter.post('/', validateBody(newVehicleSchema), async (req, res) => {
       // Left null when skipped. The owner can add it later from Account.
       vin: req.body.vin ?? null,
       mileage: req.body.mileage,
+      zip: req.body.zip ?? null,
     })
     .returning();
 
@@ -300,18 +308,24 @@ async function requireCampaignForVehicle(
 }
 
 /**
- * The signed URL of a studio photo of the caller's model. Separate from `GET /api/vehicle`
- * because it expires, and bundling it would put a decaying value inside the one response
- * the whole app caches -- and a slow CarImages then delays a picture, not the car.
+ * The signed URLs of a studio photo and an interactive 3D model of the caller's model.
+ * Separate from `GET /api/vehicle` because both expire, and bundling them would put a
+ * decaying value inside the one response the whole app caches -- and a slow CarImages
+ * then delays a picture, not the car.
  *
- * Always 200: an absent `imageUrl` means "placeholder", not an error.
+ * Fetched together (one round trip) since both are the same decoration with the same
+ * lookup; each still has its own cache and quota cost inside carImages.ts.
+ *
+ * Always 200: an absent `imageUrl` or `modelUrl` means "placeholder", not an error.
  */
 vehicleRouter.get('/image', async (req, res) => {
   const vehicle = await requireOwnVehicle(req);
+  const lookup = modelKeyOf(vehicle);
 
-  const image: VehicleImage = await fetchVehicleImage(modelKeyOf(vehicle));
+  const [image, model] = await Promise.all([fetchVehicleImage(lookup), fetchVehicleModel(lookup)]);
 
-  res.json(image);
+  const response: VehicleImage = { ...image, ...model };
+  res.json(response);
 });
 
 /** Beyond this the list stops informing and starts overwhelming. */

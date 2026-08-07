@@ -19,14 +19,16 @@ paywallRouter.get('/', async (req, res) => {
 });
 
 /**
- * The source is required rather than defaulted: an unattributed row cannot be read for
- * conversion by entry point, and a default would attribute every stray call to one screen.
+ * Both fields are required rather than defaulted: an unattributed row cannot be read for
+ * conversion by entry point or by offer, and a default would attribute every stray call to
+ * one screen or one price.
  */
 const unlockSchema = z.object({
   source: z.enum(['repair_cost_checker', 'account']),
+  model: z.enum(['all_you_can_eat', 'per_incident']),
 });
 
 paywallRouter.post('/unlock', validateBody(unlockSchema), async (req, res) => {
-  const status: PaywallStatus = await recordUnlock(req.db, userIdOf(req), req.body.source);
+  const status: PaywallStatus = await recordUnlock(req.db, userIdOf(req), req.body.source, req.body.model);
   res.json(status);
 });

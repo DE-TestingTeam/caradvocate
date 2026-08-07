@@ -14,6 +14,7 @@ import type {
   Vehicle,
 } from '@caradvocate/shared';
 import type * as t from './db/schema.js';
+import { featuresFor } from './services/featureCatalog.js';
 
 type Row<T> = T extends { $inferSelect: infer R } ? R : never;
 
@@ -29,6 +30,7 @@ export function toVehicle(
     trim: row.trim ?? undefined,
     vin: row.vin ?? undefined,
     mileage: row.mileage,
+    zip: row.zip ?? undefined,
     estMarketValue: row.estMarketValue ?? undefined,
     tradeInLow: row.tradeInLow ?? undefined,
     tradeInHigh: row.tradeInHigh ?? undefined,
@@ -196,19 +198,15 @@ export function toAssessment(
   return assessment;
 }
 
-export function toAccount(
-  row: Row<typeof t.users>,
-  features: Row<typeof t.userFeatures>[],
-): Account {
+export function toAccount(row: Row<typeof t.users>): Account {
   return {
     name: row.name,
     email: row.email,
     phone: row.phone,
     // The UI renders "Member since 2024"; only the year is meaningful.
     memberSince: row.memberSince.slice(0, 4),
-    plan: 'paid',
-    features: [...features]
-      .sort((a, b) => a.position - b.position)
-      .map((feature) => ({ name: feature.name, status: feature.status })),
+    plan: row.plan,
+    pricingModel: row.pricingModel ?? undefined,
+    features: featuresFor(row.plan),
   };
 }

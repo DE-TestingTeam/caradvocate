@@ -29,7 +29,11 @@ export function RecallsList({
         No open safety recalls for this model.
       </p>
     ) : (
-      <p className="py-2 text-sm text-muted-foreground">
+      <p className="flex items-start gap-2 py-2 text-sm text-muted-foreground">
+        {/* warning-strong, not warning: the fill amber is too faint at this size (see the
+            recall urgency icon below). This is not a recall's own urgency, but it should not
+            sit as calm as the all-clear case above it. */}
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning-strong" />
         Could not reach the NHTSA recall database. This is not an all-clear — it will fill in once the check succeeds.
       </p>
     );

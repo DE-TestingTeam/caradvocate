@@ -4,7 +4,7 @@
  * OWNERSHIP MODEL -- read this before adding a table:
  *
  *   1. User-owned aggregate roots carry `userId` (vehicles, serviceRecords,
- *      assessments, userFeatures). Every query against these MUST filter on userId.
+ *      assessments, paywallIntents). Every query against these MUST filter on userId.
  *   2. Their children (vehicleValuePoints, maintenanceItems, vehicleRecallStatus,
  *      assessmentParts, assessmentLaborTasks) do NOT. They are reachable only through
  *      the parent, whose userId filter authorises them; denormalising it onto children
@@ -38,8 +38,13 @@ export const severityEnum = pgEnum('severity', ['low', 'medium', 'high']);
 // See maintenanceItems below and services/maintenanceDue.ts.
 export const quoteVerdictEnum = pgEnum('quote_verdict', ['fair', 'overpriced']);
 export const serviceSourceEnum = pgEnum('service_record_source', ['manual', 'repair_cost_checker']);
-export const featureStatusEnum = pgEnum('feature_status', ['Included', 'Active', 'Locked']);
 export const planEnum = pgEnum('plan', ['free', 'paid']);
+/**
+ * Which of the two paid offers an owner chose. Null while free. Two models are tested at
+ * once -- see services/paywall.ts -- so this is what a paid account bought, not a global
+ * setting.
+ */
+export const pricingModelEnum = pgEnum('pricing_model', ['all_you_can_eat', 'per_incident']);
 
 /* ------------------------------------------------------------------- users */
 
@@ -62,6 +67,8 @@ export const users = pgTable(
      * records the tap rather than that money changed hands. See services/paywall.ts.
      */
     plan: planEnum('plan').notNull().default('free'),
+    /** Set once, at unlock, alongside `plan`. Null while free. See recordUnlock. */
+    pricingModel: pricingModelEnum('pricing_model'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
@@ -73,22 +80,12 @@ export const users = pgTable(
   }),
 );
 
-/** Subscription line items shown on the Account screen. */
-export const userFeatures = pgTable(
-  'user_features',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    userId: uuid('user_id')
-      .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
-    name: text('name').notNull(),
-    status: featureStatusEnum('status').notNull(),
-    position: integer('position').notNull().default(0),
-  },
-  (table) => ({
-    byUser: index('user_features_user_idx').on(table.userId, table.position),
-  }),
-);
+/*
+ * There is no user_features table, on purpose. The Account screen's feature list is a fixed
+ * catalog (see services/featureCatalog.ts): what's free never varies per owner, and the paid
+ * rows all move together with `users.plan`, so storing them would just be `plan` duplicated
+ * ten ways with a manual step to keep both in sync.
+ */
 
 /**
  * Every tap on the paywall's unlock button -- the prototype's actual output. Nobody is
@@ -107,6 +104,8 @@ export const paywallIntents = pgTable(
     userId: uuid('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
+    /** Which offer this tap was for -- the two are tested side by side. */
+    pricingModel: pricingModelEnum('pricing_model').notNull(),
     /** Whole cents, as shown. */
     priceCents: integer('price_cents').notNull(),
     /** 'month' or 'year'. Plain text so a new cadence needs no migration. */
@@ -140,10 +139,22 @@ export const vehicles = pgTable(
     // Nullable: onboarding lets an owner skip the VIN.
     vin: text('vin'),
     mileage: integer('mileage').notNull(),
+    /**
+     * Nullable: MarketCheck prices regionally, and onboarding lets an owner skip it just like
+     * the VIN. No zip, no valuation call -- see services/marketValueSync.ts.
+     */
+    zip: text('zip'),
     // Nullable: populated by a valuation source, absent for a freshly added car.
     estMarketValue: integer('est_market_value'),
     tradeInLow: integer('trade_in_low'),
     tradeInHigh: integer('trade_in_high'),
+    /**
+     * When this car's value was last fetched, or null for never. Unlike the schedule marker
+     * below, this is NOT "once ever" -- a price goes stale and mileage climbs, so
+     * services/marketValueSync.ts revisits it on a monthly cadence. Set on a successful call
+     * only, so an outage is retried next visit rather than remembered as a verdict.
+     */
+    marketValueCheckedAt: timestamp('market_value_checked_at', { withTimezone: true }),
     /**
      * When the manufacturer's service schedule was fetched for THIS car, or null for never.
      * Set on a conclusive answer only -- real intervals, or the vendor saying it has none --
@@ -663,7 +674,6 @@ export const assessmentLaborTasks = pgTable(
 
 export const usersRelations = relations(users, ({ many }) => ({
   vehicles: many(vehicles),
-  features: many(userFeatures),
   serviceRecords: many(serviceRecords),
   assessments: many(assessments),
 }));
@@ -721,9 +731,5 @@ export const maintenanceItemsRelations = relations(maintenanceItems, ({ one }) =
 export const serviceRecordsRelations = relations(serviceRecords, ({ one }) => ({
   owner: one(users, { fields: [serviceRecords.userId], references: [users.id] }),
   vehicle: one(vehicles, { fields: [serviceRecords.vehicleId], references: [vehicles.id] }),
-}));
-
-export const userFeaturesRelations = relations(userFeatures, ({ one }) => ({
-  owner: one(users, { fields: [userFeatures.userId], references: [users.id] }),
 }));
 

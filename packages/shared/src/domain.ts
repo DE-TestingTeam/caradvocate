@@ -35,6 +35,8 @@ export interface Vehicle {
   /** Absent when the owner skipped it during onboarding. */
   vin?: string;
   mileage: number;
+  /** Absent when the owner skipped it. Needed to localize a market value estimate. */
+  zip?: string;
   /**
    * Absent until a data source (Kelley Blue Book or equivalent) has priced the
    * vehicle. A car the user just added has none, and inventing a number would
@@ -48,15 +50,18 @@ export interface Vehicle {
 }
 
 /**
- * The signed URL of a studio photo of the owner's model, shown on My Car.
+ * The signed URLs of a studio photo and an interactive 3D model of the owner's model,
+ * shown on My Car.
  *
- * `{}` is a routine response. An absent `imageUrl` covers "not configured", "no match"
- * and "unreachable" alike -- the photo is decoration, and the UI falls back to a static
- * placeholder. The URL expires, so it is fetched on mount rather than stored.
+ * `{}` is a routine response. An absent `imageUrl` or `modelUrl` covers "not configured",
+ * "no match" and "unreachable" alike -- both are decoration, and the UI falls back to a
+ * static placeholder. Both URLs expire, so they are fetched on mount rather than stored.
  */
 export interface VehicleImage {
   /** Studio photo of this generation, 3:2. */
   imageUrl?: string;
+  /** Interactive 3D model (GLB) of this generation, for a <model-viewer>. */
+  modelUrl?: string;
 }
 
 /**
@@ -317,25 +322,47 @@ export interface AccountFeature {
 /** `paid` means they tapped through the paywall, not that they were charged. */
 export type Plan = 'free' | 'paid';
 
+/**
+ * Which of the two paywall offers an owner chose. Both open the same paid features (see
+ * services/featureCatalog.ts on the API) -- they differ only in price shape, and which one
+ * people prefer is itself what the prototype is testing.
+ */
+export type PricingModel = 'all_you_can_eat' | 'per_incident';
+
 export interface Account {
   name: string;
   email: string;
   phone: string;
   memberSince: string;
   plan: Plan;
+  /** Which offer this account is on. Undefined while free. */
+  pricingModel?: PricingModel;
   features: AccountFeature[];
+}
+
+/** One of the paywall's two side-by-side offers. */
+export interface PricingOffer {
+  model: PricingModel;
+  /** Whole cents, so the client formats and never arithmetics on a float. */
+  priceCents: number;
+  /** ISO 4217. Only USD in v1, but the client should not assume a `$`. */
+  currency: string;
+  interval: 'month' | 'year';
+  /**
+   * Only set on the per-incident offer: what a parts-benchmark lookup costs on top of the
+   * subscription. Disclosed, not metered -- see services/paywall.ts on the API.
+   */
+  perIncidentFeeCents?: number;
 }
 
 // What the paywall shows, and whether this owner is past it.
 export interface PaywallStatus {
   /** True once the owner has tapped unlock. Paid features are open to them. */
   unlocked: boolean;
-  /** Whole cents, so the client formats and never arithmetics on a float. */
-  priceCents: number;
-  /** ISO 4217. Only USD in v1, but the client should not assume a `$`. */
-  currency: string;
-  /** Per the spec, v1 tests a subscription only -- never per-incident pricing. */
-  interval: 'month' | 'year';
+  /** Which offer they picked. Undefined while unlocked === false. */
+  pricingModel?: PricingModel;
+  /** Both offers, side by side, for the owner to choose between. */
+  offers: PricingOffer[];
   /** What unlocking opens up, in the order the paywall lists them. */
   includes: string[];
 }

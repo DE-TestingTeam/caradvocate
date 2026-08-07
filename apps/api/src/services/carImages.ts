@@ -17,6 +17,7 @@ import type { VehicleImage } from '@caradvocate/shared';
 import { env } from '../env.js';
 
 const SIGNED_URLS = 'https://carimagesapi.com/api/v1/signed-urls';
+const API_BASE = 'https://carimagesapi.com/api/v1';
 const TIMEOUT_MS = 6000;
 
 /**
@@ -96,29 +97,34 @@ export async function fetchVehicleImage(lookup: ImageLookup): Promise<VehicleIma
   // image for the whole cache lifetime, up to a day.
   if (!imageUrl) return {};
 
-  remember(key, imageUrl);
+  remember(cache, key, { imageUrl });
   return { imageUrl };
 }
 
-/** Caches one resolved URL, unless it is already too near expiry to be worth holding. */
-function remember(key: string, imageUrl: string): void {
-  const expiresAt = softExpiry(imageUrl);
+/**
+ * Caches one resolved URL in the given cache, unless it is already too near expiry to be
+ * worth holding. Shared between the image and 3D model caches, which are bounded and
+ * expired identically -- both are just a signed URL with a lifetime read off itself.
+ */
+function remember(target: Map<string, CacheEntry>, key: string, image: VehicleImage): void {
+  const url = image.imageUrl ?? image.modelUrl ?? '';
+  const expiresAt = softExpiry(url);
 
   // Already inside the margin. Storing this would serve a URL that expires before the
   // browser fetches it.
   if (expiresAt <= Date.now()) {
-    cache.delete(key);
+    target.delete(key);
     return;
   }
 
   // Insertion-ordered, so the first key is the oldest. One eviction per write holds the
   // bound, since each write adds one.
-  if (cache.size >= MAX_ENTRIES && !cache.has(key)) {
-    const oldest = cache.keys().next();
-    if (!oldest.done) cache.delete(oldest.value);
+  if (target.size >= MAX_ENTRIES && !target.has(key)) {
+    const oldest = target.keys().next();
+    if (!oldest.done) target.delete(oldest.value);
   }
 
-  cache.set(key, { image: { imageUrl }, expiresAt });
+  target.set(key, { image, expiresAt });
 }
 
 /**
@@ -245,4 +251,259 @@ async function postSignedUrls(payload: unknown): Promise<unknown> {
   } finally {
     clearTimeout(timer);
   }
+}
+
+/* --------------------------------------------------------------- 3D model */
+
+// Every generation also has an interactive 3D model (GLB), at no extra cost on a plan
+// that includes cars. Unlike /image and /signed-url(s), which fuzzy-match make/model/year
+// directly, the 3D endpoint is path-based (/vehicles/{make}/{model}/{gen}/model) and
+// requires exact catalog slugs -- verified live: NISSAN/Altima/2022 404s, nissan/altima
+// with a real generation slug 200s. So a generation must be resolved to its slug first.
+//
+// That resolution is cached indefinitely per process, separately from the final GLB URL
+// (which expires): the catalog (which makes exist, which models a make has, which
+// generations a model has) changes far slower than a signed URL, and re-deriving it on
+// every visit would multiply this feature's quota cost for no benefit.
+
+interface CarImagesGeneration {
+  slug: string;
+  year_start: number;
+  year_end: number | null;
+}
+
+/** Raw make name (e.g. NHTSA's `NISSAN`) -> CarImages make slug (e.g. `nissan`). */
+let makeSlugsPromise: Promise<Map<string, string>> | undefined;
+
+/** `${makeSlug}` -> (raw model name -> CarImages model slug). */
+const modelSlugCache = new Map<string, Promise<Map<string, string>>>();
+
+/** `${makeSlug}|${modelSlug}` -> that model's generations. */
+const generationCache = new Map<string, Promise<CarImagesGeneration[] | undefined>>();
+
+/** The final, expiring GLB URL. Same shape and lifetime handling as the image cache. */
+const modelCache = new Map<string, CacheEntry>();
+
+/** Collapses anything that isn't a letter or digit, so slug/name/raw-input all compare equal. */
+function normalize(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+async function getJson(path: string): Promise<unknown> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const sep = path.includes('?') ? '&' : '?';
+  const url = `${API_BASE}${path}${sep}api_key=${encodeURIComponent(env.CARIMAGES_API_KEY ?? '')}`;
+
+  try {
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        Accept: 'application/json',
+        ...(env.CARIMAGES_API_SECRET ? { 'X-Api-Secret': env.CARIMAGES_API_SECRET } : {}),
+      },
+    });
+
+    if (!response.ok) {
+      console.warn(`CarImages: ${path} answered ${response.status}`);
+      return undefined;
+    }
+
+    return (await response.json()) as unknown;
+  } catch {
+    return undefined;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** The full make catalog, normalized-name -> slug. Fetched once; retried only on failure. */
+async function makeSlugs(): Promise<Map<string, string>> {
+  if (!makeSlugsPromise) {
+    makeSlugsPromise = (async () => {
+      const body = await getJson('/makes');
+      const data = (body as { data?: unknown })?.data;
+      const map = new Map<string, string>();
+      if (Array.isArray(data)) {
+        for (const entry of data) {
+          const slug = (entry as { slug?: unknown })?.slug;
+          const name = (entry as { name?: unknown })?.name;
+          if (typeof slug !== 'string') continue;
+          map.set(normalize(slug), slug);
+          if (typeof name === 'string') map.set(normalize(name), slug);
+        }
+      }
+      // An empty map means the fetch failed -- do not let a transient outage wedge every
+      // 3D lookup for the life of the process.
+      if (map.size === 0) makeSlugsPromise = undefined;
+      return map;
+    })();
+  }
+  return makeSlugsPromise;
+}
+
+async function resolveMakeSlug(make: string): Promise<string | undefined> {
+  return (await makeSlugs()).get(normalize(make));
+}
+
+/** A make's models, normalized-name -> slug. Cached per make; retried only on failure. */
+async function modelSlugs(makeSlug: string): Promise<Map<string, string>> {
+  let promise = modelSlugCache.get(makeSlug);
+  if (!promise) {
+    promise = (async () => {
+      const body = await getJson(`/makes/${encodeURIComponent(makeSlug)}/models`);
+      const data = (body as { data?: unknown })?.data;
+      const map = new Map<string, string>();
+      if (Array.isArray(data)) {
+        for (const entry of data) {
+          const slug = (entry as { slug?: unknown })?.slug;
+          const name = (entry as { name?: unknown })?.name;
+          if (typeof slug !== 'string') continue;
+          map.set(normalize(slug), slug);
+          if (typeof name === 'string') map.set(normalize(name), slug);
+        }
+      }
+      if (map.size === 0) modelSlugCache.delete(makeSlug);
+      return map;
+    })();
+    modelSlugCache.set(makeSlug, promise);
+  }
+  return promise;
+}
+
+async function resolveModelSlug(makeSlug: string, model: string): Promise<string | undefined> {
+  return (await modelSlugs(makeSlug)).get(normalize(model));
+}
+
+/** One model's generations, with the slugs the 3D endpoint's path needs. */
+async function resolveGenerations(
+  makeSlug: string,
+  modelSlug: string,
+): Promise<CarImagesGeneration[] | undefined> {
+  const key = `${makeSlug}|${modelSlug}`;
+  let promise = generationCache.get(key);
+  if (!promise) {
+    promise = (async () => {
+      const body = await getJson(
+        `/makes/${encodeURIComponent(makeSlug)}/models/${encodeURIComponent(modelSlug)}`,
+      );
+      const generations = (body as { generations?: unknown })?.generations;
+      if (!Array.isArray(generations)) return undefined;
+
+      const parsed: CarImagesGeneration[] = [];
+      for (const gen of generations) {
+        const slug = (gen as { slug?: unknown })?.slug;
+        const yearStart = (gen as { year_start?: unknown })?.year_start;
+        if (typeof slug !== 'string' || typeof yearStart !== 'number') continue;
+        const yearEndRaw = (gen as { year_end?: unknown })?.year_end;
+        parsed.push({
+          slug,
+          year_start: yearStart,
+          year_end: typeof yearEndRaw === 'number' ? yearEndRaw : null,
+        });
+      }
+      return parsed.length > 0 ? parsed : undefined;
+    })();
+    generationCache.set(key, promise);
+    // A miss (undefined) is not cached under its own key above -- retry it next time
+    // rather than remembering a resolvable model as permanently model-less.
+    void promise.then((result) => {
+      if (result === undefined) generationCache.delete(key);
+    });
+  }
+  return promise;
+}
+
+/**
+ * Exported for testing. The generation whose year range contains `year`, or -- since a
+ * VIN's model year does not always land inside CarImages' own generation boundaries --
+ * the one whose range is closest to it.
+ */
+export function pickGeneration(
+  generations: CarImagesGeneration[],
+  year: number,
+): string | undefined {
+  let best: CarImagesGeneration | undefined;
+  let bestDistance = Infinity;
+
+  for (const gen of generations) {
+    const end = gen.year_end ?? Infinity;
+    const distance = year < gen.year_start ? gen.year_start - year : year > end ? year - end : 0;
+    if (distance < bestDistance) {
+      best = gen;
+      bestDistance = distance;
+      if (distance === 0) break;
+    }
+  }
+
+  return best?.slug;
+}
+
+/** The signed GLB URL for one generation, via the redirect the REST endpoint issues. */
+async function requestModelUrl(
+  makeSlug: string,
+  modelSlug: string,
+  genSlug: string,
+): Promise<string | undefined> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const path = `/vehicles/${encodeURIComponent(makeSlug)}/${encodeURIComponent(modelSlug)}/${encodeURIComponent(genSlug)}/model`;
+  const url = `${API_BASE}${path}?redirect=1&api_key=${encodeURIComponent(env.CARIMAGES_API_KEY ?? '')}`;
+
+  try {
+    const response = await fetch(url, {
+      signal: controller.signal,
+      redirect: 'manual',
+      headers: {
+        ...(env.CARIMAGES_API_SECRET ? { 'X-Api-Secret': env.CARIMAGES_API_SECRET } : {}),
+      },
+    });
+
+    // A 3xx with no Location, or any other status, is a failure the caller treats as "no
+    // 3D model" rather than an error -- same contract as the image lookup.
+    if (response.status < 300 || response.status >= 400) {
+      console.warn(`CarImages: ${path} answered ${response.status}`);
+      return undefined;
+    }
+
+    const location = response.headers.get('location');
+    // This becomes a <model-viewer src> on an authenticated page, so an unexpected
+    // origin is dropped rather than forwarded -- same check as the image URL.
+    return location && isCarImagesUrl(location) ? location : undefined;
+  } catch {
+    return undefined;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * The signed URL of an interactive 3D model (GLB) for one vehicle. Never rejects: an
+ * empty object means the owner sees the 2D photo or the placeholder instead, whatever
+ * the reason. See fetchVehicleImage for the same contract.
+ */
+export async function fetchVehicleModel(lookup: ImageLookup): Promise<VehicleImage> {
+  if (!carImagesIsConfigured()) return {};
+
+  const key = cacheKey(lookup);
+  const cached = modelCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.image;
+
+  const makeSlug = await resolveMakeSlug(lookup.make);
+  if (!makeSlug) return {};
+
+  const modelSlug = await resolveModelSlug(makeSlug, lookup.model);
+  if (!modelSlug) return {};
+
+  const generations = await resolveGenerations(makeSlug, modelSlug);
+  if (!generations) return {};
+
+  const genSlug = pickGeneration(generations, lookup.year);
+  if (!genSlug) return {};
+
+  const modelUrl = await requestModelUrl(makeSlug, modelSlug, genSlug);
+  if (!modelUrl) return {};
+
+  remember(modelCache, key, { modelUrl });
+  return { modelUrl };
 }

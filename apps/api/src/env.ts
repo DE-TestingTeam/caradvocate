@@ -71,18 +71,33 @@ const envSchema = z.object({
   OPEN_LABOR_PROJECT_API_KEY: z.string().min(1).optional(),
 
   /**
-   * The price the fake paywall shows. Nobody is charged -- the tap is recorded as a
-   * willingness-to-pay signal and the feature opens. See services/paywall.ts.
+   * Market value and trade-in range for My Car's valuation card. Unset, a freshly added car
+   * stays "not available" forever -- see services/marketValueSync.ts.
    *
-   * Configuration rather than a constant because it is the experiment's independent
-   * variable: changeable between cohorts without a deploy, and each recorded tap
-   * stores the figure that was on screen at the time.
-   *
-   * THE DEFAULT IS A PLACEHOLDER. Set it deliberately before any real test.
+   * Priced from real dealer listings via MarketCheck's base-tier prediction endpoint, which
+   * requires a VIN, mileage and zip per call. A car missing either is never asked about; see
+   * `zip` and `vin` on the vehicles table.
    */
-  PAYWALL_PRICE_CENTS: z.coerce.number().int().positive().default(1499),
-  /** v1 tests a subscription only, never per-incident pricing. */
-  PAYWALL_INTERVAL: z.enum(['month', 'year']).default('month'),
+  MARKET_CHECK_API_KEY: z.string().min(1).optional(),
+
+  /**
+   * The two prices the fake paywall shows side by side. Nobody is charged -- the tap is
+   * recorded as a willingness-to-pay signal and the feature opens either way. See
+   * services/paywall.ts.
+   *
+   * Configuration rather than constants because price is the experiment's independent
+   * variable: changeable between cohorts without a deploy, and each recorded tap stores
+   * the figures that were on screen at the time.
+   *
+   * THE DEFAULTS ARE PLACEHOLDERS. Set them deliberately before any real test.
+   */
+  PAYWALL_ALL_YOU_CAN_EAT_PRICE_CENTS: z.coerce.number().int().positive().default(9900),
+  PAYWALL_ALL_YOU_CAN_EAT_INTERVAL: z.enum(['month', 'year']).default('year'),
+  /** The subscription half of the per-incident offer -- cheaper, because the parts benchmark is billed separately below. */
+  PAYWALL_PER_INCIDENT_PRICE_CENTS: z.coerce.number().int().positive().default(3500),
+  PAYWALL_PER_INCIDENT_INTERVAL: z.enum(['month', 'year']).default('year'),
+  /** What the per-incident offer charges per parts-benchmark lookup, on top of its subscription. Not metered yet -- see services/paywall.ts. */
+  PAYWALL_PER_INCIDENT_FEE_CENTS: z.coerce.number().int().positive().default(5000),
 });
 
 /**

@@ -57,7 +57,7 @@ async function truncateAll(db: Database): Promise<void> {
     truncate table
       ${t.assessmentLaborTasks}, ${t.assessmentParts}, ${t.assessments},
       ${t.serviceRecords}, ${t.maintenanceItems}, ${t.vehicleValuePoints}, ${t.vehicles},
-      ${t.userFeatures}, ${t.users},
+      ${t.users},
       ${t.benchmarkLaborTasks}, ${t.benchmarkParts}, ${t.repairBenchmarks}, ${t.repairs},
       ${t.modelKnownIssues}
     restart identity cascade
@@ -98,14 +98,9 @@ async function seedAlexRivera(db: Database, repairIdBySlug: Map<string, string>)
       // Past the paywall, because the wireframes depict the Repair Cost Checker in use. Sign in
       // as Dana below to see the paywall itself.
       plan: 'paid',
+      pricingModel: 'all_you_can_eat',
     })
     .returning({ id: t.users.id });
-
-  await db.insert(t.userFeatures).values([
-    { userId: user.id, name: 'My Car', status: 'Included', position: 0 },
-    { userId: user.id, name: 'Ask CA', status: 'Included', position: 1 },
-    { userId: user.id, name: 'Repair Cost Checker', status: 'Active', position: 2 },
-  ]);
 
   // The wireframes disagree: My Car shows a 2019 Honda Civic at 68,400 mi, Account shows a 2019
   // Honda CR-V EX at 48,250 mi. One row serves both screens.
@@ -307,12 +302,6 @@ async function seedSecondUser(db: Database, repairIdBySlug: Map<string, string>)
       plan: 'free',
     })
     .returning({ id: t.users.id });
-
-  await db.insert(t.userFeatures).values([
-    { userId: user.id, name: 'My Car', status: 'Included', position: 0 },
-    { userId: user.id, name: 'Ask CA', status: 'Included', position: 1 },
-    { userId: user.id, name: 'Repair Cost Checker', status: 'Locked', position: 2 },
-  ]);
 
   const [vehicle] = await db
     .insert(t.vehicles)

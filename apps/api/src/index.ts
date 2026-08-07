@@ -58,7 +58,7 @@ const server = app.listen(env.PORT, () => {
   // denominated in, and shipping the placeholder by accident would invalidate the test
   // rather than break anything visibly.
   console.log(`Paywall: ${describePrice()} -- nobody is charged, taps are recorded`);
-  console.log('  Set PAYWALL_PRICE_CENTS and PAYWALL_INTERVAL to price the test.');
+  console.log('  Set the PAYWALL_ALL_YOU_CAN_EAT_* and PAYWALL_PER_INCIDENT_* vars to price the test.');
 });
 
 /**
