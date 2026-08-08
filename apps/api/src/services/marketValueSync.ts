@@ -6,6 +6,13 @@
  * mileage climbs, so this is due again once a month. `vehicles.market_value_checked_at`
  * answers "was this car priced within the last REFRESH_MS", not "has it ever been priced".
  *
+ * TWO CALLERS, AND THE SECOND ONE IS WHY THE CHART IS A TIME SERIES AT ALL. The vehicle routes
+ * call this on read, which only ever produced "one point per month in which the owner happened to
+ * visit" -- an owner away for three months left three gaps, and a chart with gaps in it is not
+ * measuring time. scripts/refreshMarketValues.mts now sweeps every due car nightly, so the points
+ * land a month apart whether anybody signs in or not. The route call stays: it is what prices a
+ * car the moment it is added, rather than leaving it blank until the next sweep.
+ *
  * NO VIN OR NO ZIP, NOTHING TO ASK ABOUT. MarketCheck's base tier requires both per call
  * (VIN identifies the car, zip localizes the estimate), and onboarding lets an owner skip
  * either. A car missing one is left exactly as it was -- not an error, just unpriced.
@@ -55,6 +62,20 @@ export interface ValuationTarget {
 }
 
 /**
+ * Whether this car is worth asking MarketCheck about right now: it has the VIN and zip the call
+ * requires, and its last price is either absent or over a month old.
+ *
+ * Exported so the nightly sweep (scripts/refreshMarketValues.mts) can count and report what it
+ * would do without a second copy of the rule. `ensureMarketValue` re-checks it rather than
+ * trusting the caller, so a stale queue cannot turn into a duplicate vendor call.
+ */
+export function marketValueDue(vehicle: ValuationTarget, now: Date = new Date()): boolean {
+  if (!vehicle.vin || !vehicle.zip) return false;
+  if (!vehicle.marketValueCheckedAt) return true;
+  return now.getTime() - vehicle.marketValueCheckedAt.getTime() >= REFRESH_MS;
+}
+
+/**
  * Makes sure this car's value is no more than a month stale. Returns whether the row changed
  * -- a new price, or a conclusive "cannot price this one" -- so a caller can re-read. Never
  * throws -- a vendor that will not answer leaves the existing value standing, which is
@@ -65,14 +86,10 @@ export async function ensureMarketValue(
   vehicle: ValuationTarget,
   now: Date = new Date(),
 ): Promise<boolean> {
-  if (!vehicle.vin || !vehicle.zip) return false;
+  if (!marketValueDue(vehicle, now)) return false;
 
-  if (
-    vehicle.marketValueCheckedAt &&
-    now.getTime() - vehicle.marketValueCheckedAt.getTime() < REFRESH_MS
-  ) {
-    return false;
-  }
+  // Narrowing for TypeScript's benefit; `marketValueDue` has already established both.
+  if (!vehicle.vin || !vehicle.zip) return false;
 
   const result = await fetchMarketValue({ vin: vehicle.vin, miles: vehicle.mileage, zip: vehicle.zip });
   if (result.outcome === 'unavailable') return false;

@@ -41,19 +41,23 @@ export function KnownIssuesList({ report, vehicle }: { report: KnownIssueReport;
             {/* Same distinction as RecallsList: "nothing found" and "we could not look" read
                 identically as plain text, so this gets the icon the all-clear case does not. */}
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning-strong" />
-            Nothing on file for this model yet. Owner complaints could not be loaded, so this is not a clean bill of
-            health. In the meantime,{' '}
-            <a
-              href={nhtsaVehicleUrl(vehicle)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 link-inline"
-            >
-              look this model up on NHTSA directly
-              <ExternalLink className="h-3 w-3" aria-hidden="true" />
-              <span className="sr-only">(opens in a new tab)</span>
-            </a>
-            {' '}— their site can surface a trim you weren't asked for that this list missed.
+            {/* One span, not bare text: the flex row would otherwise make the sentence and the link
+                either side of it separate flex items, and lay them out as columns. */}
+            <span>
+              Nothing on file for this model yet. Owner complaints could not be loaded, so this is not a clean bill of
+              health. In the meantime,{' '}
+              <a
+                href={nhtsaVehicleUrl(vehicle)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 link-inline"
+              >
+                look this model up on NHTSA directly
+                <ExternalLink className="h-3 w-3" aria-hidden="true" />
+                <span className="sr-only">(opens in a new tab)</span>
+              </a>
+              {' '}— their site can surface a trim you weren't asked for that this list missed.
+            </span>
           </p>
         )}
         {oldVehicleCaveat}

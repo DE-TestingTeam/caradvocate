@@ -134,12 +134,29 @@ export interface Recall {
 }
 
 /**
- * Recalls plus whether the upstream check has ever succeeded. Without `checked`, an
- * empty list could mean this car is clear or that NHTSA has never been reachable.
+ * How the recall check ended. Three states, not two, because an empty list has three
+ * different meanings and only one of them is reassuring:
+ *
+ *   `ok`               NHTSA answered about this model. An empty list is a real all-clear.
+ *   `model_not_listed` NHTSA answered, but files no recalls under this model name. Says
+ *                      nothing about the car. NHTSA returns HTTP 400 for these -- e.g. a
+ *                      2014 "F-350", which it files by cab as "F-350 SUPERCAB" and friends,
+ *                      or a "GMT-400", which is a platform code no manufacturer sells.
+ *   `unreachable`      No answer at all. Says nothing about the car either, but for a
+ *                      reason that may fix itself.
+ *
+ * The last two both mean "unknown", and both were previously reported as `unreachable`,
+ * which told owners a database was down when it had in fact replied in under a second.
+ */
+export type RecallCheckStatus = 'ok' | 'model_not_listed' | 'unreachable';
+
+/**
+ * Recalls plus how the check ended. Without `status`, an empty list could mean this car is
+ * clear, or that nobody has managed to ask about it.
  */
 export interface RecallReport {
   recalls: Recall[];
-  checked: boolean;
+  status: RecallCheckStatus;
 }
 
 /**

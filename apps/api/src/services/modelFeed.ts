@@ -99,9 +99,16 @@ export function modelMatches(
   return and(eq(t.year, k.year), eq(t.make, k.make), eq(t.model, k.model));
 }
 
+/**
+ * A qualifier on a successful check. `model_not_listed` is the vendor answering about the
+ * NAME rather than the car -- see the `outcome` column in db/schema.ts.
+ */
+export type SyncOutcome = 'model_not_listed';
+
 export interface SyncState {
   checkedAt: Date;
   succeededAt: Date | null;
+  outcome: SyncOutcome | null;
 }
 
 /** The sync record for one feed and model, if it has ever been checked. */
@@ -111,12 +118,17 @@ export async function readSyncState(
   key: ModelKey,
 ): Promise<SyncState | undefined> {
   const [row] = await db
-    .select({ checkedAt: modelFeedSyncs.checkedAt, succeededAt: modelFeedSyncs.succeededAt })
+    .select({
+      checkedAt: modelFeedSyncs.checkedAt,
+      succeededAt: modelFeedSyncs.succeededAt,
+      outcome: modelFeedSyncs.outcome,
+    })
     .from(modelFeedSyncs)
     .where(and(eq(modelFeedSyncs.feed, feed), modelMatches(modelFeedSyncs, key)))
     .limit(1);
 
-  return row;
+  if (!row) return undefined;
+  return { ...row, outcome: row.outcome === 'model_not_listed' ? 'model_not_listed' : null };
 }
 
 /**
@@ -164,12 +176,22 @@ export async function recordCheck(
   key: ModelKey,
   now: Date,
   succeeded: boolean,
+  outcome: SyncOutcome | null = null,
 ): Promise<void> {
   await db
     .insert(modelFeedSyncs)
-    .values({ feed, ...normaliseKey(key), checkedAt: now, succeededAt: succeeded ? now : null })
+    .values({
+      feed,
+      ...normaliseKey(key),
+      checkedAt: now,
+      succeededAt: succeeded ? now : null,
+      outcome: succeeded ? outcome : null,
+    })
     .onConflictDoUpdate({
       target: [modelFeedSyncs.feed, modelFeedSyncs.year, modelFeedSyncs.make, modelFeedSyncs.model],
-      set: succeeded ? { checkedAt: now, succeededAt: now } : { checkedAt: now },
+      // Cleared on every success, not just set: a car whose name stops being unlisted --
+      // because NHTSA added it, or the owner corrected their model -- must not keep the old
+      // qualifier and go on reading as unlisted forever.
+      set: succeeded ? { checkedAt: now, succeededAt: now, outcome } : { checkedAt: now },
     });
 }

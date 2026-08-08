@@ -17,24 +17,25 @@ export function AssessmentsPage() {
 
   return (
     <div>
+      {/*
+        Solid and `lg`: this is the action the page exists for, and there is only one of it.
+        Full width below `sm` so it is a thumb-sized target on a phone, then inline with the
+        title and only as wide as it needs to be.
+      */}
       <PageHeader
         title="Repairs"
         subtitle="Find out whether a repair is actually necessary, and what a fair price looks like."
+        action={
+          <Button asChild size="lg" className="w-full sm:w-auto">
+            <Link to="/assessments/new">
+              <Plus className="h-4 w-4" />
+              Check a repair
+            </Link>
+          </Button>
+        }
       />
 
-      {/*
-        Solid and `lg`: this is the action the page exists for, and there is only one of it.
-        Full width below `sm` so it is a thumb-sized target on a phone, then only as wide as it
-        needs to be.
-      */}
-      <Button asChild size="lg" className="w-full sm:w-auto">
-        <Link to="/assessments/new">
-          <Plus className="h-4 w-4" />
-          Check a repair
-        </Link>
-      </Button>
-
-      <h2 className="mb-3 mt-10 text-label font-semibold uppercase tracking-widest text-muted-foreground">
+      <h2 className="mb-3 text-label font-semibold uppercase tracking-widest text-muted-foreground">
         Previous assessments
       </h2>
 

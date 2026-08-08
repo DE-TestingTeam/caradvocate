@@ -19,6 +19,20 @@ were rewritten rather than annotated. A schema audit in the same pass found two 
 and one live bug in `sql/rls-lockdown.sql`; both are noted where they belong below.
 **Migration `0018` was applied to the shared database on 8 August and verified** — see §9.
 
+**Amended again 8 August, and this one changes a claim rather than adding to it.** "Refreshed
+monthly" was true of the rule and false of the practice: the valuation only ever refreshed when an
+owner opened the app, so the trend chart held one reading per month in which somebody signed in.
+A nightly job now sweeps every due car (§3 gap 2, §5, §9). The same pass found that
+`vehicles.mileage` — which the valuation *and* the maintenance calculation both read as current —
+was written at onboarding and then never again for most owners. Half of that is now fixed and half
+is not; both halves are described in §9 under "The odometer is only half-solved". No migration was
+needed for any of it.
+
+Also in this pass, and not tracked further because this file covers what the app does rather than
+how it looks: primary buttons went from near-black to the brand green (one token, `--primary` in
+`index.css`), page subtitles dropped to `text-sm` to match Ask CA's, and `PageHeader` gained an
+`action` slot so a page's primary button sits on the title row.
+
 ---
 
 ## 1. What the app is
@@ -78,7 +92,7 @@ looks right.
 |---|---|---|
 | Free / My Car | Single-vehicle profile | ✅ Built |
 | Free / My Car | User-entered service history | ✅ Built |
-| Free / My Car | Value + trend line | ⚠️ Live via MarketCheck; needs VIN + zip, trade-in range still missing |
+| Free / My Car | Value + trend line | ⚠️ Live via MarketCheck, refreshed nightly; needs VIN + zip, priced off a possibly-stale odometer, trade-in range still missing |
 | Free / My Car | Recall schedule | ✅ Built |
 | Free / My Car | Maintenance schedule | ⚠️ Tracker built, starts empty |
 | Free / My Car | Model known issues | ✅ Built |
@@ -109,23 +123,45 @@ says. Nothing reads symptoms, mileage, service history or complaint patterns to 
 This is the one gap where the product claim and the code genuinely disagree, rather than
 the feature merely being unfinished — and it is what the paywall sells.
 
-**2. Value + trend line — resolved as of 7 August, with three real limits left.** MarketCheck
+**2. Value + trend line — resolved as of 7 August, with four real limits left.** MarketCheck
 now prices a real car from actual dealer listings (`services/marketCheck.ts`,
-`services/marketValueSync.ts`), refreshed monthly rather than once. Three things still keep
-it short of the original ask:
+`services/marketValueSync.ts`), refreshed monthly. **Amended 8 August:** "refreshed monthly" was
+a claim about the rule, not about what happened. `ensureMarketValue` was only reachable from
+GET/PATCH `/api/vehicle`, so a car was re-priced when its owner happened to open the app — which
+is fine for the number on the card, read at exactly that moment, and wrong for a chart that is
+supposed to be six readings a month apart. What it actually held was one point per month in which
+somebody signed in; an owner away for the summer came back to a chart missing the summer.
+`scripts/refreshMarketValues.mts` now sweeps every due car nightly, so the points land a month
+apart whether anyone visits or not. Four things still keep this short of the original ask:
 
 - **Both a VIN and a zip code have to be on file.** MarketCheck's endpoint requires both to
   localize the estimate, and onboarding lets an owner skip either — a car missing one shows
-  "not available yet" rather than a number, same as before this vendor existed.
-- **The trend cannot be backfilled.** MarketCheck has price history only for VINs that have
-  actually been listed for sale by a dealer; a car someone already owns comes back empty. The
-  "last 6 mo" line is built going forward, one point added (or updated) per month, starting
-  from whenever VIN and zip are both in place — not reconstructed from the past.
+  "not available yet" rather than a number, same as before this vendor existed. Live figure on
+  8 August: **3 of the 6 cars on file have both**, two have a VIN but no zip, one has neither.
+- **The price is only as current as the odometer we hold**, which for most owners is the figure
+  they typed at signup. The call takes `miles`, so a car whose stored mileage is a year stale is
+  priced as a car with a year fewer miles on it, and the estimate reads high. Partly fixed on
+  8 August; see §9, "The odometer is only half-solved".
+- **The trend cannot be backfilled — re-confirmed against MarketCheck's own docs on 8 August,**
+  because it is the obvious thing to reach for and the reason is easy to get wrong. The predict
+  endpoint takes `api_key`, `vin`, `miles`, `dealer_type`, `zip`, `city`, `state` and
+  `is_certified` and **no date parameter of any kind**, so there is nothing to ask "what was this
+  worth in March". `/v2/history/car/{vin}` is not the answer either: it returns *listing* records
+  (what a dealer was asking while the car sat on a lot), which is empty for the ordinary case of a
+  car its owner has driven for years and never listed, and where it is not empty it is a different
+  quantity from a predicted value — joining the two would draw a trend that never happened.
+  MarketCheck does sell a separate Historical Price API; it is not on this tier and would be a
+  commercial conversation, not a code change. The "last 6 mo" line is therefore built going
+  forward, one point per month, starting from whenever VIN and zip are both in place.
 - **Some vehicles get a conclusive "cannot be estimated," not a retry loop.** MarketCheck
   returns a real HTTP 400 for a VIN old enough to fall outside its training data (a 1993
   truck, confirmed) rather than a price. That is stored as distinct from "vendor
   unreachable, will retry" (`Vehicle.valuationUnavailable`), so the card says so instead of
-  perpetually implying a price is still coming.
+  perpetually implying a price is still coming. Live on 8 August: **2 of the 3 priceable cars are
+  in this state** — checked, no price stored — which is worth reading alongside the standing
+  question in `marketCheck.ts` about whether this key carries the VIN-decode entitlement the
+  predict endpoint depends on. Two cars out of three is a high rate for a verdict that is supposed
+  to describe unusually old vehicles.
 
 **Not sourced yet: the trade-in range.** MarketCheck's percentile data (low/high across
 comparable listings) is a Premium-tier feature and the key here is not known to carry it —
@@ -136,6 +172,12 @@ due/overdue calculation is real and careful: mileage or time, whichever comes fi
 a "due soon" margin. But a new owner starts with an empty list and has to type every job
 and interval themselves. Manufacturer intervals are licensed data the app does not have.
 If "maintenance schedule" is meant to arrive pre-filled, that part is unbuilt.
+
+**Amended 8 August:** careful about the wrong thing, as it turns out. The calculation is sound but
+its input was not — it reads `vehicles.mileage` as the current odometer, and for most owners that
+number had not been touched since signup. A stale figure does not merely look wrong here: it tells
+someone a job is fine when it is overdue, which is the one failure mode in this app that can cost
+an engine rather than an argument. Partly fixed the same day; see §9.
 
 **4. Parts benchmark — one line rather than a breakdown.** The low/average/high range is
 real vendor data. But the sync writes a single row reading "All parts for this repair" set
@@ -458,6 +500,14 @@ Notes worth knowing:
   conclusive "cannot decode this VIN" (cached, so a car that will never price is not
   re-asked every visit — see §3, gap 2), or an outage that is retried rather than
   remembered.
+- **MarketCheck is now asked by a nightly job, not by a page load** (`refresh-market-values.yml`,
+  daily at 09:30 UTC, clear of the 08:00 recall import). The monthly rule is unchanged and still
+  lives in one place — `marketValueDue` in `services/marketValueSync.ts`, which both the sweep and
+  the routes call — so a steady fleet costs roughly *vehicles ÷ 30* calls a night rather than one
+  per car per night, and a night with nothing due costs one query and no vendor calls. The sweep
+  caps itself at 250 calls per run and says so in the log when it does; that matters on the first
+  run, when every eligible car falls due at once. The route call stays, because it is what prices a
+  car the moment it is added instead of leaving it blank until the next sweep.
 
 ### Both pricing vendors are under review
 
@@ -522,6 +572,13 @@ The shape of it:
   Migration `0018` adds two.)
 - **Assessments are snapshots.** When you run a repair check, the prices are copied into
   the assessment. Refreshing supplier pricing later never changes what you were shown.
+- **Two things run on a schedule, both as GitHub Actions**, and neither is committed yet — the
+  whole `.github/` directory is still untracked as of 8 August. `import-nhtsa-recalls.yml` mirrors
+  NHTSA's recall catalogue nightly at 08:00 UTC; that one belongs to the recall-mirror work in
+  flight alongside this (`services/recallMirror.ts`, migration `0019`), which is not described in
+  this file yet and needs its own pass. `refresh-market-values.yml` re-prices due cars at 09:30
+  UTC. Neither applies migrations and neither is on the request path, so a failed night degrades
+  freshness rather than breaking the app. Both need repository secrets to work at all — see §9.
 
 ### The endpoints
 
@@ -617,12 +674,76 @@ than asserts, because whether a reply respected a guardrail is a judgement a rea
 second and a regex gets wrong. Run it after any change to the prompt, the model, or the effort
 and thinking settings.
 
+**The odometer is only half-solved, and the unfixed half is the one that matters.** Found 8
+August: `vehicles.mileage` was written in exactly two places — onboarding and the Account edit
+dialog — and nothing ever asked again. For most owners it therefore sat frozen at whatever they
+typed the day they signed up, while three things downstream read it as current: the maintenance
+due calculation (§3, gap 3), the price sent to MarketCheck (§3, gap 2), and My Car's masthead.
+
+Fixed the same day: **service records now feed the car's mileage.**
+`services/odometer.ts` raises `vehicles.mileage` whenever a logged service carries a higher
+reading, on both the create and the correct path. The readings were already being typed into
+`LogServiceDialog` and already used for the maintenance calculation — they simply were never fed
+back to the car itself. It is a one-way ratchet, and deliberately compares no dates: an odometer is
+monotonic, so a higher reading is necessarily the later one, which is what lets this work without a
+`mileage_updated_at` column to compare against.
+
+**Not fixed, and it is the larger half.** A car that is not serviced is not read either, so this
+closes the free half of the gap and not the whole one. What is still needed is to ask the owner
+directly — a prompt on My Car when the reading is stale, pre-filled with an estimate the owner
+confirms or corrects, plus the `mileage_updated_at` column that would make "stale" answerable at
+all. **Right now the app cannot tell a reading taken this week from one typed two years ago**, which
+is also why the value card cannot say what mileage its estimate is based on. That column is the
+prerequisite for both, and it is the next piece of work here.
+
+Worth recording, since it is the obvious thing to reach for: the only true automation for this is
+connected-car telematics (Smartcar and similar — OAuth into the owner's manufacturer account, read
+the odometer directly). It needs a 2016-or-newer car with a live connected-services subscription,
+which is close to the opposite of this app's audience, so it can be an opt-in extra for some users
+and never the mechanism the app relies on.
+
+**Two deliberate omissions in the fix, so neither reads as an oversight later.** A mileage bump does
+not clear `market_value_checked_at`, so the car is not re-priced immediately — the nightly sweep
+picks it up within the month, rather than spending a vendor call on every service log. And a
+mistyped reading now moves the car's mileage rather than just one history row; correcting the record
+will not walk it back, because the ratchet cannot tell a correction from an older reading. The owner
+fixes it in Account, where that number has always been editable.
+
 **The 6 August backlog has landed.** The `mycar` branch (valuation, paywall, onboarding
 rework) merged into `develop` on 7 August. What is uncommitted now is small and specific:
 this pass's NHTSA edge-case fixes (`marketCheck.ts`'s third outcome, the age caveat and
 VIN-lookup fallback links in `RecallsList`/`KnownIssuesList`), the Ask CA review log
 (`schema.ts`, `services/askTranscripts.ts`, `routes/chat.ts`, migration `0018`, and the
-`rls-lockdown.sql` fix), and this file. `npm run typecheck` passes across every workspace.
+`rls-lockdown.sql` fix), the 8 August odometer and nightly-sweep work above
+(`services/odometer.ts`, `routes/serviceRecords.ts`, `services/marketValueSync.ts`,
+`scripts/refreshMarketValues.mts`, `.github/workflows/refresh-market-values.yml`), the My Car
+layout and button-colour changes, and this file. `npm run typecheck` passes across every workspace
+and `npm run build` succeeds.
+
+**It is no longer small, and one piece of it is undescribed.** Also uncommitted on 8 August: a
+local mirror of NHTSA's recall catalogue — `services/recallMirror.ts`,
+`scripts/importNhtsaRecalls.mts`, `.github/workflows/import-nhtsa-recalls.yml`, new tables in
+`schema.ts`, and **migration `0019`, which is written but not applied to the shared database.**
+That work is not covered anywhere in this file and was not reviewed in this pass; §2, §5 and the
+migration list in this section all need updating for it. Flagged rather than described, because
+guessing at what it does from the diff is how this file would start being wrong. Note that the
+migration list above stops at `0018` for that reason, not because `0019` does not exist.
+
+**Needs checking: `MARKET_CHECK_API_KEY` has to be added to the repository's GitHub Actions
+secrets.** `DATABASE_URL` is already there for the recall import, but the new workflow needs the
+vendor key as well. Without it the sweep exits early with a message naming the cause — chosen over
+letting it run, because every call would return `unavailable` and the log would look like a vendor
+outage rather than a missing secret. Until the secret is set, the nightly job does nothing.
+
+**How much of the sweep is confirmed, and how.** `npm run refresh:values -- --dry-run` is
+read-only — one query, no vendor calls, no writes — and it was run against the shared database on
+8 August: 6 vehicles on file, 0 due, which is a true negative rather than an empty filter (the
+three eligible cars were priced on 7 August, so they are 29 days off). Re-running the same
+`marketValueDue` rule against future dates confirms the cadence: 0 due at +29 days, 3 at +31, and
+still 3 at +40 — the other three never become due, correctly, because they are the cars missing a
+VIN or a zip. **Not confirmed:** an actual vendor call from inside the workflow, since nothing is
+due for another month and no run has happened yet. Use `workflow_dispatch` with a small `--limit`
+for the first real run rather than waiting for the cron to find out.
 
 **Migration `0018` (the Ask CA review log) is applied — run and verified directly on 8
 August.** Both tables exist with the intended columns, all three foreign keys cascade as

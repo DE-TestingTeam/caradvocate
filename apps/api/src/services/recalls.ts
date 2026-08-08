@@ -3,16 +3,34 @@
  * `ReportReceivedDate` is DD/MM/YYYY, so "28/05/2020" is 28 May; and the park-outside flag is
  * spelled `parkOutSide`, with a capital S.
  *
- * An unknown make/model returns `Count: 0` rather than an error, so a genuine all-clear and an
- * unrecognised model are indistinguishable here -- both mean "nothing to show".
+ * THREE OUTCOMES, NOT TWO. A model NHTSA does not recognise answers HTTP 400 -- with a body
+ * that reads `{"Count":0,"Message":"Results returned successfully"}`, which is a success shape
+ * carrying a failure. Collapsing that into "could not reach NHTSA" was wrong twice over: it
+ * told owners a federal database was down when it had replied in under a second, and it put
+ * the model on a retry ladder re-asking a question already answered. A recognised model with
+ * nothing against it answers 200 and `Count: 0`, and that one IS an all-clear.
  *
- * Defensive throughout: a timeout, a non-200 or an unexpected shape yields no recalls rather
- * than throwing, because a recall feed being down must not take My Car down with it.
+ * The 400 is recoverable more often than not, because it usually means NHTSA files the car
+ * under a finer name than the owner's -- a 2014 "F-350" is "F-350 SD" to them. Resolving that
+ * needs their vocabulary, which lives in the mirror, so it is the caller's job: this file
+ * stays free of the database. See services/recallSync.ts.
+ *
+ * Defensive otherwise: a timeout, any other non-200 or an unexpected shape yields
+ * `unavailable` rather than throwing, because a recall feed being down must not take My Car
+ * down with it.
  */
-import { fetchJson } from '../lib/fetchJson.js';
 
 const NHTSA_RECALLS = 'https://api.nhtsa.gov/recalls/recallsByVehicle';
 const TIMEOUT_MS = 8000;
+
+/**
+ * `unknown_model` is NHTSA's answer about the NAME, never about the car. It must not reach an
+ * owner as an all-clear, and it must not be retried as though it were an outage.
+ */
+export type RecallFetch =
+  | { outcome: 'ok'; recalls: FetchedRecall[] }
+  | { outcome: 'unknown_model' }
+  | { outcome: 'unavailable' };
 
 /** One campaign, already normalised for storage. */
 export interface FetchedRecall {
@@ -34,22 +52,70 @@ export interface RecallLookup {
 }
 
 /**
- * Recalls for one model, or `undefined` when NHTSA could not be reached. The sync record is
- * what tracks whether a check actually succeeded.
+ * Recalls for one model, under the name given.
+ *
+ * Its own fetch rather than lib/fetchJson, which collapses every failure into `undefined` --
+ * the 400 is the whole point here and has to survive.
  */
-export async function fetchRecalls(lookup: RecallLookup): Promise<FetchedRecall[] | undefined> {
-  const body = await requestRecalls(lookup);
-  if (body === undefined) return undefined;
-  return parseRecallsResponse(body);
-}
-
-async function requestRecalls(lookup: RecallLookup): Promise<unknown | undefined> {
+export async function fetchRecalls(lookup: RecallLookup): Promise<RecallFetch> {
   const url = new URL(NHTSA_RECALLS);
   url.searchParams.set('make', lookup.make);
   url.searchParams.set('model', lookup.model);
   url.searchParams.set('modelYear', String(lookup.year));
 
-  return fetchJson(url, TIMEOUT_MS);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
+  try {
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: { Accept: 'application/json' },
+    });
+
+    // NHTSA's shape for "no such model", regardless of the success-looking body.
+    if (response.status === 400) return { outcome: 'unknown_model' };
+    if (!response.ok) return { outcome: 'unavailable' };
+
+    return { outcome: 'ok', recalls: parseRecallsResponse(await response.json()) };
+  } catch {
+    // Offline, blocked, slow, or malformed JSON. All the same to the caller.
+    return { outcome: 'unavailable' };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * The same lookup asked under several names, UNIONED.
+ *
+ * Unioned rather than first-wins because NHTSA's finer names are body and cab variants --
+ * "F-350 SD" and "F-350 SUPER DUTY" are one truck to an owner -- and nothing on file says
+ * which one is in the driveway. The union over-reports for some owners; picking one would hide
+ * a live safety recall from the rest. The list already says these are recalls for the year,
+ * make and model, and points at the VIN lookup that narrows it.
+ *
+ * `unavailable` only if every name failed to answer. One name answering is enough to know the
+ * feed is up, and a name that 400s within a resolved set is simply a variant this car is not.
+ */
+export async function fetchRecallsForNames(
+  lookup: RecallLookup,
+  names: readonly string[],
+): Promise<RecallFetch> {
+  const recalls = new Map<string, FetchedRecall>();
+  let answered = false;
+
+  for (const name of names) {
+    const attempt = await fetchRecalls({ ...lookup, model: name });
+    if (attempt.outcome === 'unavailable') continue;
+    answered = true;
+    if (attempt.outcome === 'ok') {
+      // Keyed by campaign: the variants share most of their recalls.
+      for (const recall of attempt.recalls) recalls.set(recall.campaignNumber, recall);
+    }
+  }
+
+  if (!answered) return { outcome: 'unavailable' };
+  return { outcome: 'ok', recalls: [...recalls.values()] };
 }
 
 /**

@@ -1,0 +1,39 @@
+# Refreshes the local mirror of NHTSA's recall catalog (scripts/importNhtsaRecalls.mts).
+#
+# Costs nothing per run beyond CI minutes -- it is a download and a bulk insert, with no model
+# call anywhere in it. Roughly 22MB pulled and a few minutes of runtime a night.
+#
+# NHTSA republishes the flat files daily at about 07:00 UTC, so this runs an hour behind them.
+# Nothing here applies migrations: the two tables must already exist, via the normal deploy.
+name: Import NHTSA recalls
+
+on:
+  schedule:
+    - cron: '0 8 * * *'
+  # Also runnable by hand, which is how you would backfill after a failed night.
+  workflow_dispatch:
+
+# A run replaces the whole mirror in one transaction, so two at once would be pointless work
+# on the same rows rather than a corruption -- but there is no reason to pay for it twice.
+concurrency:
+  group: import-nhtsa-recalls
+  cancel-in-progress: false
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Import recalls
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: npm run import:recalls

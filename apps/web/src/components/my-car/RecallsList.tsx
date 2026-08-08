@@ -28,16 +28,22 @@ export function RecallsList({
   const oldVehicleCaveat = isOldVehicle(year) && (
     <p className="flex items-start gap-2 py-2 text-sm text-muted-foreground">
       <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning-strong" />
-      Recall records for a car this old are sometimes filed under a different name than the one on this page. If
-      you want certainty, {vinCheckPrompt(vin)}.
+      {/* One span, not bare text: the flex row would otherwise make the sentence and the link
+          either side of it separate flex items, and lay them out as columns. */}
+      <span>
+        Recall records for a car this old are sometimes filed under a different name than the one on this page. If
+        you want certainty, {vinCheckPrompt(vin)}.
+      </span>
     </p>
   );
 
   if (report.recalls.length === 0) {
-    // "Nothing found" and "we could not look" are different claims; only one is reassuring.
+    // Three claims, not two: "nothing found", "we could not look", and "NHTSA does not know
+    // this car by this name". Only the first is reassuring, and the third is the one an owner
+    // can actually do something about today.
     return (
       <>
-        {report.checked ? (
+        {report.status === 'ok' ? (
           <p className="flex items-center gap-2 py-2 text-sm text-muted-foreground">
             <ShieldCheck className="h-4 w-4 shrink-0 text-muted-foreground" />
             No open safety recalls for this model.
@@ -48,9 +54,19 @@ export function RecallsList({
                 recall urgency icon below). This is not a recall's own urgency, but it should not
                 sit as calm as the all-clear case above it. */}
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning-strong" />
-            Could not reach the NHTSA recall database. This is not an all-clear — it will fill in once the check
-            succeeds. In the meantime, {vinCheckPrompt(vin)}, which asks NHTSA directly rather than by year, make
-            and model.
+            {report.status === 'model_not_listed' ? (
+              <span>
+                NHTSA does not list recalls under this car's model name, so we cannot tell you either way. Nothing
+                is down — they answered, they just file this vehicle under a different name than the one on this
+                page. {vinCheckPromptSentenceCase(vin)}, which asks by VIN rather than by name and will settle it.
+              </span>
+            ) : (
+              <span>
+                Could not reach the NHTSA recall database. This is not an all-clear — it will fill in once the check
+                succeeds. In the meantime, {vinCheckPrompt(vin)}, which asks NHTSA directly rather than by year, make
+                and model.
+              </span>
+            )}
           </p>
         )}
         {oldVehicleCaveat}
@@ -239,6 +255,11 @@ function Detail({ label, children }: { label: string; children: React.ReactNode 
  * it is a real alternative -- not just a repeat of the same question -- whenever that feed
  * has not answered, or answered under a model name that turns out to be wrong.
  */
+/** The same prompt opening a sentence rather than continuing one. */
+function vinCheckPromptSentenceCase(vin?: string) {
+  return vin ? vinCheckPrompt(vin) : 'Ask your dealer to check your VIN';
+}
+
 function vinCheckPrompt(vin?: string) {
   return vin ? (
     <a

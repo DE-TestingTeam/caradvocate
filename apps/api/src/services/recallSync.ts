@@ -6,8 +6,23 @@
 import { and, notInArray, sql } from 'drizzle-orm';
 import type { Database } from '../db/index.js';
 import { modelRecalls } from '../db/schema.js';
-import { fetchRecalls, type FetchedRecall, type RecallLookup } from './recalls.js';
-import { dueForCheck, modelMatches, normaliseKey, readSyncState, recordCheck } from './modelFeed.js';
+import type { RecallCheckStatus } from '@caradvocate/shared';
+import {
+  fetchRecalls,
+  fetchRecallsForNames,
+  type FetchedRecall,
+  type RecallFetch,
+  type RecallLookup,
+} from './recalls.js';
+import { listMirroredModelNames, lookupMirroredRecalls, matchModelNames } from './recallMirror.js';
+import {
+  dueForCheck,
+  modelMatches,
+  normaliseKey,
+  readSyncState,
+  recordCheck,
+  type SyncState,
+} from './modelFeed.js';
 
 const FEED = 'recalls' as const;
 
@@ -22,28 +37,86 @@ export async function getModelRecalls(
   db: Database,
   lookup: RecallLookup,
   now: Date = new Date(),
-): Promise<{ recalls: RecallRow[]; synced: boolean }> {
-  const sync = await readSyncState(db, FEED, lookup);
+): Promise<{ recalls: RecallRow[]; status: RecallCheckStatus }> {
+  let sync = await readSyncState(db, FEED, lookup);
 
-  // Tracked rather than re-read: this runs on every My Car load, and the sync already knows.
-  let reached = sync?.succeededAt != null;
   if (dueForCheck(FEED, sync, now)) {
-    reached = (await syncModelRecalls(db, lookup, now)) || reached;
+    await syncModelRecalls(db, lookup, now);
+    // Re-read rather than tracked: the sync it just wrote carries both whether NHTSA answered
+    // and, when it did, whether it recognised the name.
+    sync = await readSyncState(db, FEED, lookup);
   }
 
   const recalls = await db.select().from(modelRecalls).where(modelMatches(modelRecalls, lookup));
   recalls.sort(bySeverityThenRecency);
 
-  return { recalls, synced: reached };
+  return { recalls, status: statusOf(sync) };
+}
+
+/**
+ * Reads the sync record, which a failure never retracts -- `recordCheck` leaves `succeededAt`
+ * standing and moves only the attempt clock. So a model reached last week and unreachable
+ * today still reports `ok` and keeps showing the rows it earned, rather than putting a warning
+ * banner over a list that is right there. Only a model NHTSA has never answered about at all
+ * reports why.
+ */
+/**
+ * Asks NHTSA under the name on the car, and if they do not recognise it, under whatever names
+ * the mirror says they file this year and make by.
+ *
+ * The second step is why the mirror earns its keep beyond being a backup: NHTSA's recall API
+ * matches model names exactly, and the name on a car is routinely not one of theirs. A 2014
+ * "F-350" -- what a VIN decode gives -- is "F-350 SD" to them, and asking the wrong way is
+ * indistinguishable from asking about a car with no recalls. It has 6.
+ *
+ * A 400 is left standing when nothing resolves. That is the honest answer for a "GMT-400": a
+ * platform code no manufacturer sells, which NHTSA has never heard of and no amount of
+ * matching should invent a model for.
+ */
+async function resolveAndFetch(db: Database, lookup: RecallLookup): Promise<RecallFetch> {
+  const direct = await fetchRecalls(lookup);
+  if (direct.outcome !== 'unknown_model') return direct;
+
+  const vocabulary = await listMirroredModelNames(db, lookup.year, lookup.make);
+  const names = matchModelNames(vocabulary, lookup.model);
+  // Nothing to try, either because the name is genuinely not NHTSA's or because the mirror has
+  // not been imported yet. Both leave the 400 exactly as informative as it already was.
+  if (names.length === 0) return direct;
+
+  return fetchRecallsForNames(lookup, names);
+}
+
+function statusOf(sync: SyncState | undefined): RecallCheckStatus {
+  if (!sync?.succeededAt) return 'unreachable';
+  return sync.outcome === 'model_not_listed' ? 'model_not_listed' : 'ok';
 }
 
 /**
  * Fetches and stores one model's recalls, returning whether NHTSA was reached. A failed fetch
  * records the attempt and leaves existing rows untouched -- deleting on failure would let an
  * NHTSA blip clear a genuine safety warning off someone's screen.
+ *
+ * Two sources, asked in order: the live API, then the local mirror of NHTSA's bulk files
+ * (services/recallMirror.ts). Both are NHTSA's own data, so an answer from either is a real
+ * answer and counts as reached -- the mirror exists precisely so a car that has never been
+ * looked up still gets its recalls when the API is unreachable. The API goes first because it
+ * normalises model names and is at most a day fresher; see the mirror's header for why a miss
+ * there is treated as no answer rather than an all-clear.
  */
 async function syncModelRecalls(db: Database, lookup: RecallLookup, now: Date): Promise<boolean> {
-  const fetched = await fetchRecalls(lookup);
+  const result = await resolveAndFetch(db, lookup);
+
+  // NHTSA answered and files nothing under any name this car resolves to. A real answer, so
+  // it is recorded as one and earns the full freshness window -- but qualified, so it can
+  // never reach an owner as "no open recalls".
+  if (result.outcome === 'unknown_model') {
+    await recordCheck(db, FEED, lookup, now, true, 'model_not_listed');
+    return true;
+  }
+
+  // The mirror is asked only when the API gave no answer at all.
+  const fetched =
+    result.outcome === 'ok' ? result.recalls : await lookupMirroredRecalls(db, lookup);
 
   if (fetched === undefined) {
     await recordCheck(db, FEED, lookup, now, false);

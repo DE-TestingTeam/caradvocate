@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { newServiceRecordSchema, updateServiceRecordSchema } from '@caradvocate/shared';
 import { maintenanceItems, serviceRecords } from '../db/schema.js';
 import { toServiceRecord } from '../mappers.js';
+import { noteOdometerReading } from '../services/odometer.js';
 import { userIdOf } from '../middleware/currentUser.js';
 import { validateBody } from '../middleware/validate.js';
 import { HttpError } from '../lib/httpError.js';
@@ -40,6 +41,12 @@ serviceRecordsRouter.post('/', validateBody(newServiceRecordSchema), async (req,
     })
     .returning();
 
+  // A reading higher than the figure on file is the newest odometer we have; see
+  // services/odometer.ts. Deliberately after the insert rather than inside a transaction with
+  // it: the record is the thing the owner asked to save, and it should not be lost to a failure
+  // updating a number they can also edit in Account.
+  await noteOdometerReading(req.db, vehicle, row.mileageAtService);
+
   res.status(201).json(toServiceRecord(row));
 });
 
@@ -67,6 +74,11 @@ serviceRecordsRouter.patch('/:id', validateBody(updateServiceRecordSchema), asyn
     .set(patch)
     .where(eq(serviceRecords.id, existing.id))
     .returning();
+
+  // A correction that RAISES the reading teaches us something; one that lowers it cannot walk the
+  // car's mileage back, because the ratchet has no way to tell a fix from an older reading. See
+  // the note in services/odometer.ts.
+  await noteOdometerReading(req.db, vehicle, row.mileageAtService);
 
   res.json(toServiceRecord(row));
 });

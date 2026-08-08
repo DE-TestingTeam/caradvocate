@@ -308,6 +308,64 @@ export const modelRecalls = pgTable(
 );
 
 /**
+ * A local mirror of NHTSA's ENTIRE recall catalog, loaded from their bulk flat files by
+ * scripts/importNhtsaRecalls.mts. Distinct from `modelRecalls` above, and not a
+ * replacement for it: `modelRecalls` stays the per-model working set the app reads, and
+ * this is the source it falls back to when api.nhtsa.gov cannot be reached.
+ *
+ * WHY IT EXISTS: the live API is the only thing standing between an owner and "could not
+ * reach the NHTSA recall database". It is also entirely avoidable -- NHTSA publishes the
+ * same data as a file, refreshed daily. A mirror turns a per-page-load dependency on a
+ * third party into a question about whether last night's job ran.
+ *
+ * WHY TWO TABLES: one campaign covers many models, and its summary/consequence/remedy run
+ * to paragraphs. Denormalised, the catalog is 268MB, because the same prose is repeated for
+ * every model it names -- 169,240 model rows share 26,482 campaigns, so about sixfold on
+ * average. Split this way it is 28MB.
+ *
+ * WHOLLY DERIVED. Nothing here is user data and nothing else references it, so the import
+ * replaces both tables outright. That also makes it the one place in this schema where a
+ * delete-everything write is correct -- see the guards in the importer, which refuse to
+ * replace a good mirror with a short download.
+ */
+export const nhtsaRecallCampaigns = pgTable('nhtsa_recall_campaigns', {
+  /** NHTSA's own campaign identifier, e.g. `20V314000`. One row per campaign. */
+  campaignNumber: text('campaign_number').primaryKey(),
+  summary: text('summary').notNull(),
+  consequence: text('consequence').notNull(),
+  remedy: text('remedy').notNull(),
+});
+
+/**
+ * Which models each campaign covers. NHTSA files one row per year/make/model/campaign,
+ * which is exactly the key the app already syncs on.
+ */
+export const nhtsaRecallModels = pgTable(
+  'nhtsa_recall_models',
+  {
+    year: integer('year').notNull(),
+    make: text('make').notNull(),
+    model: text('model').notNull(),
+    campaignNumber: text('campaign_number').notNull(),
+    component: text('component').notNull(),
+    parkIt: boolean('park_it').notNull().default(false),
+    parkOutside: boolean('park_outside').notNull().default(false),
+    /** Null when the file carried an unparseable date; the recall still stands. */
+    reportedOn: date('reported_on'),
+  },
+  (table) => ({
+    // The lookup the fallback makes. Covering, so answering a model costs one index scan.
+    byModel: index('nhtsa_recall_models_model_idx').on(table.year, table.make, table.model),
+    campaignPerModel: uniqueIndex('nhtsa_recall_models_campaign_unique').on(
+      table.year,
+      table.make,
+      table.model,
+      table.campaignNumber,
+    ),
+  }),
+);
+
+/**
  * Owner complaints filed with NHTSA, aggregated at sync time by component -- one row is
  * one component for one model.
  *
@@ -407,6 +465,17 @@ export const modelFeedSyncs = pgTable(
      * vendor that blipped from one that has never answered.
      */
     succeededAt: timestamp('succeeded_at', { withTimezone: true }),
+    /**
+     * How the last successful check ended, when that needs saying: `model_not_listed` means
+     * the vendor answered but files nothing under this model name. Null is an ordinary
+     * answer, including a genuine empty one, and is what every pre-existing row holds.
+     *
+     * It rides on `succeededAt` deliberately. An unlisted name IS an answer -- it will not
+     * start existing next week -- so it earns the full freshness window rather than the retry
+     * ladder. What it must never do is read as an all-clear, which is why the distinction is
+     * stored rather than inferred from an empty list. See shared RecallCheckStatus.
+     */
+    outcome: text('outcome'),
   },
   (table) => ({
     byFeedAndModel: uniqueIndex('model_feed_syncs_feed_model_unique').on(

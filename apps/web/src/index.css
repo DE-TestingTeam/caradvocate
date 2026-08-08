@@ -25,14 +25,14 @@
     /**
      * Consumer Reports green, #00803E. 5.05:1 against white, so white text on it is legible.
      *
-     * It no longer carries primary actions. Green now marks IDENTITY -- the logo, the focus
-     * ring, the active nav row -- and near-black carries the actions instead. The reason is
-     * that a saturated house colour on every button is the thing that stops photography and
-     * status colour from meaning anything: when the chrome is already loud, a red recall badge
-     * has nothing to be louder than. Putting the chrome in greyscale is what buys those
-     * signals their contrast back.
+     * It carries primary actions -- `--primary` points here, so every solid button is green --
+     * as well as identity: the logo, the focus ring, the active nav row.
      *
-     * To undo: point `--primary` back at `var(--brand)`. Nothing else depends on this choice.
+     * The cost to watch: a saturated house colour on every button competes with status colour
+     * for attention, and a red recall badge needs something quieter to be louder than. What
+     * keeps that working is that green is the ONLY saturated thing in the chrome -- badges,
+     * panels, borders and text all stay in the warm greyscale below. Adding a second bright
+     * colour to the furniture is what would actually break it.
      */
     --brand: 149 100% 25.1%;
 
@@ -73,8 +73,8 @@
     --popover: 0 0% 100%;
     --popover-foreground: var(--grey-ink);
 
-    /** Near-black carries primary actions. See the note on `--brand` above. */
-    --primary: var(--grey-ink);
+    /** The brand green carries primary actions. See the note on `--brand` above. */
+    --primary: var(--brand);
     --primary-foreground: 0 0% 100%;
 
     --secondary: var(--grey-surface);
@@ -89,7 +89,8 @@
     --border: var(--grey-line);
     --input: var(--grey-line);
     /** Focus rings follow the brand, so keyboard focus is unmistakably ours and not a default.
-        With primary now near-black, this is where the green earns its keep. */
+        Green on a green button still reads because every ring carries `ring-offset-2`, which
+        puts a page-coloured gap between the fill and the ring. */
     --ring: var(--brand);
 
     /**

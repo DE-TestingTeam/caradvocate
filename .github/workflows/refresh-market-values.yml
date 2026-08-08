@@ -1,0 +1,53 @@
+# Re-prices cars whose market value has gone stale (scripts/refreshMarketValues.mts).
+#
+# WHY IT IS A CRON AND NOT A REQUEST: the valuation used to refresh only when an owner opened the
+# app, which made My Car's trend chart "one reading per month somebody signed in" rather than a
+# monthly series. This runs whether anyone visits or not.
+#
+# WHAT IT COSTS: one MarketCheck call per car that is over a month stale, so on a steady fleet this
+# is roughly (vehicles / 30) calls a night, not one per car per night -- the monthly rule lives in
+# services/marketValueSync.ts and the script defers to it. Nights where nothing is due cost a single
+# query. The script caps itself at 250 calls per run; see DEFAULT_LIMIT for why that matters most on
+# the first run, when every car is due at once.
+#
+# 09:30 UTC, deliberately clear of the 08:00 recall import -- both hold a Postgres pool against the
+# same database and there is nothing to gain from overlapping them.
+name: Refresh market values
+
+on:
+  schedule:
+    - cron: '30 9 * * *'
+  # By hand for the first run after a deploy, or to catch up after a failed night.
+  workflow_dispatch:
+
+# Two sweeps at once would double-spend the vendor allowance on the same rows. `cancel-in-progress`
+# stays false: a run part-way through the fleet has already written real prices, and killing it
+# mid-sweep would leave the rest of the fleet due anyway, which is what the next run handles.
+concurrency:
+  group: refresh-market-values
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    # Generous next to the expected runtime: the script paces itself at ~2 calls a second, so even a
+    # full 250-call run is a few minutes. The limit is here to kill a hung vendor connection, not to
+    # bound normal work.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Refresh market values
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          # Without this the script exits early rather than reporting a fleet of failures that
+          # look like a vendor outage.
+          MARKET_CHECK_API_KEY: ${{ secrets.MARKET_CHECK_API_KEY }}
+        run: npm run refresh:values

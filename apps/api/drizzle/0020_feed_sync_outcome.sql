@@ -1,0 +1,13 @@
+-- Qualifies a successful feed check, so "the vendor answered about this car" and "the vendor
+-- does not file anything under this model name" stop being the same row.
+--
+-- NHTSA answers HTTP 400 for a model it does not recognise -- a 2014 "F-350", which it files by
+-- cab as "F-350 SUPERCAB" and friends, or a "GMT-400", which is a platform code rather than a
+-- model. That was being recorded as an unreachable feed, which told owners a federal database
+-- was down when it had replied in under a second, and left the model retrying a settled
+-- question. It is an answer, so it now records as one and earns the full freshness window --
+-- but qualified here, because it must never reach an owner as "no open recalls".
+--
+-- Nullable with no backfill: null is an ordinary answer, which is what every existing row is,
+-- and what a re-check writes for a model that is listed. See shared RecallCheckStatus.
+ALTER TABLE "model_feed_syncs" ADD COLUMN "outcome" text;

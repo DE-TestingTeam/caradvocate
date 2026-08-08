@@ -29,8 +29,10 @@ import { cn } from '@/lib/utils';
  * all. `destructive` is the one exception, and it earns it by meaning something the other
  * variants cannot say.
  *
- * Green is gone from buttons entirely. It marks identity now -- logo, focus ring, active nav --
- * which is a job no other colour on the page is doing.
+ * Solid is the brand green, via `--primary`. Note what that costs: green now means both "this is
+ * the action" and "this is us" (logo, focus ring, active nav), so a green thing that is NOT
+ * pressable is a mixed signal. That is what the pill radius is for -- it, not the colour, is what
+ * says pressable.
  */
 const OUTLINED =
   'border border-border bg-transparent text-foreground hover:bg-accent hover:text-accent-foreground';

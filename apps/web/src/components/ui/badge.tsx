@@ -21,7 +21,13 @@ const badgeVariants = cva(
   {
     variants: {
       variant: {
-        default: 'border-transparent bg-primary text-primary-foreground',
+        /**
+         * Ink rather than `bg-primary`. Primary is the brand green, and the default badge's job
+         * is to label a verdict ("Get a second opinion") -- green there would read as an
+         * all-clear the badge is not making. Colour on a badge is reserved for the `destructive`
+         * and `warning` variants, which do mean something by it.
+         */
+        default: 'border-transparent bg-foreground text-background',
         secondary: 'border-transparent bg-secondary text-secondary-foreground',
         /**
          * Tinted rather than filled: saturated red repeated down a list of recalls and

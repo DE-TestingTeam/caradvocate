@@ -234,7 +234,7 @@ async function requireOwnMaintenanceItem(
  */
 vehicleRouter.get('/recalls', async (req, res) => {
   const vehicle = await requireOwnVehicle(req);
-  const [{ recalls, synced }, owned] = await Promise.all([
+  const [{ recalls, status }, owned] = await Promise.all([
     getModelRecalls(req.db, modelKeyOf(vehicle)),
     req.db.select().from(vehicleRecallStatus).where(eq(vehicleRecallStatus.vehicleId, vehicle.id)),
   ]);
@@ -246,7 +246,7 @@ vehicleRouter.get('/recalls', async (req, res) => {
   // have been mistaken -- but not competing with outstanding work for attention.
   merged.sort((a, b) => Number(a.repaired === true) - Number(b.repaired === true));
 
-  res.json({ recalls: merged, checked: synced } satisfies RecallReport);
+  res.json({ recalls: merged, status } satisfies RecallReport);
 });
 
 /**

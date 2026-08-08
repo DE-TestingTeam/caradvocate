@@ -153,7 +153,7 @@ function describeSources(
     { kind: 'vehicle', label: `Your ${vehicle.year} ${vehicle.make} ${vehicle.model}` },
   ];
 
-  if (recalls.synced && recalls.recalls.length > 0) {
+  if (recalls.status === 'ok' && recalls.recalls.length > 0) {
     sources.push({
       kind: 'recalls',
       label: `${plural(recalls.recalls.length, 'NHTSA recall')} for this model`,
@@ -193,8 +193,13 @@ function recallSection(
   recalls: Awaited<ReturnType<typeof getModelRecalls>>,
   repairedBy: Map<string, boolean>,
 ): string {
-  if (!recalls.synced) {
+  if (recalls.status === 'unreachable') {
     return 'SAFETY RECALLS\nNHTSA could not be reached, so recalls are unknown for this car. This is NOT an all-clear -- say so if it comes up.';
+  }
+  // Told apart from the line above because the honest answer differs: nothing is broken, the
+  // name is wrong, and the owner can act on that -- checking their VIN settles it today.
+  if (recalls.status === 'model_not_listed') {
+    return 'SAFETY RECALLS\nNHTSA does not list recalls under this car\'s model name, so recalls are unknown for it. This is NOT an all-clear. NHTSA was reached and answered -- nothing is down -- it simply files this vehicle under a different name. A VIN check at nhtsa.gov/recalls settles it.';
   }
   if (recalls.recalls.length === 0) {
     return 'SAFETY RECALLS\nNone issued for this year/make/model. This one you can state plainly.';
