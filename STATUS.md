@@ -13,11 +13,11 @@ the paywall and onboarding restructuring, and two NHTSA data-quality gaps found 
 testing real signups — against the source, a live database read, and the vendors
 themselves. Sections untouched by that work still reflect the 6 August pass.
 
-**Amended later on 7 August:** Ask CA exchanges are now recorded for quality assurance
-(migration `0018`, not yet applied — see §9). This reverses a standing "nothing is stored"
-claim that ran through §4, §6 and §9, so those three sections were rewritten rather than
-annotated. A schema audit in the same pass found two dead columns and one live bug in
-`sql/rls-lockdown.sql`; both are noted where they belong below.
+**Amended 7–8 August:** Ask CA exchanges are now recorded for quality assurance. This reverses
+a standing "nothing is stored" claim that ran through §4, §6 and §9, so those three sections
+were rewritten rather than annotated. A schema audit in the same pass found two dead columns
+and one live bug in `sql/rls-lockdown.sql`; both are noted where they belong below.
+**Migration `0018` was applied to the shared database on 8 August and verified** — see §9.
 
 ---
 
@@ -326,11 +326,12 @@ Three more behaviour rules worth knowing:
 - **You have no car on file** → that error is deliberately *not* caught, because it is a
   setup problem and "something went wrong reaching the assistant" would hide it.
 
-### Every exchange is recorded for quality assurance (new, 7 August)
+### Every exchange is recorded for quality assurance (new, 7–8 August)
 
-**Confirmed in the source; not yet applied to any database.** You cannot review the quality of
-an answer you never kept, so `ask_transcripts` now stores one row per exchange: the question,
-the answer as the owner saw it, and enough context to judge it.
+**Confirmed in the source, and live: migration `0018` was applied to the shared database on 8
+August (§9).** You cannot review the quality of an answer you never kept, so `ask_transcripts`
+now stores one row per exchange: the question, the answer as the owner saw it, and enough
+context to judge it.
 
 | Recorded | Why it is worth having |
 |---|---|
@@ -623,14 +624,19 @@ VIN-lookup fallback links in `RecallsList`/`KnownIssuesList`), the Ask CA review
 (`schema.ts`, `services/askTranscripts.ts`, `routes/chat.ts`, migration `0018`, and the
 `rls-lockdown.sql` fix), and this file. `npm run typecheck` passes across every workspace.
 
-**⚠️ Migration `0018` (the Ask CA review log) is written but NOT applied anywhere.** Nothing
-is being recorded until `npm run db:migrate --workspace @caradvocate/api` runs against the
-shared database. Until then the code writes to two tables that do not exist — which fails
-safely, because `services/askTranscripts.ts` catches its own errors, so every answer still
-works and every transcript is silently dropped with a line in the API log. Worth knowing that
-the failure mode is quiet: a review queue that stays empty looks the same as nobody asking
-questions. See the note below about a separate migration line running against this same
-database — that is worth resolving before applying this one.
+**Migration `0018` (the Ask CA review log) is applied — run and verified directly on 8
+August.** Both tables exist with the intended columns, all three foreign keys cascade as
+designed, and RLS is on for both. The public schema went from 25 tables to 27, and the row
+counts of every existing table were checked before and after and are unchanged (6 users, 6
+vehicles, 9 service records, 3 assessments, 2 paywall intents). `ask_transcripts` is at 0 rows,
+as expected — nothing has been asked since.
+
+**Needs checking:** that a real question actually lands a row. The write path has not been
+exercised against the live tables yet, and it is designed to fail silently
+(`services/askTranscripts.ts` catches its own errors so a QA write can never cost an owner an
+answer). So an empty log is genuinely ambiguous: it looks the same whether nobody asked
+anything or every insert is failing. Ask one question through the UI and confirm the row
+appears, once, before trusting the emptiness.
 
 **Migrations `0016` and `0017` are applied on the shared database — checked directly on 7
 August**, not inferred: `pricing_model` exists on both `users` and `paywall_intents`,
@@ -649,11 +655,12 @@ new migration, since drizzle's own journal has no idea that line exists.
 but until `db:pricing` runs against a database, the app serves old invented figures under a
 real-looking label. **Needs checking:** whether it has been run since `0013` landed.
 
-**⚠️ Row-level security is off, and this is now confirmed rather than suspected.** Checked
-directly on 6 August: **0 of 26 tables** in the shared database have RLS enabled, and no
-policies exist. `apps/api/sql/rls-lockdown.sql` has never been run there. (That count will be
-28 once `0018` is applied; the migration switches RLS on for its own two tables, since Postgres
-has no default for it.)
+**⚠️ Row-level security is off on everything except the two newest tables.** Re-checked
+directly on 8 August, after `0018`: **2 of 27 tables** in the shared database have RLS enabled,
+and those two are `ask_transcripts` and `ask_transcript_sources`, which `0018` switched on
+itself. The other 25 are open, and no policies exist anywhere.
+`apps/api/sql/rls-lockdown.sql` has still never been run. (The 6 August reading was 0 of 26;
+the table count moved because `0017` dropped `user_features` and `0018` added two.)
 
 **And the lockdown script would have failed if anyone had tried.** Found in this pass, now
 fixed: it still listed `user_features`, which migration `0017` dropped. `alter table` on a
