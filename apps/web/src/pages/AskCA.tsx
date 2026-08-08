@@ -88,10 +88,18 @@ export function AskCAPage() {
             <p className="text-sm font-medium">
               {`Ask about a noise, a warning light, or a quote you have been given.`}
             </p>
+            {/*
+              Splits what is the model's from what is this car's, because the two carry
+              different weight. Recalls and owner complaints are pulled by year, make and model
+              -- they describe cars like yours, and a recall in that set may cover only certain
+              VINs. Only the upkeep schedule and service history are this car's own. Saying "your
+              car's own recalls" claimed a per-VIN answer nothing in the stack actually has.
+            */}
             <p className="mt-2 max-w-sm text-sm text-muted-foreground">
-              Answers use your car&rsquo;s own recalls, owner-reported problems and service
-              history, and each one shows what it drew on. Nothing is saved to your account
-              &mdash; the conversation stays in this tab and clears when you close it.
+              Answers use recalls and owner-reported problems for your year, make and model,
+              along with your own service history, and each one shows what it drew on. Nothing is
+              saved to your account &mdash; the conversation stays in this tab and clears when you
+              close it.
             </p>
           </div>
         ) : (

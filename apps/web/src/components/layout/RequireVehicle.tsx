@@ -66,7 +66,7 @@ function MyCarSkeleton() {
           here would look right -- but a control that appears before the data it acts on is a
           control someone can press too early. The `min-h` on Section's header keeps the rule
           in the same place either way, so nothing shifts when they arrive. */}
-      <Section title="Safety recalls">
+      <Section title="Recalls for this model">
         <ListSkeleton rows={2} />
       </Section>
       <Section title="Scheduled maintenance">

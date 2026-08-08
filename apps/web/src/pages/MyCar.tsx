@@ -26,34 +26,6 @@ import { formatMileage, maskVin, vehicleName } from '@/lib/format';
 import { invalidateAll, useApi } from '@/lib/useApi';
 import type { MaintenanceItem, ServiceRecord } from '@caradvocate/shared';
 
-/**
- * Where the numbers on this page came from, and what they are not.
- *
- * A financial product would carry a regulator and a coverage limit here. Nothing like that
- * applies to a car app, and borrowing the language would be worse than saying nothing -- but the
- * principle underneath it does transfer: name your sources, and state the limits of what you are
- * telling someone, in the place they are reading it rather than in a terms page.
- *
- * Quiet on purpose -- `text-label` in secondary grey, below the fold of everything actionable.
- * Quiet is not the same as hidden: it is on the page, in the owner's reading order, and it says
- * the unflattering part out loud.
- */
-function ProvenanceNote() {
-  return (
-    <footer className="border-t pt-6 text-label leading-relaxed text-muted-foreground">
-      <p>
-        Recall data comes from the US National Highway Traffic Safety Administration. Known issues
-        are drawn from owner complaints filed with NHTSA for this year, make and model. Maintenance
-        intervals are the ones you entered, measured against your own service history.
-      </p>
-      <p className="mt-2">
-        This is information to argue with a shop using, not a diagnosis. It is not a substitute for
-        an inspection by a qualified mechanic.
-      </p>
-    </footer>
-  );
-}
-
 export function MyCarPage() {
   // Resolved by RequireVehicle, so there is no loading or error state to handle.
   const vehicle = useVehicle();
@@ -112,9 +84,22 @@ export function MyCarPage() {
         </div>
       </section>
 
-      {/* Recalls come from NHTSA and stand on their own; maintenance is the owner's own
-          schedule. Separate sections, so a safety recall is never read as one more chore. */}
-      <Section title="Safety recalls">
+      {/*
+        Recalls come from NHTSA and stand on their own; maintenance is the owner's own
+        schedule. Separate sections, so a safety recall is never read as one more chore.
+
+        "for this model", not "Safety recalls", and the wording is load-bearing. NHTSA's feed
+        is queried by year/make/model -- it lists every campaign that touched ANY car of this
+        model, and each one covers only "certain" vehicles inside a VIN or build-date range
+        that NHTSA does not publish. So this list can show a campaign this particular car was
+        never subject to, which is exactly why a VIN-level checker can say "no recalls" while
+        this section shows several.
+
+        Only the manufacturer knows the per-VIN answer, and there is no API for it -- hence
+        the VIN link in the list's footer. Until there is, the heading must not claim more
+        than the data supports.
+      */}
+      <Section title="Recalls for this model">
         {recalls.error ? (
           <ErrorState message={recalls.error.message} />
         ) : recalls.data ? (
@@ -163,8 +148,6 @@ export function MyCarPage() {
           <ListSkeleton rows={5} />
         )}
       </Section>
-
-      <ProvenanceNote />
 
       {/* Edit dialogs live here rather than inside each row, so one mounted dialog
           serves the whole list instead of one per item. */}

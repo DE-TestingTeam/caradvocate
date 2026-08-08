@@ -94,10 +94,20 @@ function AwaitingValuation({
 }) {
   const missing = [missingVin && 'VIN', missingZip && 'zip code'].filter(Boolean).join(' and ');
 
+  /*
+   * The `unavailable` branch used to explain itself: "usually a sign it's old enough to fall
+   * outside pricing data". It was a confident, specific guess, and a wrong one -- the same
+   * state is reached when the pricing vendor cannot answer for reasons that have nothing to do
+   * with the car, and an owner was being told something untrue about their vehicle to fill the
+   * space. See the note on `failure` in services/marketCheck.ts.
+   *
+   * All we actually know here is that we asked and got no price back. So that is what it says,
+   * and it points at the vehicle's age as a possibility rather than a diagnosis.
+   */
   const message = missing
     ? `Not available yet. Add your car's ${missing} in Account to get an estimate.`
     : unavailable
-      ? "This car's value can't be estimated — usually a sign it's old enough to fall outside pricing data."
+      ? "No estimate came back for this car. Older vehicles are the usual reason, but we can't confirm that from here — we'll keep trying."
       : "Not available yet. We're still pricing this car — check back shortly.";
 
   return (

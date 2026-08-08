@@ -32,7 +32,7 @@ export async function getModelRecalls(
   }
 
   const recalls = await db.select().from(modelRecalls).where(modelMatches(modelRecalls, lookup));
-  recalls.sort(bySeverityThenAge);
+  recalls.sort(bySeverityThenRecency);
 
   return { recalls, synced: reached };
 }
@@ -102,14 +102,24 @@ function toRow(lookup: RecallLookup, recall: FetchedRecall) {
 }
 
 /**
- * Highest urgency first, then the oldest campaign. Nothing here expires, so a never-remedied
- * 2011 defect is more overdue than one issued last year, not less interesting -- sorting
- * newest-first would push the longest-neglected item to the bottom.
+ * Highest urgency first, then the newest campaign.
+ *
+ * Urgency still wins, and that part is not a preference: a "stop driving this vehicle" campaign
+ * has to be the first thing on the list whenever it was issued, so the date only ever orders
+ * recalls of equal urgency.
+ *
+ * Within a tier it is newest-first. The tradeoff is worth being explicit about, because this
+ * used to sort the other way on purpose: nothing here expires, so an unremedied 2011 defect is
+ * arguably more overdue than one issued last year, and oldest-first kept the longest-neglected
+ * item at the top. Newest-first instead matches how a list of dated notices is normally read --
+ * most recent at the top, like a feed -- at the cost of pushing old outstanding work down.
+ * Nothing is hidden either way; both orderings show the same rows.
  */
-function bySeverityThenAge(a: RecallRow, b: RecallRow): number {
+function bySeverityThenRecency(a: RecallRow, b: RecallRow): number {
   const urgency = (row: RecallRow) => (row.parkIt ? 2 : row.parkOutside ? 1 : 0);
   const byUrgency = urgency(b) - urgency(a);
   if (byUrgency !== 0) return byUrgency;
-  // Undated campaigns sort last rather than masquerading as the oldest.
-  return (a.reportedOn ?? '9999').localeCompare(b.reportedOn ?? '9999');
+  // Undated campaigns still sort last: '0000' is older than any real date under a descending
+  // compare, so they fall to the bottom rather than leading the list as if they were newest.
+  return (b.reportedOn ?? '0000').localeCompare(a.reportedOn ?? '0000');
 }
