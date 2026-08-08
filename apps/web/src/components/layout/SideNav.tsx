@@ -1,14 +1,5 @@
 import * as React from 'react';
-import {
-  Car,
-  ClipboardList,
-  LogOut,
-  Menu,
-  MessageSquare,
-  PanelLeftClose,
-  PanelLeftOpen,
-  UserRound,
-} from 'lucide-react';
+import { Car, ClipboardList, LogOut, Menu, MessageSquare, UserRound } from 'lucide-react';
 import { Link, NavLink } from 'react-router-dom';
 import crMonogram from '@/assets/logos/cr-monogram.png';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
@@ -18,9 +9,9 @@ import { cn } from '@/lib/utils';
 /**
  * The app's navigation, in two shapes.
  *
- * At `lg` and above it is a rail down the left, which expands and collapses on a toggle with the
- * choice remembered. Below `lg` it becomes a top bar with a hamburger, and the destinations move
- * into a sheet that slides over the content.
+ * At `lg` and above it is a fixed rail down the left with its labels always showing. Below `lg` it
+ * becomes a top bar with a hamburger, and the destinations move into a sheet that slides over the
+ * content.
  *
  * The narrow case is a sheet rather than a permanent icon rail because a rail costs its width on
  * every screen, and on a phone that width is taken from the content the rail exists to navigate.
@@ -46,8 +37,6 @@ const NAV_ITEMS = [
 /** Rail at and above this, hamburger below it. Matches Tailwind's `lg`, so CSS and JS agree. */
 const RAIL_ABOVE = '(min-width: 1024px)';
 
-const PREFERENCE_KEY = 'caradvocate.nav.expanded';
-
 /**
  * Shared by every row in both shapes, so the rail and the sheet cannot drift apart.
  *
@@ -55,10 +44,9 @@ const PREFERENCE_KEY = 'caradvocate.nav.expanded';
  * one of the few jobs the house colour still holds, and it should mean the same thing in the
  * rail and in the sheet.
  */
-function rowClass(showLabel: boolean, active = false) {
+function rowClass(active = false) {
   return cn(
-    'flex w-full items-center gap-3 rounded-lg py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground',
-    showLabel ? 'px-3' : 'justify-center px-0',
+    'flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground',
     active && 'bg-brand/10 text-brand hover:bg-brand/10 hover:text-brand',
   );
 }
@@ -66,19 +54,7 @@ function rowClass(showLabel: boolean, active = false) {
 export function SideNav() {
   const { signOut } = useAuth();
   const showRail = useMediaQuery(RAIL_ABOVE);
-  const [preferExpanded, setPreferExpanded] = React.useState(readPreference);
   const [menuOpen, setMenuOpen] = React.useState(false);
-
-  // The preference is only honoured where there is room for it.
-  const expanded = showRail && preferExpanded;
-
-  React.useEffect(() => {
-    try {
-      localStorage.setItem(PREFERENCE_KEY, String(preferExpanded));
-    } catch {
-      // Storage disabled. The rail still works, it just forgets between visits.
-    }
-  }, [preferExpanded]);
 
   // Rotating a phone into landscape can cross the breakpoint mid-session. Without this the sheet
   // stays mounted in state and reopens over the rail the next time the window narrows.
@@ -130,11 +106,10 @@ export function SideNav() {
 
               {/* Every tap here navigates, and a menu still sitting over the page it just moved
                   you to reads as though the tap missed. */}
-              <NavList showLabel onNavigate={() => setMenuOpen(false)} />
+              <NavList onNavigate={() => setMenuOpen(false)} />
 
               <div className="shrink-0 border-t p-2">
                 <SignOutButton
-                  showLabel
                   onSignOut={() => {
                     setMenuOpen(false);
                     void signOut();
@@ -151,12 +126,9 @@ export function SideNav() {
   return (
     <nav
       aria-label="Main"
-      className={cn(
-        'sticky top-0 flex h-screen shrink-0 flex-col border-r bg-background transition-[width] duration-200',
-        expanded ? 'w-60' : 'w-14',
-      )}
+      className="sticky top-0 flex h-screen w-60 shrink-0 flex-col border-r bg-background"
     >
-      <div className={cn('flex h-14 shrink-0 items-center border-b', expanded ? 'px-4' : 'justify-center')}>
+      <div className="flex h-14 shrink-0 items-center border-b px-4">
         <Link to="/my-car" className="flex min-w-0 items-center gap-2" title="CarAdvocate">
           {/*
             Supplied artwork, uncropped in the original: the mark occupies about 1621x989 of a
@@ -164,59 +136,32 @@ export function SideNav() {
             The asset here is trimmed to the mark and sized by height, which is why it is `h-6
             w-auto` rather than a square.
 
-            `alt=""` on purpose. Expanded it sits beside the word it stands for, and collapsed
-            the word is still there for screen readers below -- announcing "Consumer Reports"
-            twice, or once as a logo and once as a name, is noise either way.
+            `alt=""` on purpose. It sits beside the word it stands for, and announcing the name
+            once as a logo and once as text is noise.
           */}
           <img src={crMonogram} alt="" className="h-6 w-auto shrink-0" />
-          {/* Collapsed, the mark is the whole lockup; the name stays for screen readers. */}
-          <span className={cn('truncate text-lg font-bold tracking-tight', !expanded && 'sr-only')}>
-            CarAdvocate
-          </span>
+          <span className="truncate text-lg font-bold tracking-tight">CarAdvocate</span>
         </Link>
       </div>
 
-      <NavList showLabel={expanded} />
+      <NavList />
 
-      <div className="shrink-0 space-y-1 border-t p-2">
-        <SignOutButton showLabel={expanded} onSignOut={() => void signOut()} />
-
-        <button
-          type="button"
-          onClick={() => setPreferExpanded((was) => !was)}
-          aria-expanded={expanded}
-          title={expanded ? 'Collapse menu' : 'Expand menu'}
-          className={rowClass(expanded)}
-        >
-          {expanded ? (
-            <PanelLeftClose className="h-5 w-5 shrink-0" aria-hidden="true" />
-          ) : (
-            <PanelLeftOpen className="h-5 w-5 shrink-0" aria-hidden="true" />
-          )}
-          <span className={cn('truncate', !expanded && 'sr-only')}>Collapse menu</span>
-        </button>
+      <div className="shrink-0 border-t p-2">
+        <SignOutButton onSignOut={() => void signOut()} />
       </div>
     </nav>
   );
 }
 
-/**
- * The destinations. Collapsed, the labels go to screen readers via `sr-only` and to the mouse via
- * `title`, so the rail stays navigable rather than being an icon puzzle.
- */
-function NavList({ showLabel, onNavigate }: { showLabel: boolean; onNavigate?: () => void }) {
+/** The destinations. Labelled in both shapes, so neither is an icon puzzle. */
+function NavList({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <ul className="flex-1 space-y-1 overflow-y-auto p-2">
       {NAV_ITEMS.map((item) => (
         <li key={item.to}>
-          <NavLink
-            to={item.to}
-            onClick={onNavigate}
-            title={showLabel ? undefined : item.label}
-            className={({ isActive }) => rowClass(showLabel, isActive)}
-          >
+          <NavLink to={item.to} onClick={onNavigate} className={({ isActive }) => rowClass(isActive)}>
             <item.icon className="h-5 w-5 shrink-0" aria-hidden="true" />
-            <span className={cn('truncate', !showLabel && 'sr-only')}>{item.label}</span>
+            <span className="truncate">{item.label}</span>
           </NavLink>
         </li>
       ))}
@@ -224,27 +169,13 @@ function NavList({ showLabel, onNavigate }: { showLabel: boolean; onNavigate?: (
   );
 }
 
-function SignOutButton({ showLabel, onSignOut }: { showLabel: boolean; onSignOut: () => void }) {
+function SignOutButton({ onSignOut }: { onSignOut: () => void }) {
   return (
-    <button
-      type="button"
-      onClick={onSignOut}
-      title={showLabel ? undefined : 'Sign out'}
-      className={rowClass(showLabel)}
-    >
+    <button type="button" onClick={onSignOut} className={rowClass()}>
       <LogOut className="h-5 w-5 shrink-0" aria-hidden="true" />
-      <span className={cn('truncate', !showLabel && 'sr-only')}>Sign out</span>
+      <span className="truncate">Sign out</span>
     </button>
   );
-}
-
-function readPreference(): boolean {
-  try {
-    // Expanded unless they have said otherwise -- a first visit should show the labels.
-    return localStorage.getItem(PREFERENCE_KEY) !== 'false';
-  } catch {
-    return true;
-  }
 }
 
 /**
