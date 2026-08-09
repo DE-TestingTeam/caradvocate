@@ -534,6 +534,31 @@ row is created automatically.
 than having them baked into the bundle, so the two can never disagree about which project they
 are talking to.
 
+**How much of token verification is now proven — 9 August.** The project publishes a live JWKS at
+`/auth/v1/.well-known/jwks.json` serving a single **ES256** key, so the asymmetric path is the one
+in use and `SUPABASE_JWT_SECRET` is unset and unneeded. Three things are confirmed by test:
+
+- **Signatures are genuinely enforced.** A fabricated token carrying a correct issuer, `aud`,
+  UUID subject, email and future expiry — everything the claim checks want — is still rejected,
+  because the signature does not verify against the JWKS. The claim checks are not standing in
+  for a signature check.
+- **The issuer pin works.** The same token with the issuer swapped for another project's is
+  refused. Without that pin, any validly-signed Supabase token from anywhere would authenticate.
+- **The positive path is exercised constantly** — every authenticated request anyone makes in the
+  app goes through `verifyAccessToken`, and the app works, so real tokens do pass.
+
+**What is left is explicit confirmation of the claim fields against a real token**, which needs a
+live credential. `npm run verify:token` does it: it reads a token from stdin (never an argument or
+an environment variable, so it stays out of shell history and process lists), never prints it,
+masks the email unless `--show-email` is passed, and runs the API's own `verifyAccessToken` rather
+than a reimplementation — which would only prove that two pieces of code agree with each other. It
+prints a PASS/FAIL for issuer, audience, subject shape, email presence and expiry, plus the
+forged-issuer negative check. Get a token by signing in and running, in the browser console:
+
+```js
+JSON.parse(localStorage[Object.keys(localStorage).find(k => k.endsWith('-auth-token'))]).access_token
+```
+
 **A momentary API outage used to wedge sign-in until the tab was reloaded — fixed 9 August.**
 `getAuthConfig` cached whatever came back, failures included, so a single failed fetch stuck an
 empty config for the life of the page; `getSupabase` then cached `undefined` on top of it, and
@@ -785,15 +810,51 @@ manufacturer service schedules and would eventually fill gap 3. It is not merged
 carry no data, and the only trace of it in this working tree is the untracked
 `scripts/maintenance-seed/cache/` output.
 
-**The drift is real and worth a conversation before anyone generates a new migration here:**
-drizzle's journal shows **22 migrations applied** against **21 in this branch's
-`meta/_journal.json`**. The two lines share one journal and neither knows about the other.
+**The drift is now identified exactly, and guarded — 9 August.** 23 migrations are applied
+against 22 defined here. Matching drizzle's own sha256 hashes against this branch's files names
+the odd one precisely: **`0016_factory_schedules.sql` from the `maintenance` branch**, applied
+2026-08-06T16:29:38.882Z. Every migration this branch defines is applied, and none is at risk
+right now.
+
+**Why it is dangerous, read from drizzle's source rather than assumed.**
+`drizzle-orm/pg-core/dialect.js` decides what to apply like this:
+
+```js
+select id, hash, created_at from __drizzle_migrations order by created_at desc limit 1
+if (!lastDbMigration || Number(lastDbMigration.created_at) < migration.folderMillis) { apply }
+```
+
+One number — the newest `created_at` in the table, whichever line put it there — and **hashes are
+never consulted to make that decision**. So if the other line applies a migration stamped later
+than one of ours that has not run yet, ours is not deferred. It is skipped, permanently and
+silently, while `db:migrate` reports success. The table or column never appears and the first
+symptom is `column "..." does not exist` on a live request — which already happened once on 8
+August from a different cause, with exactly that signature.
+
+**It has been closer than it looks.** The factory line's `0016_factory_schedules` was applied at
+16:29 on 6 August. This branch's own `0016_vehicle_zip_market_value` was generated at 21:19 the
+same day. Five hours the other way and `vehicles.zip` would have gone missing with no error.
+
+**`db:migrate` now refuses rather than silently skipping.** `db/migrationPrecheck.ts` runs before
+anything is written: it hashes each local migration, compares against what is applied, and
+computes which pending ones fall below the watermark. If any would be skipped it prints them, the
+watermark, the reason, and the fix — raise the `when` in `meta/_journal.json` — and exits
+non-zero. It also reports how many applied migrations belong to the other line, so the situation
+is visible on every run rather than rediscovered. Verified both ways against the live database: a
+migration stamped before the watermark is caught, and the same migration re-stamped after it
+passes through as pending.
+
+**This is a guardrail, not a fix.** The fix is one migration line per database, and that is still
+a conversation with whoever owns the `maintenance` branch. Note also that both branches define a
+file numbered `0016`, so a merge would collide on the number as well as the journal.
 
 ### Uncommitted right now
 
 The RLS script fixes (`fe7d650`), the odometer work (`223c763`, `4870f59`) and the paywall
 wording (`02c73be`) are committed. Still in the tree:
 
+- **The migration precheck**: `db/migrationPrecheck.ts` (new), `db/migrate.ts`.
+- **The token verification harness**: `scripts/verifyToken.mts` (new), `package.json`.
 - **The sign-in cache fix** (§7): `lib/authConfig.ts`, `lib/supabaseClient.ts`, `lib/auth.tsx`.
 - **The Ask CA retention window**: `env.ts`, `services/askTranscripts.ts`,
   `scripts/pruneAskTranscripts.mts` (new), `.github/workflows/prune-ask-transcripts.yml` (new),
@@ -911,11 +972,15 @@ are noted because the README and the original spec mention them.
    demand, so real signups on four cars did the job the script would have. Running it now would
    be harmless and pointless. The Civic's rows carry no Open Labor Project hours because they
    synced before that vendor existed — cosmetic, and the next re-sync fixes it.
-7. **Talk to whoever owns the factory-schedule migration line** before generating a new
-   migration here. See "A second migration line" above.
-8. **Verify a real Supabase token end to end.** Token verification has never run against one.
-   Sign in for real, decode the access token, and confirm the issuer, audience, subject and
-   email fields are what the API expects.
+7. **Talk to whoever owns the factory-schedule migration line.** Still the real fix — one
+   migration line per database. Generating a migration here is now SAFE, though: `db:migrate`
+   refuses rather than silently skipping (see "A second migration line"). The odd migration is
+   identified as `0016_factory_schedules` from the `maintenance` branch, and both branches
+   define a file numbered `0016`, so a merge collides on the number too.
+8. **Run `npm run verify:token` with a real token.** Mostly closed: signature enforcement and
+   issuer pinning are both proven by test, and the positive path is exercised by every signed-in
+   request. What remains is one command against a live token to confirm the claim fields
+   explicitly — the harness is built and smoke-tested, it just needs the credential (§7).
 9. **Re-check the Ask CA timings on more than one car** (§4), and watch `cacheRead`.
 10. **Exercise the Account screen by hand** since `user_features` was dropped (§8).
 11. **Price the licensed book-time options and trial a second pricing vendor** for coverage

@@ -24,6 +24,7 @@
     "import:recalls": "tsx --env-file-if-exists=.env scripts/importNhtsaRecalls.mts",
     "refresh:values": "tsx --env-file-if-exists=.env scripts/refreshMarketValues.mts",
     "prune:transcripts": "tsx --env-file-if-exists=.env scripts/pruneAskTranscripts.mts",
+    "verify:token": "tsx --env-file-if-exists=.env scripts/verifyToken.mts",
     "probe:ask": "tsx --env-file-if-exists=.env scripts/probeAskGuardrails.mts",
     "test:chat": "tsx --env-file-if-exists=.env scripts/testChat.mts"
   }
