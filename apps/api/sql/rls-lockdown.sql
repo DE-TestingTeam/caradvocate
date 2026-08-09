@@ -76,6 +76,8 @@ alter table public.repair_benchmarks         enable row level security;
 alter table public.repairs                   enable row level security;
 alter table public.service_records           enable row level security;
 alter table public.users                     enable row level security;
+alter table public.nhtsa_recall_campaigns    enable row level security;
+alter table public.nhtsa_recall_models       enable row level security;
 alter table public.vehicle_recall_status     enable row level security;
 alter table public.vehicle_value_points      enable row level security;
 alter table public.vehicles                  enable row level security;
@@ -83,6 +85,31 @@ alter table public.vehicles                  enable row level security;
 -- `user_features` used to be on this list and is not any more: migration 0017 dropped it.
 -- `alter table` on a table that does not exist is an error, not a no-op, so leaving the line
 -- in aborted the whole transaction and quietly stopped the lockdown from ever applying.
+--
+-- The two nhtsa_recall_* tables above are already switched on by migration 0019 and are listed
+-- anyway: `enable row level security` on a table that already has it is a no-op, and a fresh
+-- project applied out of order should not depend on which file got there first.
+
+-- ----------------------------------------------------------------------------
+-- 1b. Tables this branch does not define.
+--
+-- The factory-schedule pipeline runs its own migration line against this same database (see
+-- STATUS.md, "A second migration line"). Its tables are as exposed as any other and the revokes
+-- below already cover them, but the belt belongs on too -- a table with RLS off is an open door
+-- regardless of what is behind it, and leaving one open makes the next one easier to miss.
+--
+-- These are listed separately rather than merged above so it stays obvious that this branch's
+-- `schema.ts` does not own them. If that line ever merges, fold them into the list above. If it
+-- is ever dropped instead, delete these lines -- an `alter table` on a table that no longer
+-- exists is exactly the error that kept this script from applying for two weeks.
+-- ----------------------------------------------------------------------------
+
+alter table public.extraction_runs           enable row level security;
+alter table public.factory_schedule_items    enable row level security;
+alter table public.factory_schedule_services enable row level security;
+alter table public.schedule_requests         enable row level security;
+alter table public.schedule_review_queue     enable row level security;
+alter table public.vehicle_generations       enable row level security;
 
 -- ----------------------------------------------------------------------------
 -- 2. Take away the stock grants.
@@ -115,9 +142,8 @@ commit;
 -- ============================================================================
 -- VERIFY
 --
--- Expect 21 rows, rls_enabled = true, policies = 0 on every one (19 tables the app uses
--- today, plus the two ask_transcript* tables added in 0018; the count is unchanged from the
--- original 21 because user_features went away in 0017):
+-- Expect 29 rows, rls_enabled = true, policies = 0 on every one -- 23 tables this branch's
+-- schema.ts defines, plus the six belonging to the factory-schedule migration line:
 --
 --   select c.relname,
 --          c.relrowsecurity as rls_enabled,

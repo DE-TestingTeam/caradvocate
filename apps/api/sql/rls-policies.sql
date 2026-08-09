@@ -97,8 +97,13 @@ create policy users_select_self on public.users
 -- difference is large; this is the single most common RLS performance mistake.
 -- ----------------------------------------------------------------------------
 
+-- `user_features` was on this grant and had a policy below; migration 0017 dropped the table and
+-- services/featureCatalog.ts computes the same list from users.plan. Both are removed here for
+-- the reason rls-lockdown.sql documents: naming a table that no longer exists is an error, not a
+-- no-op, and this whole file runs in one transaction -- so that single word would have aborted
+-- every policy below it.
 grant select on public.vehicles, public.assessments, public.service_records,
-                public.user_features, public.paywall_intents
+                public.paywall_intents
   to authenticated;
 
 create policy vehicles_select_own on public.vehicles
@@ -110,10 +115,6 @@ create policy assessments_select_own on public.assessments
   using (user_id = public.app_user_id());
 
 create policy service_records_select_own on public.service_records
-  for select to authenticated
-  using (user_id = public.app_user_id());
-
-create policy user_features_select_own on public.user_features
   for select to authenticated
   using (user_id = public.app_user_id());
 

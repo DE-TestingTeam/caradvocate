@@ -577,29 +577,76 @@ schema is TypeScript, so the column existed as far as the compiler was concerned
 closed, and the lesson stands — confirming migrations against the live database rather than
 drizzle's journal is the only check that catches this class of bug.
 
-### ⚠️ Row-level security is off on almost everything
+### ✅ Row-level security — closed on 9 August
 
-**Re-checked live on 9 August: 4 of 29 tables have RLS enabled, and there are 0 policies
-anywhere.** The four are the two Ask CA tables and the two recall-mirror tables, which their own
-migrations switched on. The other 25 are open. `apps/api/sql/rls-lockdown.sql` has still never
-been run.
+**`rls-lockdown.sql` was run against the shared database and verified from both sides.** This
+was the top item on this list for three days; it is done.
 
-This is not theoretical. The Supabase anon key is public by design — it ships in the browser
-bundle — and with RLS off it is enough to read every table directly, bypassing the API entirely:
-`users`, `service_records`, `vehicles`, `paywall_intents`, and now people's chat transcripts.
-The database holds real accounts, not just seeded demo ones. Every per-user filter in the API is
-correct and none of it matters while the second door is open.
+**What it was.** Supabase serves the same database through a second door — PostgREST, reachable
+by anyone holding the anon key, which is public by design because the browser needs it to sign
+in. Supabase's stock grants give `anon` and `authenticated` everything, on the assumption that
+RLS is what says no. RLS was off on 25 of 29 tables and there were no policies anywhere, so
+nothing said no. Every per-user filter in the API was correct and none of it mattered.
 
-One trap, found and fixed: the lockdown script still listed `user_features`, which migration
-`0017` dropped. `alter table` on a missing table is an error rather than a no-op, and the script
-runs in one transaction, so that single line would have aborted the whole lockdown. **If anyone
-believes they have already run this, they have not** — check RLS directly rather than trusting
-the memory of a run.
+**It was confirmed from the open internet, not reasoned about.** Before the fix, a plain `curl`
+carrying only the anon key returned real account emails and real VINs:
 
-Applying `rls-lockdown.sql` and `rls-policies.sql` is the fix, and it needs doing before anyone
-outside the team uses this. It is a live-database change that could break reads if the policies
-and the API's access pattern disagree, so it wants a deliberate run and a check afterwards
-rather than being folded into a code deploy.
+```
+curl "$SUPABASE_URL/rest/v1/users?select=email&limit=3" -H "apikey: $SUPABASE_ANON_KEY" ...
+→ [{"email":"alex.rivera@email.com"}, {"email":"dana@example.com"}, {"email":"hweider@gmail.com"}]
+```
+
+The same call against `ask_transcripts` returned `[]`, because `0018` had switched RLS on there.
+That contrast was the whole fix in one line: the mechanism worked, it was simply switched off
+nearly everywhere.
+
+**After: 29 of 29 tables have RLS on, and `anon`/`authenticated` hold zero grants** — on tables,
+sequences and routines alike. The same `curl` now returns `42501 permission denied` for `users`,
+`vehicles`, `service_records`, `paywall_intents`, `assessments` and `model_recalls`. Row counts
+are identical before and after (6 users, 6 vehicles, 10 service records, 4 assessments, 2
+paywall intents, 5 transcripts, 169,240 mirror rows) — this granted and revoked privileges, it
+touched no data.
+
+**The app is unaffected, checked rather than assumed.** The API connects as `postgres`, whose
+`rolbypassrls` is `true`, so RLS is never consulted for any query it runs. Confirmed live after
+the change: the API starts clean, `/api/health` returns `{"ok":true}`, `/api/auth/config`
+serves, and an unauthenticated `/api/vehicle` returns 401 — an auth refusal, not a database
+error.
+
+**Two bugs in the scripts had to be fixed first, and they were the same bug twice:**
+
+- `rls-lockdown.sql` listed `user_features`, dropped by migration `0017`. `alter table` on a
+  missing table is an error rather than a no-op, and the script runs in one transaction, so that
+  one line had been aborting the entire lockdown. This is why it had never applied.
+- `rls-policies.sql` still had the identical fault — a `grant` and a policy on the same dead
+  table — so it would have failed the same way. Removed.
+
+`rls-lockdown.sql` also named only 21 tables against a live 29. It now covers all of them: the
+two recall-mirror tables, plus the six belonging to the factory-schedule migration line in their
+own block, so it stays obvious this branch does not define them. The list was diffed against
+`pg_class` before running — an exact match, so it could neither abort on a missing table nor
+silently skip a live one.
+
+**`rls-policies.sql` was deliberately NOT run, and should stay unrun for now.** It grants
+`select` *back* to `authenticated` so the browser can query PostgREST directly, and there is not
+one `.from()` call in `apps/web/src` — it would widen access for a capability nothing uses. Its
+own header says as much. It also carries a trap: `users.supabase_user_id` is null for seeded and
+dev-stub rows, so those accounts would match `auth.uid()` never and go invisible to browser
+queries while still showing in the app. Backfill that column before leaning on it. The lockdown
+alone is the complete fix.
+
+**⚠️ Two residual holes, both about tables that do not exist yet.** The lockdown reset the
+default privileges for tables created by `postgres`, which is the role drizzle migrations run
+as — so a new migration no longer hands `anon` rights on its table. But:
+
+1. **`supabase_admin`'s default privileges still grant `anon` and `authenticated` full rights**,
+   and that is the role the Supabase dashboard creates tables as. A table made by clicking
+   around in the dashboard arrives exposed.
+2. **Postgres has no default for RLS itself.** Every new table needs its own
+   `enable row level security` line whatever created it.
+
+So the rule for anything new, and it belongs in review: **a migration that adds a table adds an
+`enable row level security` line in the same file.** `0018` and `0019` both already do this.
 
 ### The odometer is only half-solved, and the unfixed half is the one that matters
 
@@ -673,9 +720,9 @@ drizzle's journal shows **22 migrations applied** against **21 in this branch's
 
 ### Uncommitted right now
 
-- `apps/web/src/components/my-car/ValueCard.tsx` — the paragraph explaining an empty trend chart
-  moves behind an info control (hover, focus and tap all open it; the panel is positioned rather
-  than in flow so the card does not jump).
+- **The RLS fixes to `apps/api/sql/rls-lockdown.sql` and `rls-policies.sql`**, and this file. The
+  lockdown is already applied to the shared database; the script edits that made it applicable
+  are not yet committed.
 - `scripts/maintenance-seed/cache/` — untracked output from the other branch, above.
 
 `npm run typecheck` passes across every workspace and `npm run build` succeeds.
@@ -750,17 +797,18 @@ are noted because the README and the original spec mention them.
 - **An answer is abandoned after 45 seconds.** Measured answers land around 5 seconds and the
   slowest observed was 17, so the ceiling only fires on a genuine hang; without it the SDK would
   wait ten minutes and retry twice.
-- **The Ask CA log now holds sensitive data with no expiry** (§4). It is API-only and excluded
-  from the browser-readable policies, but it is the most sensitive table in the schema. Set a
-  retention period.
-- **The review log makes the RLS gap worse, not merely unchanged.** While the second door is
-  open, "the anon key can read every table" includes chat transcripts.
+- **The Ask CA log holds sensitive data with no expiry** (§4). It is API-only and now sealed
+  behind RLS like everything else, but it is still the most sensitive table in the schema and it
+  keeps everything forever. Set a retention period.
 
 ### Open questions, in one place
 
-1. **Apply `rls-lockdown.sql` and `rls-policies.sql`.** The top item; nothing else on this list
-   matters as much.
-2. **Set a retention window for `ask_transcripts`.** Product decision, and cheapest to make now.
+1. ~~Apply the RLS lockdown.~~ **Done 9 August** — 29 of 29 tables locked, zero public grants,
+   verified from outside. See above. What remains from it: keep an `enable row level security`
+   line in every migration that adds a table, and treat a table created through the Supabase
+   dashboard as exposed until checked.
+2. **Set a retention window for `ask_transcripts`.** Now the top item. Product decision, and
+   cheapest to make while the log holds 5 rows.
 3. **Set the two paywall prices deliberately** (§8). They are placeholders and the whole
    experiment is denominated in them.
 4. **Is `MARKET_CHECK_API_KEY` in the repository's GitHub Actions secrets?** `DATABASE_URL` is
