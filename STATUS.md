@@ -68,7 +68,7 @@ with a real car gets the thing — not that a screen exists or that the demo acc
 |---|---|---|
 | Free / My Car | Single-vehicle profile | ✅ Built |
 | Free / My Car | User-entered service history | ✅ Built |
-| Free / My Car | Value + trend line | ⚠️ Live via MarketCheck, refreshed nightly; needs VIN + zip, priced off a possibly-stale odometer, trade-in range still missing |
+| Free / My Car | Value + trend line | ⚠️ Live via MarketCheck, refreshed nightly; needs VIN + zip, trade-in range still missing |
 | Free / My Car | Recall schedule | ✅ Built |
 | Free / My Car | Maintenance schedule | ⚠️ Tracker built, starts empty |
 | Free / My Car | Model known issues | ✅ Built |
@@ -110,9 +110,9 @@ Four things still keep this short of the original ask:
 - **Both a VIN and a zip code have to be on file.** MarketCheck requires both, and onboarding
   lets an owner skip either; a car missing one shows "not available yet". Live on 9 August:
   **3 of the 6 cars on file have both.**
-- **The price is only as current as the odometer we hold**, which for most owners is what they
-  typed at signup. The call takes `miles`, so a stale reading prices the car high. Half-fixed —
-  see §9, "The odometer is only half-solved".
+- **The price is only as current as the odometer we hold.** The call takes `miles`, so a stale
+  reading prices the car high. Now addressed: the app tracks when a reading was taken and asks
+  the owner to confirm one older than 90 days — see §9, "The odometer".
 - **The trend cannot be backfilled.** Confirmed against MarketCheck's docs: the predict endpoint
   takes no date parameter, so there is nothing to ask "what was this worth in March".
   `/v2/history/car/{vin}` is not the answer either — it returns *listing* records (what a dealer
@@ -144,7 +144,7 @@ meant to arrive pre-filled, that part is unbuilt.
 The calculation is also only as good as its input, and it reads `vehicles.mileage` as the
 current odometer. A stale figure here does not merely look wrong: it tells someone a job is
 fine when it is overdue, which is the one failure mode in this app that can cost an engine
-rather than an argument. Half-fixed — see §9.
+rather than an argument. Fixed on 9 August — see §9, "The odometer".
 
 *(A separate branch is building manufacturer schedules with a Claude research pipeline. It is
 not part of this branch — see §9, "A second migration line".)*
@@ -648,39 +648,74 @@ as — so a new migration no longer hands `anon` rights on its table. But:
 So the rule for anything new, and it belongs in review: **a migration that adds a table adds an
 `enable row level security` line in the same file.** `0018` and `0019` both already do this.
 
-### The odometer is only half-solved, and the unfixed half is the one that matters
+### ✅ The odometer — both halves closed, 9 August
 
 `vehicles.mileage` was written in exactly two places — onboarding and the Account edit dialog —
 and nothing ever asked again. For most owners it sat frozen at whatever they typed on signup
 day, while three things downstream read it as current: the maintenance due calculation, the
-price sent to MarketCheck, and My Car's masthead.
+price sent to MarketCheck, and My Car's masthead. Of those the first is the one that matters: a
+stale figure says a job is fine when it is overdue, which is the only failure in this app that
+costs an engine rather than an argument.
 
-**Fixed: service records now feed the car's mileage.** `services/odometer.ts` raises
+**Half one — service records feed the car's mileage.** `services/odometer.ts` raises
 `vehicles.mileage` whenever a logged service carries a higher reading, on both the create and
-the correct path. The readings were already being typed in and already used for the maintenance
-calculation — they were simply never fed back to the car. It is a one-way ratchet that compares
-no dates on purpose: an odometer is monotonic, so a higher reading is necessarily the later one,
-which is what lets this work without a `mileage_updated_at` column.
+the correct path. Those readings were already being typed in and already used for the
+maintenance calculation; they were simply never fed back to the car. A one-way ratchet, and it
+needs no date comparison to decide whether to fire: an odometer is monotonic, so a reading higher
+than the figure on file is necessarily the later of the two.
 
-**Not fixed, and it is the larger half.** A car that is not serviced is not read either. What is
-still needed is to ask the owner directly — a prompt on My Car when the reading is stale,
-pre-filled with an estimate they confirm or correct — plus the `mileage_updated_at` column that
-would make "stale" answerable at all. **Right now the app cannot tell a reading taken this week
-from one typed two years ago**, which is also why the value card cannot say what mileage its
-estimate is based on. That column is the prerequisite for both, and it is the next piece of work
-here.
+**Half two — the app can now tell how old a reading is, and asks when it is too old.**
+
+- **Migration `0021` adds `vehicles.mileage_updated_at`** — applied and verified on 9 August. All
+  6 cars are stamped, backfilled from `created_at`, which is the honest answer for rows written
+  before the column existed: their mileage came from onboarding. It errs old deliberately. The
+  cost of treating a fresh reading as stale is one dismissible prompt; the cost of the reverse is
+  telling someone their brakes are fine.
+- **It stores when the reading was TAKEN, not when the row was written**, and that distinction is
+  the point. `odometer.ts` stamps the *service date*, so logging a 2019 receipt at 90,000 miles
+  raises the mileage — correctly, the car has covered that — without claiming the odometer was
+  checked this morning. Recording `now()` there would suppress the prompt in exactly the case
+  that most needs it. Onboarding and the Account/prompt PATCH do stamp now, because there the
+  owner is reading the dial as they type.
+- **The staleness rule lives once, in `@caradvocate/shared`**: `mileageIsStale`, 90 days. Chosen
+  against what goes wrong — a typical car covers ~1,000 miles a month, so three months is ~3,000
+  miles of drift, most of the way through a 5,000-mile oil interval. The browser decides whether
+  to show the prompt and the API decides what to send it; two copies of that rule would drift.
+  **An unknown date counts as stale**, since treating "no idea when this was read" as fresh is
+  the exact failure the column exists to end.
+- **`MileageCheck` on My Car asks the owner**, as a card rather than a modal — it interrupts
+  nothing, and the honest answer to "how many miles?" is often "let me go and look", which a
+  modal punishes. The field is prefilled with an estimate (last reading + ~1,000 miles/month,
+  rounded to the nearest 100 so it reads as the approximation it is). **The estimate is never
+  stored unless the owner submits it.** Writing a guess into `mileage` would swap one invented
+  number for another and, worse, would stamp `mileage_updated_at` — turning the guess into
+  something the app then treats as a real reading and stops asking about. Dismissal lasts for the
+  tab, so it returns without becoming an obstacle.
+- **The value card now names the mileage its price was based on**, which it could not do before —
+  and only when that reading is stale, since on a fresh one it is noise on the number the owner
+  came for.
+
+Verified: 13 assertions over the shared rules (thresholds, unknown and malformed dates, the
+estimate's arithmetic and rounding) all pass, `npm run typecheck` and `npm run build` are clean,
+and the API starts and serves against the migrated schema.
 
 Two deliberate omissions, so neither reads as an oversight later. A mileage bump does not clear
 `market_value_checked_at`, so the car is not re-priced immediately — the nightly sweep picks it
 up within the month rather than spending a vendor call on every service log. And a mistyped
-reading now moves the car's mileage rather than one history row; correcting the record will not
-walk it back, because the ratchet cannot tell a correction from an older reading. The owner
-fixes it in Account, where that number has always been editable.
+reading moves the car's mileage rather than one history row; correcting the record will not walk
+it back, because the ratchet cannot tell a correction from an older reading. The owner fixes it
+in Account — and the PATCH path deliberately accepts a *lower* figure, unlike the ratchet, which
+is what makes that escape hatch work.
 
-The obvious thing to reach for is connected-car telematics (Smartcar and similar — OAuth into
-the owner's manufacturer account, read the odometer directly). It needs a 2016-or-newer car with
-a live connected-services subscription, close to the opposite of this app's audience, so it can
-be an opt-in extra but never the mechanism the app relies on.
+**Not yet seen in the wild.** Every account on the shared database is younger than the 90-day
+threshold, so no real car is stale yet and the prompt has never rendered against live data. The
+rules are tested directly and the UI is built, but the first owner to cross 90 days is the first
+real exercise of it.
+
+The obvious thing to reach for instead is connected-car telematics (Smartcar and similar — OAuth
+into the owner's manufacturer account, read the odometer directly). It needs a 2016-or-newer car
+with a live connected-services subscription, close to the opposite of this app's audience, so it
+can be an opt-in extra but never the mechanism the app relies on.
 
 ### State of the database (verified live, read-only, 9 August)
 
@@ -720,9 +755,13 @@ drizzle's journal shows **22 migrations applied** against **21 in this branch's
 
 ### Uncommitted right now
 
-- **The RLS fixes to `apps/api/sql/rls-lockdown.sql` and `rls-policies.sql`**, and this file. The
-  lockdown is already applied to the shared database; the script edits that made it applicable
-  are not yet committed.
+Applied to the shared database already and uncommitted in the tree, which is the wrong way round
+— commit it. (The RLS script fixes are committed, in `fe7d650`.)
+
+- **The odometer work**: migration `0021` and its snapshot, `schema.ts`, `services/odometer.ts`,
+  `routes/vehicle.ts`, `routes/serviceRecords.ts`, `mappers.ts`, `db/seed.ts`,
+  `packages/shared/src/domain.ts`, and on the web side `components/my-car/MileageCheck.tsx`
+  (new), `ValueCard.tsx` and `pages/MyCar.tsx`.
 - `scripts/maintenance-seed/cache/` — untracked output from the other branch, above.
 
 `npm run typecheck` passes across every workspace and `npm run build` succeeds.
