@@ -143,6 +143,26 @@ export const vehicles = pgTable(
     vin: text('vin'),
     mileage: integer('mileage').notNull(),
     /**
+     * The date the reading in `mileage` was TAKEN -- not the date the row was written.
+     *
+     * Without this the app could not tell a reading typed this week from one typed two years
+     * ago, and three things downstream read `mileage` as though it were current: the
+     * maintenance due calculation (a stale figure says a job is fine when it is overdue), the
+     * price sent to MarketCheck, and My Car's masthead. "Is this stale?" was simply not a
+     * question the schema could answer.
+     *
+     * "Taken", not "written", is the whole point and it is why services/odometer.ts stamps the
+     * SERVICE DATE here rather than `now()`. Logging a 2019 service at 90,000 miles raises the
+     * car's mileage -- the ratchet is right, the car has covered at least that -- but what we
+     * hold is a six-year-old reading, and recording today's date would claim a freshness we do
+     * not have. That would suppress exactly the prompt this column exists to raise.
+     *
+     * Nullable only so the column could be added; migration 0021 backfills every existing row
+     * from `created_at`, which is the honest answer for rows written before this existed --
+     * their mileage came from onboarding. Treat null as "unknown, therefore stale".
+     */
+    mileageUpdatedAt: timestamp('mileage_updated_at', { withTimezone: true }),
+    /**
      * Nullable: MarketCheck prices regionally, and onboarding lets an owner skip it just like
      * the VIN. No zip, no valuation call -- see services/marketValueSync.ts.
      */

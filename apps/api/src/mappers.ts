@@ -30,6 +30,10 @@ export function toVehicle(
     trim: row.trim ?? undefined,
     vin: row.vin ?? undefined,
     mileage: row.mileage,
+    // Sent as the raw date rather than a computed `stale` boolean: staleness is a function of
+    // when it is asked, and a boolean baked at response time goes wrong the moment a tab is
+    // left open. The browser applies mileageIsStale() from @caradvocate/shared, same rule.
+    mileageUpdatedAt: row.mileageUpdatedAt?.toISOString(),
     zip: row.zip ?? undefined,
     estMarketValue: row.estMarketValue ?? undefined,
     tradeInLow: row.tradeInLow ?? undefined,

@@ -45,7 +45,7 @@ serviceRecordsRouter.post('/', validateBody(newServiceRecordSchema), async (req,
   // services/odometer.ts. Deliberately after the insert rather than inside a transaction with
   // it: the record is the thing the owner asked to save, and it should not be lost to a failure
   // updating a number they can also edit in Account.
-  await noteOdometerReading(req.db, vehicle, row.mileageAtService);
+  await noteOdometerReading(req.db, vehicle, row.mileageAtService, row.serviceDate);
 
   res.status(201).json(toServiceRecord(row));
 });
@@ -78,7 +78,7 @@ serviceRecordsRouter.patch('/:id', validateBody(updateServiceRecordSchema), asyn
   // A correction that RAISES the reading teaches us something; one that lowers it cannot walk the
   // car's mileage back, because the ratchet has no way to tell a fix from an older reading. See
   // the note in services/odometer.ts.
-  await noteOdometerReading(req.db, vehicle, row.mileageAtService);
+  await noteOdometerReading(req.db, vehicle, row.mileageAtService, row.serviceDate);
 
   res.json(toServiceRecord(row));
 });

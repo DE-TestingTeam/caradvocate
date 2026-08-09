@@ -2,8 +2,8 @@ import * as React from 'react';
 import { Info } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { TREND_POINTS, ValueTrendChart, ValueTrendPlaceholder } from './ValueTrendChart';
-import { formatCurrency } from '@/lib/format';
-import type { Vehicle } from '@caradvocate/shared';
+import { formatCurrency, formatMileage } from '@/lib/format';
+import { daysSinceMileageReading, mileageIsStale, type Vehicle } from '@caradvocate/shared';
 
 export function ValueCard({ vehicle }: { vehicle: Vehicle }) {
   // A car the user just added has no valuation yet, and no trend to draw.
@@ -48,6 +48,21 @@ export function ValueCard({ vehicle }: { vehicle: Vehicle }) {
         {hasTradeInRange && (
           <p className="text-sm text-muted-foreground">
             Trade in range {formatCurrency(vehicle.tradeInLow!)}–{formatCurrency(vehicle.tradeInHigh!)}
+          </p>
+        )}
+
+        {/*
+          Names the mileage the price was worked out from, which the card could not do until
+          `mileageUpdatedAt` existed -- there was no way to say whether that figure was current.
+          It matters because the vendor prices on miles: a stale odometer prices the car as one
+          with fewer miles on it, and the estimate reads high. Saying which number was used is
+          what lets an owner notice it is wrong; the prompt below the masthead is where they fix
+          it. Silent on a fresh reading, because then it is just noise on the number they came for.
+        */}
+        {mileageIsStale(vehicle) && (
+          <p className="text-sm text-muted-foreground">
+            Based on {formatMileage(vehicle.mileage)}
+            {agedNote(vehicle)}
           </p>
         )}
 
@@ -112,6 +127,22 @@ function TrendNote({ collected }: { collected: number }) {
       )}
     </div>
   );
+}
+
+/**
+ * " — a reading from about 8 months ago", or nothing when the date is unknown. Kept vague on
+ * purpose: the owner needs to know the figure is old, and to the month is enough to prompt that.
+ */
+function agedNote(vehicle: Vehicle): string {
+  const days = daysSinceMileageReading(vehicle);
+  if (days == null) return '';
+
+  const months = Math.floor(days / 30);
+  if (months >= 12) {
+    const years = Math.floor(months / 12);
+    return `, a reading from over ${years === 1 ? 'a year' : `${years} years`} ago`;
+  }
+  return `, a reading from about ${months} months ago`;
 }
 
 /** "One reading so far" reads better than "1 of 6" for the case that is almost always 1. */

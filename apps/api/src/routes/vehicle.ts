@@ -68,7 +68,15 @@ vehicleRouter.patch('/', validateBody(updateVehicleSchema), async (req, res) => 
 
   let [updated] = await req.db
     .update(vehicles)
-    .set(req.body)
+    // A mileage in the body is the owner telling us the odometer as of now -- from Account, or
+    // from My Car's confirmation prompt -- so it is the one reading whose date really is today.
+    // Stamped only when mileage is actually present: this is a PATCH, and a request that only
+    // changes the zip must not refresh the odometer's timestamp and silence the prompt.
+    //
+    // Unlike the ratchet in services/odometer.ts this accepts a LOWER figure. It has to: an
+    // owner correcting a mistyped 1,210,000 back to 121,000 has nowhere else to do it, and that
+    // is the documented escape hatch for the ratchet's one sharp edge.
+    .set(req.body.mileage == null ? req.body : { ...req.body, mileageUpdatedAt: new Date() })
     .where(eq(vehicles.id, vehicle.id))
     .returning();
 
@@ -109,6 +117,10 @@ vehicleRouter.post('/', validateBody(newVehicleSchema), async (req, res) => {
       // Left null when skipped. The owner can add it later from Account.
       vin: req.body.vin ?? null,
       mileage: req.body.mileage,
+      // The owner is reading their own odometer as they type this, so today is the truth. The
+      // column defaults to null and null means stale, which would put a confirmation prompt on
+      // My Car the moment onboarding finished.
+      mileageUpdatedAt: new Date(),
       zip: req.body.zip ?? null,
     })
     .returning();

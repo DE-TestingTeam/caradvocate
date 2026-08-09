@@ -7,6 +7,7 @@ import { ListSkeleton } from '@/components/my-car/ListSkeleton';
 import { LogServiceDialog } from '@/components/my-car/LogServiceDialog';
 import { MaintenanceItemDialog } from '@/components/my-car/MaintenanceItemDialog';
 import { MaintenanceList } from '@/components/my-car/MaintenanceList';
+import { MileageCheck } from '@/components/my-car/MileageCheck';
 import { RecallsList } from '@/components/my-car/RecallsList';
 import { ServiceHistory } from '@/components/my-car/ServiceHistory';
 import { ValueCard } from '@/components/my-car/ValueCard';
@@ -83,6 +84,14 @@ export function MyCarPage() {
           <ValueCard vehicle={vehicle} />
         </div>
       </section>
+
+      {/*
+        Full width and below the masthead, not inside it. The prompt is about the mileage printed
+        two lines up, so it wants to be near it -- but the right column is already the taller of
+        the two, and dropping a form into it would push the value card out of line with the photo
+        on every stale car. Renders nothing at all when the reading is fresh.
+      */}
+      <MileageCheck vehicle={vehicle} />
 
       {/*
         Recalls come from NHTSA and stand on their own; maintenance is the owner's own

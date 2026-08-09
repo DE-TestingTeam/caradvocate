@@ -53,8 +53,89 @@ export interface Vehicle {
    * vendor unreachable, will retry."
    */
   valuationUnavailable?: boolean;
+  /**
+   * ISO date-time the reading in `mileage` was TAKEN, or absent when it is not known.
+   *
+   * Absent is not the same as recent -- see `mileageIsStale`, which treats it as stale. Rows
+   * predating migration 0021 are backfilled from the car's creation date, so in practice this
+   * is only absent for a row written by something that forgot to stamp it.
+   */
+  mileageUpdatedAt?: string;
   /** Ordered oldest -> newest. Empty until valuation history exists. */
   valueTrend: { month: string; value: number }[];
+}
+
+/**
+ * How long a reading stays trustworthy before the app asks the owner to confirm it.
+ *
+ * Ninety days is chosen against what goes wrong, not for roundness. A typical car covers
+ * roughly a thousand miles a month, so three months is about 3,000 miles of drift -- already
+ * most of the way through a 5,000-mile oil interval, which is the point at which "you are fine"
+ * stops being true. Shorter would nag owners who have not driven anywhere; much longer and the
+ * maintenance calculation is answering with a number nobody has checked since spring.
+ */
+export const MILEAGE_STALE_AFTER_DAYS = 90;
+
+/** Average miles a car covers in a month, used only to prefill a prompt the owner corrects. */
+const MILES_PER_MONTH = 1000;
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Whether the odometer on file is old enough to be worth re-asking.
+ *
+ * Shared rather than implemented on each side, because the browser decides whether to SHOW the
+ * prompt and the API decides what to tell it, and two copies of this rule would eventually
+ * disagree about whether a car needs asking.
+ *
+ * An unknown date counts as stale. The alternative -- treating "we have no idea when this was
+ * read" as fresh -- is the exact failure this whole column exists to end.
+ */
+export function mileageIsStale(vehicle: Pick<Vehicle, 'mileageUpdatedAt'>, now = new Date()): boolean {
+  if (!vehicle.mileageUpdatedAt) return true;
+
+  const takenAt = new Date(vehicle.mileageUpdatedAt).getTime();
+  // An unparseable date is a bug somewhere upstream, but guessing "fresh" would hide it.
+  if (Number.isNaN(takenAt)) return true;
+
+  return now.getTime() - takenAt > MILEAGE_STALE_AFTER_DAYS * DAY_MS;
+}
+
+/** Whole days since the reading was taken. Null when the date is unknown or unparseable. */
+export function daysSinceMileageReading(
+  vehicle: Pick<Vehicle, 'mileageUpdatedAt'>,
+  now = new Date(),
+): number | null {
+  if (!vehicle.mileageUpdatedAt) return null;
+
+  const takenAt = new Date(vehicle.mileageUpdatedAt).getTime();
+  if (Number.isNaN(takenAt)) return null;
+
+  return Math.max(0, Math.floor((now.getTime() - takenAt) / DAY_MS));
+}
+
+/**
+ * A guess at what the odometer probably reads now, for PREFILLING the confirmation prompt.
+ *
+ * THIS IS NEVER STORED WITHOUT THE OWNER CONFIRMING IT, and that restriction is the entire
+ * design. Writing an estimate straight into `vehicles.mileage` would swap one invented number
+ * for another and, worse, would stamp `mileageUpdatedAt` -- turning a guess into something the
+ * app then treats as a real reading and stops asking about. The estimate exists so the owner
+ * has something to correct instead of a blank box; the number that gets saved is whatever they
+ * agree to.
+ *
+ * Rounded to the nearest hundred, deliberately. A precise-looking 63,847 invites acceptance
+ * without thought; 63,800 reads as the approximation it is.
+ */
+export function estimateCurrentMileage(
+  vehicle: Pick<Vehicle, 'mileage' | 'mileageUpdatedAt'>,
+  now = new Date(),
+): number {
+  const days = daysSinceMileageReading(vehicle, now);
+  if (days == null) return vehicle.mileage;
+
+  const driven = Math.round((days / 30) * MILES_PER_MONTH);
+  return Math.round((vehicle.mileage + driven) / 100) * 100;
 }
 
 /**

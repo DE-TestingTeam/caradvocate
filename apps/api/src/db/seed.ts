@@ -114,6 +114,9 @@ async function seedAlexRivera(db: Database, repairIdBySlug: Map<string, string>)
       model: 'Civic',
       vin: '2HGFC2F53KH124821',
       mileage: 68400,
+      // Stamped, or the demo car greets every viewer with a "confirm your mileage" prompt --
+      // null reads as stale by design. See mileageIsStale in @caradvocate/shared.
+      mileageUpdatedAt: new Date(),
       estMarketValue: 14200,
       tradeInLow: 12100,
       tradeInHigh: 14600,
