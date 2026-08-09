@@ -89,7 +89,11 @@ const envSchema = z.object({
    * variable: changeable between cohorts without a deploy, and each recorded tap stores
    * the figures that were on screen at the time.
    *
-   * THE DEFAULTS ARE PLACEHOLDERS. Set them deliberately before any real test.
+   * THE DEFAULTS BELOW ARE THE CHOSEN PRICES, confirmed 9 August 2026 -- $99/year for
+   * Unlimited, and $35/year plus $50 per parts-benchmark lookup for Per-Incident. They read
+   * like placeholder round numbers and are not; do not "fix" them. Nothing needs setting in
+   * `.env` for a real test, and an override there is for running a different cohort, not for
+   * correcting these.
    */
   PAYWALL_ALL_YOU_CAN_EAT_PRICE_CENTS: z.coerce.number().int().positive().default(9900),
   PAYWALL_ALL_YOU_CAN_EAT_INTERVAL: z.enum(['month', 'year']).default('year'),

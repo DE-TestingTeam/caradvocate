@@ -532,10 +532,13 @@ Two things make the recorded numbers trustworthy, and both are handled:
 - **The gate is enforced on the server** (a 402), not just hidden in the UI. A typed URL or a
   stale tab cannot hand someone the feature without a tap.
 
-**⚠️ Both prices are placeholders.** `PAYWALL_ALL_YOU_CAN_EAT_PRICE_CENTS` defaults to
-$99.00/year and `PAYWALL_PER_INCIDENT_PRICE_CENTS` to $35.00/year plus a $50.00 per-incident
-fee — neither set in `.env`. These are the numbers the entire experiment is denominated in; set
-them deliberately before anyone sees them. The API prints both at startup.
+**The prices are settled — confirmed 9 August.** Unlimited is **$99.00/year**; Per-Incident is
+**$35.00/year plus $50.00 per parts-benchmark lookup**. They live as the defaults in `env.ts`
+rather than in `.env`, and that is fine: the defaults *are* the chosen prices, so nothing needs
+setting for a real test and an override exists to run a different cohort, not to correct these.
+Worth stating plainly because they read like placeholder round numbers and were described as
+placeholders in this file until today — they are not. The API prints both at every startup, so a
+wrong one is visible at a glance rather than discovered in the data afterwards.
 
 **`services/featureCatalog.ts` replaces the `user_features` table.** The Account screen's
 Subscription list used to be rows written per-owner at signup; it is now computed from
@@ -848,8 +851,8 @@ are noted because the README and the original spec mention them.
    dashboard as exposed until checked.
 2. **Set a retention window for `ask_transcripts`.** Now the top item. Product decision, and
    cheapest to make while the log holds 5 rows.
-3. **Set the two paywall prices deliberately** (§8). They are placeholders and the whole
-   experiment is denominated in them.
+3. ~~Set the two paywall prices.~~ **Settled 9 August** — $99/year Unlimited, $35/year + $50 per
+   lookup Per-Incident. The `env.ts` defaults are the chosen numbers; nothing to set (§8).
 4. **Is `MARKET_CHECK_API_KEY` in the repository's GitHub Actions secrets?** `DATABASE_URL` is
    already there for the recall import, but the market-value sweep needs the vendor key too.
    Without it the sweep exits early naming the cause — chosen over letting it run, because every

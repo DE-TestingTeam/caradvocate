@@ -54,11 +54,12 @@ const server = app.listen(env.PORT, () => {
     console.log('  Set CARIMAGES_API_KEY to show a photo of the model.');
   }
 
-  // Logged every boot, not only when unset: this is the number the prototype's result is
-  // denominated in, and shipping the placeholder by accident would invalidate the test
-  // rather than break anything visibly.
+  // Logged every boot, not only when overridden: these are the numbers the prototype's result
+  // is denominated in, so a wrong one has to be visible at a glance rather than discovered in
+  // the data afterwards. The second line is a note about what CAN be changed, not a warning
+  // that something is unset -- the defaults in env.ts are the chosen prices.
   console.log(`Paywall: ${describePrice()} -- nobody is charged, taps are recorded`);
-  console.log('  Set the PAYWALL_ALL_YOU_CAN_EAT_* and PAYWALL_PER_INCIDENT_* vars to price the test.');
+  console.log('  Override PAYWALL_ALL_YOU_CAN_EAT_* / PAYWALL_PER_INCIDENT_* to run a different cohort.');
 });
 
 /**
