@@ -1,3 +1,5 @@
+import * as React from 'react';
+import { Info } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { TREND_POINTS, ValueTrendChart, ValueTrendPlaceholder } from './ValueTrendChart';
 import { formatCurrency } from '@/lib/format';
@@ -50,29 +52,65 @@ export function ValueCard({ vehicle }: { vehicle: Vehicle }) {
         )}
 
         <div className="space-y-2 rounded-md border border-dashed bg-background/60 p-3">
-          <div className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
-            Value trend, last 6 mo
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
+              Value trend, last 6 mo
+            </div>
+            {/* The explanation of the empty chart is worth having, but it is a paragraph an owner
+                reads once. It moves behind this control so the card stays a card. */}
+            {!hasTrend && <TrendNote collected={vehicle.valueTrend.length} />}
           </div>
           {hasTrend ? (
             <ValueTrendChart data={vehicle.valueTrend} />
           ) : (
-            <>
-              <ValueTrendPlaceholder collected={vehicle.valueTrend.length} />
-              {/*
-                Says plainly that the history does not exist rather than implying it is loading.
-                An owner who is told "no data" assumes something is broken; one who is told the
-                readings are monthly and counts the empty dots knows to come back.
-              */}
-              <p className="text-sm text-muted-foreground">
-                We check this car's value once a month and chart it from there. {readingsTaken(vehicle.valueTrend.length)}{' '}
-                — the line appears after the next check. There is no earlier history to fill in:
-                a valuation is priced as of the day it is taken.
-              </p>
-            </>
+            <ValueTrendPlaceholder collected={vehicle.valueTrend.length} />
           )}
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * Why the chart is empty, revealed on demand.
+ *
+ * Hover shows it to a pointer, focus shows it to a keyboard, and it is a real button so a tap
+ * works on a touch screen -- where hover never fires at all, and an icon that only responds to a
+ * mouse would be dead weight on the device most owners are holding.
+ *
+ * The panel is positioned rather than in flow: opening it must not push the placeholder chart
+ * down, or the card jumps every time the pointer crosses the icon.
+ */
+function TrendNote({ collected }: { collected: number }) {
+  const [open, setOpen] = React.useState(false);
+
+  return (
+    <div className="relative" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((was) => !was)}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+        className="flex h-6 w-6 items-center justify-center rounded-pill text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+      >
+        <Info className="h-4 w-4" aria-hidden="true" />
+        <span className="sr-only">Why this chart is empty</span>
+      </button>
+
+      {open && (
+        /*
+          Says plainly that the history does not exist rather than implying it is loading. An owner
+          who is told "no data" assumes something is broken; one who is told the readings are
+          monthly and counts the empty dots knows to come back.
+        */
+        <div className="absolute right-0 top-7 z-10 w-64 max-w-[calc(100vw-4rem)] rounded-md border bg-background p-3 text-sm text-muted-foreground shadow-md">
+          We check this car's value once a month and chart it from there. {readingsTaken(collected)} — the line
+          appears after the next check. There is no earlier history to fill in: a valuation is priced as of the
+          day it is taken.
+        </div>
+      )}
+    </div>
   );
 }
 
