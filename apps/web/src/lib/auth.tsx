@@ -72,10 +72,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const value = React.useMemo<AuthState>(() => {
+    /**
+     * The client, or an error saying which of the two reasons there isn't one.
+     *
+     * Worth telling apart: "the server serves no credentials" is a deployment to go and fix,
+     * while "we could not reach the server" is usually momentary and the right advice is to try
+     * again. They were one message, and it named the wrong one -- which is how a dev server that
+     * had been restarted read as a misconfigured project.
+     *
+     * Both caches evict on failure (see authConfig.ts), so pressing sign-in again genuinely
+     * re-asks rather than replaying the first answer.
+     */
     const requireClient = async () => {
       const supabase = await getSupabase();
-      if (!supabase) throw new Error('Sign-in is not configured on this server.');
-      return supabase;
+      if (supabase) return supabase;
+
+      const config = await getAuthConfig();
+      throw new Error(
+        config.unreachable
+          ? 'Could not reach the server to start sign-in. Check it is running, then try again.'
+          : 'Sign-in is not configured on this server.',
+      );
     };
 
     return {

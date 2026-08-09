@@ -530,6 +530,21 @@ issuer, audience, and that it carries a valid user id and an email. A validly-si
 a *different* Supabase project is rejected. The first time a verified person arrives, a profile
 row is created automatically.
 
+**The browser fetches its Supabase credentials from the API** (`GET /api/auth/config`) rather
+than having them baked into the bundle, so the two can never disagree about which project they
+are talking to.
+
+**A momentary API outage used to wedge sign-in until the tab was reloaded — fixed 9 August.**
+`getAuthConfig` cached whatever came back, failures included, so a single failed fetch stuck an
+empty config for the life of the page; `getSupabase` then cached `undefined` on top of it, and
+every later attempt threw "Sign-in is not configured on this server" long after the server was
+healthy again. Both caches now keep successes and evict failures, so pressing sign-in again
+genuinely re-asks — which is the moment a retry is wanted. The message was also split in two,
+because "the server serves no credentials" is a deployment to fix and "we could not reach the
+server" is usually momentary, and naming the wrong one sends people to check a server that is
+fine. Verified against the real module text: a failed fetch is re-asked, a successful one is
+cached, and the client is created without a reload.
+
 ---
 
 ## 8. The paywall — read this before any user test
@@ -779,6 +794,7 @@ drizzle's journal shows **22 migrations applied** against **21 in this branch's
 The RLS script fixes (`fe7d650`), the odometer work (`223c763`, `4870f59`) and the paywall
 wording (`02c73be`) are committed. Still in the tree:
 
+- **The sign-in cache fix** (§7): `lib/authConfig.ts`, `lib/supabaseClient.ts`, `lib/auth.tsx`.
 - **The Ask CA retention window**: `env.ts`, `services/askTranscripts.ts`,
   `scripts/pruneAskTranscripts.mts` (new), `.github/workflows/prune-ask-transcripts.yml` (new),
   `package.json`. Nothing to migrate — the window is a query, not a schema change.
