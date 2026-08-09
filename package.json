@@ -23,6 +23,7 @@
     "ingest:mileage": "tsx --env-file-if-exists=.env scripts/ingestComplaintMileage.mts",
     "import:recalls": "tsx --env-file-if-exists=.env scripts/importNhtsaRecalls.mts",
     "refresh:values": "tsx --env-file-if-exists=.env scripts/refreshMarketValues.mts",
+    "prune:transcripts": "tsx --env-file-if-exists=.env scripts/pruneAskTranscripts.mts",
     "probe:ask": "tsx --env-file-if-exists=.env scripts/probeAskGuardrails.mts",
     "test:chat": "tsx --env-file-if-exists=.env scripts/testChat.mts"
   }

@@ -1,0 +1,53 @@
+# Deletes Ask CA transcripts past their retention window (scripts/pruneAskTranscripts.mts).
+#
+# WHY IT IS A CRON: `ask_transcripts` holds what owners typed about their cars, their money and
+# sometimes themselves, and a retention window that depends on somebody remembering to run a script
+# is not a retention window. Ninety days, set by ASK_TRANSCRIPT_RETENTION_DAYS in apps/api/src/env.ts
+# with the reasoning beside it.
+#
+# WHAT IT COSTS: one counting query and, on the days anything has expired, one indexed delete. No
+# vendor calls, no model calls. On a table this size most nights delete nothing and say so.
+#
+# WHAT IT TOUCHES: ask_transcripts and, by cascade, ask_transcript_sources. Nothing a user owns.
+#
+# 10:30 UTC, clear of the 08:00 recall import and the 09:30 market-value sweep -- all three hold a
+# Postgres pool against the same database and there is nothing to gain from overlapping them.
+name: Prune Ask CA transcripts
+
+on:
+  schedule:
+    - cron: '30 10 * * *'
+  # By hand to apply a shortened window immediately rather than waiting for the next night.
+  workflow_dispatch:
+
+# Two prunes at once would race on the same rows. Harmless -- the second finds them already gone --
+# but there is no reason to run it twice, and `cancel-in-progress: false` lets a run in flight
+# finish rather than leaving a partial delete for tomorrow.
+concurrency:
+  group: prune-ask-transcripts
+  cancel-in-progress: false
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    # One query and one delete. The limit exists to kill a hung connection, not to bound the work.
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Prune expired transcripts
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          # Safe to leave unset, which is the expected case: an absent secret expands to an empty
+          # string, and `withoutBlanks` in env.ts drops empty variables before parsing, so the
+          # 90-day default in env.ts applies. Set this secret only to SHORTEN the window --
+          # lengthening it is a decision to argue for, not to type into an environment.
+          ASK_TRANSCRIPT_RETENTION_DAYS: ${{ secrets.ASK_TRANSCRIPT_RETENTION_DAYS }}
+        run: npm run prune:transcripts

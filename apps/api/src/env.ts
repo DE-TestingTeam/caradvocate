@@ -81,6 +81,24 @@ const envSchema = z.object({
   MARKET_CHECK_API_KEY: z.string().min(1).optional(),
 
   /**
+   * How long an Ask CA transcript is kept before `scripts/pruneAskTranscripts.mts` deletes it.
+   *
+   * NINETY DAYS, and the number is a privacy commitment rather than a tuning knob. The table
+   * holds what owners typed about their cars, their money and sometimes themselves; before this
+   * existed it kept all of it forever, which is the kind of decision that is cheap to make now
+   * and expensive to discover later. Ninety days is long enough to review a quarter's answers,
+   * spot a regression after a prompt change, and investigate a complaint -- and short enough
+   * that a breach or a subject-access request touches a season, not the lifetime of the product.
+   *
+   * Configurable so it can be SHORTENED without a deploy if someone decides it should be. Raising
+   * it is a policy change and should be argued for, not typed into an environment.
+   *
+   * Deleting a row deletes its `ask_transcript_sources` children -- the FK cascades. See
+   * services/askTranscripts.ts.
+   */
+  ASK_TRANSCRIPT_RETENTION_DAYS: z.coerce.number().int().positive().default(90),
+
+  /**
    * The two prices the fake paywall shows side by side. Nobody is charged -- the tap is
    * recorded as a willingness-to-pay signal and the feature opens either way. See
    * services/paywall.ts.

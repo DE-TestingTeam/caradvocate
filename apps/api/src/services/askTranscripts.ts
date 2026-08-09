@@ -10,8 +10,10 @@
  * See schema.ts (askTranscripts) for why this is not the `chat_messages` table that migration
  * 0010 dropped.
  */
+import { count, lt } from 'drizzle-orm';
 import type { Database } from '../db/index.js';
 import { askTranscripts, askTranscriptSources } from '../db/schema.js';
+import { env } from '../env.js';
 import type { AskReply, AskTiming } from './askClaude.js';
 
 /**
@@ -87,4 +89,51 @@ export async function record(db: Database, input: TranscriptInput): Promise<void
         `${cause instanceof Error ? cause.message : String(cause)}`,
     );
   }
+}
+
+/* ------------------------------------------------------------------ retention */
+
+/**
+ * The moment before which a transcript is past its retention window.
+ *
+ * Exported and used by both the counting and the deleting path, so a dry run cannot report one
+ * set of rows and the real run delete a different one. Same reason `marketValueDue` is shared
+ * between the sweep and the routes.
+ */
+export function retentionCutoff(now: Date = new Date()): Date {
+  return new Date(now.getTime() - env.ASK_TRANSCRIPT_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+}
+
+/** How many transcripts are currently past the window. Reads nothing back but the count. */
+export async function countExpiredTranscripts(db: Database, now: Date = new Date()): Promise<number> {
+  const [row] = await db
+    .select({ expired: count() })
+    .from(askTranscripts)
+    .where(lt(askTranscripts.createdAt, retentionCutoff(now)));
+
+  return row?.expired ?? 0;
+}
+
+/**
+ * Deletes every transcript past the retention window and returns how many went.
+ *
+ * UNLIKE `record()`, THIS DOES NOT SWALLOW FAILURES. The rule that a QA write must never cost an
+ * owner an answer does not apply here: nothing is waiting on this, and a prune that fails
+ * silently is a retention policy that quietly is not one. It runs from a cron that should go red.
+ *
+ * The child rows go with it through `ask_transcript_sources.transcript_id`'s ON DELETE CASCADE,
+ * so there is no second statement to forget and no window in which a source row outlives the
+ * question it describes.
+ *
+ * One statement rather than a batched loop: the delete is driven by the `created_at` index, and
+ * at this table's rate a day's expiry is a handful of rows. If the log ever grows enough for a
+ * single delete to hold a long lock, batch it then -- not on speculation.
+ */
+export async function pruneExpiredTranscripts(db: Database, now: Date = new Date()): Promise<number> {
+  const deleted = await db
+    .delete(askTranscripts)
+    .where(lt(askTranscripts.createdAt, retentionCutoff(now)))
+    .returning({ id: askTranscripts.id });
+
+  return deleted.length;
 }

@@ -309,12 +309,28 @@ table was not:
 reference data the database still holds, so the source rows record *which* blocks were used. A
 reviewer who needs the exact wording rebuilds it from the transcript's `vehicle_id`.
 
-**⚠️ This is personal data, and one decision is outstanding.** Owners describe their cars, their
-money and sometimes themselves. Two things are handled: rows cascade with the user, so deleting
-an account takes its transcripts, and the tables are excluded from `sql/rls-policies.sql` so no
-browser key can read them. **There is still no retention window** — transcripts live forever. 90
-days is a reasonable default, but the number is a product decision nobody has made. Decide it
-before the log holds much.
+**This is personal data, and it is now handled on four fronts.** Owners describe their cars,
+their money and sometimes themselves.
+
+1. **Rows cascade with the user**, so deleting an account takes its transcripts.
+2. **The tables are excluded from `sql/rls-policies.sql`**, so no browser key can read them — and
+   as of 9 August RLS is on and there are no policies anywhere, so nothing outside the API can.
+3. **They are deliberately unreadable by the app itself.** No GET, no mapper, no screen.
+4. **A 90-day retention window, set 9 August and enforced nightly.** Transcripts used to live
+   forever, which is not a decision anyone made — it is what you get when nobody sets a window.
+   `ASK_TRANSCRIPT_RETENTION_DAYS` in `env.ts` holds the number with the reasoning beside it;
+   `scripts/pruneAskTranscripts.mts` deletes what is past it, from
+   `prune-ask-transcripts.yml` at 10:30 UTC. Source rows go by cascade.
+
+Ninety days is long enough to review a quarter's answers, catch a regression after a prompt
+change, and investigate a complaint — and short enough that a breach or a subject-access request
+touches a season rather than the lifetime of the product. It is configurable so it can be
+**shortened** without a deploy; lengthening it is a policy change to argue for, not to type into
+an environment.
+
+Unlike the write path, the prune **does not swallow its failures**. The rule that recording must
+never cost an owner an answer does not apply to a cron nobody is waiting on, and a retention job
+that fails quietly is a policy that silently is not one.
 
 ### Cost and speed
 
@@ -481,11 +497,13 @@ packages/shared Types and validation rules both sides import
   mirror. The shared database holds **29** — see §9.
 - **Assessments are snapshots.** Running a repair check copies the prices into the assessment.
   Refreshing supplier pricing later never changes what you were shown.
-- **Two scheduled jobs, both GitHub Actions**, committed as of 8 August:
-  `import-nhtsa-recalls.yml` mirrors NHTSA's catalogue nightly at 08:00 UTC;
-  `refresh-market-values.yml` re-prices due cars at 09:30. Neither applies migrations and
-  neither is on the request path, so a failed night degrades freshness rather than breaking the
-  app. Both need repository secrets to work at all — see §9.
+- **Three scheduled jobs, all GitHub Actions**, spaced an hour apart because all three hold a
+  Postgres pool against the same database: `import-nhtsa-recalls.yml` mirrors NHTSA's catalogue
+  at 08:00 UTC, `refresh-market-values.yml` re-prices due cars at 09:30, and
+  `prune-ask-transcripts.yml` deletes expired Ask CA transcripts at 10:30. None applies
+  migrations and none is on the request path, so a failed night degrades freshness rather than
+  breaking the app. All need `DATABASE_URL` as a repository secret; the market-value sweep also
+  needs the vendor key — see §9.
 
 ### The endpoints
 
@@ -758,13 +776,12 @@ drizzle's journal shows **22 migrations applied** against **21 in this branch's
 
 ### Uncommitted right now
 
-Applied to the shared database already and uncommitted in the tree, which is the wrong way round
-— commit it. (The RLS script fixes are committed, in `fe7d650`.)
+The RLS script fixes (`fe7d650`), the odometer work (`223c763`, `4870f59`) and the paywall
+wording (`02c73be`) are committed. Still in the tree:
 
-- **The odometer work**: migration `0021` and its snapshot, `schema.ts`, `services/odometer.ts`,
-  `routes/vehicle.ts`, `routes/serviceRecords.ts`, `mappers.ts`, `db/seed.ts`,
-  `packages/shared/src/domain.ts`, and on the web side `components/my-car/MileageCheck.tsx`
-  (new), `ValueCard.tsx` and `pages/MyCar.tsx`.
+- **The Ask CA retention window**: `env.ts`, `services/askTranscripts.ts`,
+  `scripts/pruneAskTranscripts.mts` (new), `.github/workflows/prune-ask-transcripts.yml` (new),
+  `package.json`. Nothing to migrate — the window is a query, not a schema change.
 - `scripts/maintenance-seed/cache/` — untracked output from the other branch, above.
 
 `npm run typecheck` passes across every workspace and `npm run build` succeeds.
@@ -839,9 +856,10 @@ are noted because the README and the original spec mention them.
 - **An answer is abandoned after 45 seconds.** Measured answers land around 5 seconds and the
   slowest observed was 17, so the ceiling only fires on a genuine hang; without it the SDK would
   wait ten minutes and retry twice.
-- **The Ask CA log holds sensitive data with no expiry** (§4). It is API-only and now sealed
-  behind RLS like everything else, but it is still the most sensitive table in the schema and it
-  keeps everything forever. Set a retention period.
+- **The Ask CA log is the most sensitive table in the schema** (§4) — but it is now API-only,
+  sealed behind RLS, unreadable by the app itself, and pruned to a 90-day window nightly. The
+  residual risk is that the prune is a cron: if it fails silently for months the window quietly
+  stops applying. It exits non-zero on failure for exactly that reason, so the job goes red.
 
 ### Open questions, in one place
 
@@ -849,8 +867,10 @@ are noted because the README and the original spec mention them.
    verified from outside. See above. What remains from it: keep an `enable row level security`
    line in every migration that adds a table, and treat a table created through the Supabase
    dashboard as exposed until checked.
-2. **Set a retention window for `ask_transcripts`.** Now the top item. Product decision, and
-   cheapest to make while the log holds 5 rows.
+2. ~~Set a retention window for `ask_transcripts`.~~ **Done 9 August — 90 days**, enforced by
+   `prune-ask-transcripts.yml` nightly at 10:30 UTC. Verified against the live database: the
+   cutoff predicate selects correctly at every boundary tested and the real window currently
+   expires nothing, which is right — the log's oldest row is 23 hours old.
 3. ~~Set the two paywall prices.~~ **Settled 9 August** — $99/year Unlimited, $35/year + $50 per
    lookup Per-Incident. The `env.ts` defaults are the chosen numbers; nothing to set (§8).
 4. **Is `MARKET_CHECK_API_KEY` in the repository's GitHub Actions secrets?** `DATABASE_URL` is
@@ -865,8 +885,16 @@ are noted because the README and the original spec mention them.
    the other three never become due because they lack a VIN or zip. But no run from inside the
    workflow has happened. Use `workflow_dispatch` with a small `--limit` for the first one
    rather than waiting for the cron to find out.
-6. **Has `db:pricing` been run since `0013` landed?** The migration is applied, but until
-   `db:pricing` runs the app serves old invented figures under a real-looking label.
+6. ~~Has `db:pricing` been run since `0013` landed?~~ **Closed 9 August — the question was
+   wrong, not just unanswered.** `db:pricing` is a data script, not a migration; `0013` reshaped
+   the table and has been applied for days. The worry was that `0013`'s backfill left rows
+   labelled `Hand-written placeholder (superseded)`. Checked directly: **zero placeholder rows
+   remain.** All 44 benchmark rows carry real Vehicle Databases provenance across four models
+   (2019 Civic, 2011 Pathfinder, 2014 F-350, 2017 Golf), the 12-repair catalogue is intact, and
+   all 4 assessments recorded a real vendor source. `repairPricingSync.ts` re-prices a model on
+   demand, so real signups on four cars did the job the script would have. Running it now would
+   be harmless and pointless. The Civic's rows carry no Open Labor Project hours because they
+   synced before that vendor existed — cosmetic, and the next re-sync fixes it.
 7. **Talk to whoever owns the factory-schedule migration line** before generating a new
    migration here. See "A second migration line" above.
 8. **Verify a real Supabase token end to end.** Token verification has never run against one.
