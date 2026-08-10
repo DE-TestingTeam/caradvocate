@@ -1,0 +1,22 @@
+# A .vercelignore REPLACES .gitignore for uploads rather than adding to it, so everything that
+# must not be uploaded has to be repeated here even though .gitignore already lists it.
+node_modules
+dist
+dist-smoke
+.pgdata
+
+# Secrets. The CLI declines to upload .env itself, but this is the line that guarantees it:
+# every key in there is live, and production values belong in Vercel's own env store.
+.env
+*.local
+
+.DS_Store
+*.timestamp-*.mjs
+
+# Not part of the deployed app -- source assets and status write-ups.
+Averta.zip
+STATUS.docx
+STATUS.md
+README.md
+.github
+scripts/maintenance-seed

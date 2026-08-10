@@ -2,9 +2,13 @@ node_modules
 dist
 dist-smoke
 .env
+
+# Local Vercel link -- project and org ids, written by `vercel link`.
+.vercel
 .DS_Store
 *.local
 .pgdata
 
 # Vite writes these transient files beside its config while loading it.
 *.timestamp-*.mjs
+.env*

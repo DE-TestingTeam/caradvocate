@@ -16,7 +16,7 @@ price fair?**
 | Screen | What it does |
 |---|---|
 | **Login** | Email + password, or Continue with Google |
-| **Onboarding** | Add your car, by VIN or by typing the details |
+| **Onboarding** | Add your car — VIN required, the rest decoded from it or typed |
 | **My Car** | Value, recalls, known issues, upkeep schedule, service history, photo |
 | **Ask CA** | The AI chat (§3) |
 | **Repair Cost Checker** | Pick a repair, see a fair price range, paste your quote, get a verdict |
@@ -217,8 +217,8 @@ Three load-bearing properties:
   signal that answers are too slow.
 
 **It is the most sensitive table in the schema**, handled on four fronts: rows cascade with the
-user; the tables are excluded from `sql/rls-policies.sql` and RLS is on with no policies anywhere;
-the app has no read path; and a **90-day retention window**
+user; the tables are excluded from `apps/api/sql/rls-policies.sql` and RLS is on with no policies
+anywhere; the app has no read path; and a **90-day retention window**
 (`ASK_TRANSCRIPT_RETENTION_DAYS` in `env.ts`) is enforced nightly by
 `scripts/pruneAskTranscripts.mts`. It is configurable so it can be **shortened** without a deploy —
 lengthening it is a policy change. Unlike the write path, the prune **does not swallow failures**,
@@ -437,13 +437,13 @@ alone; migration `0017` dropped the `user_features` table it replaced.
 
 **Row-level security is closed.** Supabase serves the same database through PostgREST, reachable by
 anyone holding the public anon key, and its stock grants give `anon`/`authenticated` everything on
-the assumption RLS says no. It was off on 25 of 29 tables. After `rls-lockdown.sql`: **29 of 29
+the assumption RLS says no. It was off on 25 of 29 tables. After `apps/api/sql/rls-lockdown.sql`: **29 of 29
 tables have RLS on and `anon`/`authenticated` hold zero grants** on tables, sequences and routines.
 The app is unaffected — the API connects as `postgres`, whose `rolbypassrls` is true.
 
 Three things follow:
 
-- **`rls-policies.sql` is deliberately NOT run and should stay unrun.** It grants `select` back to
+- **`apps/api/sql/rls-policies.sql` is deliberately NOT run and should stay unrun.** It grants `select` back to
   `authenticated` for browser-direct PostgREST queries, and there is not one `.from()` call in
   `apps/web/src`. It also traps on `users.supabase_user_id` being null for seeded and dev rows,
   which would match `auth.uid()` never.
