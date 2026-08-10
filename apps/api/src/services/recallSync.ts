@@ -14,7 +14,8 @@ import {
   type RecallFetch,
   type RecallLookup,
 } from './recalls.js';
-import { listMirroredModelNames, lookupMirroredRecalls, matchModelNames } from './recallMirror.js';
+import { listMirroredModelNames, lookupMirroredRecalls } from './recallMirror.js';
+import { matchModelNames } from './modelNames.js';
 import {
   dueForCheck,
   modelMatches,

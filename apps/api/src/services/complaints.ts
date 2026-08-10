@@ -6,14 +6,43 @@
  * complaint dates never exceed 12 there while reaching 31 in the second. Reusing the recall
  * parser would mangle every date it could not detect as impossible.
  *
+ * THREE OUTCOMES, NOT TWO, for the same reason services/recalls.ts has them: a model name this
+ * API does not recognise answers HTTP 400 with the success-shaped body
+ * `{"count":0,"message":"Results returned successfully","results":[]}`. Reading that body
+ * without its status code is how a 2014 "F-350" -- which is what a VIN decode gives -- looked
+ * like a truck nobody had ever complained about. It has 98 complaints; NHTSA files them by cab
+ * as "F-350 SUPER CREW" and friends. A recognised model with nothing against it answers 200
+ * and `count: 0`, and that one IS a real all-clear.
+ *
+ * Recovering the 400 needs NHTSA's own vocabulary of complaint model names, which is a
+ * DIFFERENT list from the recall one -- see services/modelNames.ts. It is a plain endpoint
+ * rather than a mirrored bulk file, so unlike recalls this file can resolve the name itself
+ * and stays free of the database.
+ *
  * What arrives is one record per complaint; what the UI needs is which systems get reported
  * and how often, so this aggregates by component -- which also keeps a 344KB response for a
  * popular model out of the hot path.
  */
 import { fetchJson } from '../lib/fetchJson.js';
+import { matchModelNames } from './modelNames.js';
 
 const NHTSA_COMPLAINTS = 'https://api.nhtsa.gov/complaints/complaintsByVehicle';
-const TIMEOUT_MS = 10000;
+
+/**
+ * NHTSA's list of the model names it files complaints under. `issueType=c` matters: the same
+ * endpoint with `issueType=r` returns the RECALL vocabulary, which is a different set of names
+ * for the same trucks and draws a blank on this feed. See services/modelNames.ts.
+ */
+const NHTSA_COMPLAINT_MODELS = 'https://api.nhtsa.gov/products/vehicle/models';
+
+/**
+ * Ten seconds was too tight and produced a false "could not be loaded" on a real car. NHTSA
+ * served a single 2014 F-350 cab variant in 6.8 to 8.4 seconds on an ordinary afternoon --
+ * these are ~97KB bodies, not the few hundred bytes the recall feed returns -- so a normally
+ * slow day sat right on the limit. The whole resolution path is still bounded, since the calls
+ * that can multiply run concurrently; see `fetchForNames`.
+ */
+const TIMEOUT_MS = 20000;
 
 /** NHTSA's bucket for complaints it could not categorise. It tells an owner nothing. */
 const NON_COMPONENT = 'UNKNOWN OR OTHER';
@@ -84,24 +113,161 @@ export interface ComplaintLookup {
 }
 
 /**
- * Complaint counts per component. `undefined` means NHTSA could not be reached,
- * which the caller must not confuse with "this model has no complaints".
+ * Three outcomes, matching services/recalls.ts. `model_not_listed` is NHTSA answering about the
+ * NAME rather than about the car: it must not reach an owner as "no complaints", and it must
+ * not be retried as though it were an outage.
  */
-export async function fetchComponentReports(
-  lookup: ComplaintLookup,
-): Promise<ComponentReports[] | undefined> {
-  const body = await requestComplaints(lookup);
-  if (body === undefined) return undefined;
-  return aggregateComplaints(body);
+export type ComplaintFetch =
+  | { outcome: 'ok'; reports: ComponentReports[] }
+  | { outcome: 'model_not_listed' }
+  | { outcome: 'unavailable' };
+
+/**
+ * Complaint counts per component for one model.
+ *
+ * Asks under the name on the car, and if NHTSA does not recognise it, under whatever names
+ * they file this year and make by. A 200 settles it either way -- including an empty one,
+ * which is a real all-clear.
+ *
+ * The 400 is left standing when nothing resolves. That is the honest answer for a "GMT-400":
+ * a platform code no manufacturer sells, which no amount of matching should invent a model for.
+ */
+export async function fetchComponentReports(lookup: ComplaintLookup): Promise<ComplaintFetch> {
+  const direct = await requestComplaints(lookup);
+  if (direct.outcome !== 'unknown_model') return finish(direct);
+
+  const vocabulary = await fetchComplaintModelNames(lookup);
+  // Nothing to try, either because the name is genuinely not NHTSA's or because the model list
+  // could not be fetched. Both leave the 400 exactly as informative as it already was.
+  if (vocabulary === undefined) return { outcome: 'model_not_listed' };
+
+  const names = matchModelNames(vocabulary, lookup.model);
+  if (names.length === 0) return { outcome: 'model_not_listed' };
+
+  return fetchForNames(lookup, names);
 }
 
-async function requestComplaints(lookup: ComplaintLookup): Promise<unknown> {
+/** One response, aggregated. Shared by the direct ask and the single-name case. */
+function finish(fetched: ComplaintRequest): ComplaintFetch {
+  if (fetched.outcome === 'unavailable') return { outcome: 'unavailable' };
+  if (fetched.outcome === 'unknown_model') return { outcome: 'model_not_listed' };
+  return { outcome: 'ok', reports: aggregate(fetched.rows) };
+}
+
+/**
+ * The same lookup asked under several names, unioned by `odiNumber` BEFORE aggregation.
+ *
+ * The order matters and cost a bug in the recall version of this to see: NHTSA's finer names
+ * are cab and body variants that overlap heavily -- all three 2014 F-350 cab names return the
+ * identical 98 complaints -- so aggregating each name and summing would report every component
+ * three times over. Deduplicating the raw records first means each complaint is counted once no
+ * matter how many names it came back under.
+ *
+ * CONCURRENTLY, unlike the recall version, because the bodies here are three orders of
+ * magnitude larger -- ~97KB per cab variant against a few hundred bytes per recall list. Asked
+ * one after another this resolved in 33 seconds on a slow afternoon, three of those spent
+ * downloading the same 98 complaints twice over, and every second of it was on the page load
+ * of whoever happened to trigger the refresh. Concurrent, the wall clock is the slowest single
+ * name rather than the sum of all of them.
+ *
+ * `unavailable` only if every name failed to answer, as in services/recalls.ts.
+ */
+async function fetchForNames(
+  lookup: ComplaintLookup,
+  names: readonly string[],
+): Promise<ComplaintFetch> {
+  const attempts = await Promise.all(
+    names.map((name) => requestComplaints({ ...lookup, model: name })),
+  );
+
+  const rows = new Map<string, Record<string, unknown>>();
+  let answered = false;
+
+  for (const attempt of attempts) {
+    if (attempt.outcome === 'unavailable') continue;
+    answered = true;
+    // A name that 400s within a resolved set is simply a variant this car is not.
+    if (attempt.outcome !== 'ok') continue;
+
+    for (const row of attempt.rows) {
+      const id = readComplaintId(row);
+      // No id is no way to tell two records apart. Keyed on the record itself so it survives
+      // rather than collapsing every such complaint into one.
+      rows.set(id ?? JSON.stringify(row), row);
+    }
+  }
+
+  if (!answered) return { outcome: 'unavailable' };
+  return { outcome: 'ok', reports: aggregate([...rows.values()]) };
+}
+
+/** One response, before aggregation. `unknown_model` is the 400; see the header. */
+type ComplaintRequest =
+  | { outcome: 'ok'; rows: Record<string, unknown>[] }
+  | { outcome: 'unknown_model' }
+  | { outcome: 'unavailable' };
+
+/**
+ * The raw complaint records for one name.
+ *
+ * Its own fetch rather than lib/fetchJson, which collapses every failure into `undefined` --
+ * the 400 is the whole point here and has to survive.
+ */
+async function requestComplaints(lookup: ComplaintLookup): Promise<ComplaintRequest> {
   const url = new URL(NHTSA_COMPLAINTS);
   url.searchParams.set('make', lookup.make);
   url.searchParams.set('model', lookup.model);
   url.searchParams.set('modelYear', String(lookup.year));
 
-  return fetchJson(url, TIMEOUT_MS);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
+  try {
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: { Accept: 'application/json' },
+    });
+
+    // NHTSA's shape for "no such model", regardless of the success-looking body.
+    if (response.status === 400) return { outcome: 'unknown_model' };
+    if (!response.ok) return { outcome: 'unavailable' };
+
+    return { outcome: 'ok', rows: resultRows(await response.json()) };
+  } catch {
+    // Offline, blocked, slow, or malformed JSON. All the same to the caller.
+    return { outcome: 'unavailable' };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * The model names NHTSA files complaints under for one year and make, or `undefined` when the
+ * list could not be fetched. An empty array is an answer -- a make with nothing on file that
+ * year -- and resolves to `model_not_listed` rather than to an all-clear.
+ */
+async function fetchComplaintModelNames(
+  lookup: ComplaintLookup,
+): Promise<string[] | undefined> {
+  const url = new URL(NHTSA_COMPLAINT_MODELS);
+  url.searchParams.set('modelYear', String(lookup.year));
+  url.searchParams.set('make', lookup.make);
+  url.searchParams.set('issueType', 'c');
+
+  const body = await fetchJson(url, TIMEOUT_MS);
+  if (body === undefined) return undefined;
+
+  return resultRows(body)
+    .map((row) => (typeof row.model === 'string' ? row.model.trim() : ''))
+    .filter((model) => model !== '');
+}
+
+/** NHTSA's per-complaint identifier, which is what makes two records the same one. */
+function readComplaintId(row: Record<string, unknown>): string | undefined {
+  const value = row.odiNumber;
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  if (typeof value === 'string' && value.trim()) return value.trim();
+  return undefined;
 }
 
 /**
@@ -110,10 +276,15 @@ async function requestComplaints(lookup: ComplaintLookup): Promise<unknown> {
  * stops a triple-tagged fuel complaint counting three times.
  */
 export function aggregateComplaints(body: unknown): ComponentReports[] {
+  return aggregate(resultRows(body));
+}
+
+/** The same, over records already pulled out of one or more responses. */
+function aggregate(rows: readonly Record<string, unknown>[]): ComponentReports[] {
   const groups = new Map<string, ComponentReports>();
   const candidates = new Map<string, QuoteCandidate[]>();
 
-  for (const row of resultRows(body)) {
+  for (const row of rows) {
     const crash = readBoolean(row, 'crash');
     const fire = readBoolean(row, 'fire');
     const injuries = readCount(row, 'numberOfInjuries');

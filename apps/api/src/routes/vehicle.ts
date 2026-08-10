@@ -347,8 +347,8 @@ const MAX_REPORTED_ISSUES = 8;
 /**
  * Known issues, keyed by year/make/model -- no user filter, since the answer is the same
  * for every owner of the same car. Curated entries come first because they are written
- * for a reader; aggregated NHTSA complaints follow, capped. `checked` reports whether the
- * complaint feed was ever reached.
+ * for a reader; aggregated NHTSA complaints follow, capped. `status` reports how the
+ * complaint check ended, so an empty list is never mistaken for a clean bill of health.
  */
 vehicleRouter.get('/known-issues', async (req, res) => {
   const vehicle = await requireOwnVehicle(req);
@@ -373,6 +373,6 @@ vehicleRouter.get('/known-issues', async (req, res) => {
       ...curated.map(toKnownIssue),
       ...reported.reports.slice(0, MAX_REPORTED_ISSUES).map(toKnownIssueFromReports),
     ],
-    checked: reported.synced,
+    status: reported.status,
   } satisfies KnownIssueReport);
 });

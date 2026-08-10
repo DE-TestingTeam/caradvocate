@@ -29,10 +29,25 @@ export function KnownIssuesList({ report, vehicle }: { report: KnownIssueReport;
     </p>
   );
 
+  const nhtsaLink = (
+    <a
+      href={nhtsaVehicleUrl(vehicle)}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="inline-flex items-center gap-1 link-inline"
+    >
+      look this model up on NHTSA directly
+      <ExternalLink className="h-3 w-3" aria-hidden="true" />
+      <span className="sr-only">(opens in a new tab)</span>
+    </a>
+  );
+
   if (report.issues.length === 0) {
+    // Three claims, not two, as in RecallsList: "nothing found", "we could not look", and
+    // "NHTSA files no complaints under this name". Only the first is reassuring.
     return (
       <>
-        {report.checked ? (
+        {report.status === 'ok' ? (
           <p className="py-2 text-sm text-muted-foreground">
             Nothing on file for this model, and no owner complaints reported to NHTSA.
           </p>
@@ -43,21 +58,19 @@ export function KnownIssuesList({ report, vehicle }: { report: KnownIssueReport;
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning-strong" />
             {/* One span, not bare text: the flex row would otherwise make the sentence and the link
                 either side of it separate flex items, and lay them out as columns. */}
-            <span>
-              Nothing on file for this model yet. Owner complaints could not be loaded, so this is not a clean bill of
-              health. In the meantime,{' '}
-              <a
-                href={nhtsaVehicleUrl(vehicle)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 link-inline"
-              >
-                look this model up on NHTSA directly
-                <ExternalLink className="h-3 w-3" aria-hidden="true" />
-                <span className="sr-only">(opens in a new tab)</span>
-              </a>
-              {' '}— their site can surface a trim you weren't asked for that this list missed.
-            </span>
+            {report.status === 'model_not_listed' ? (
+              <span>
+                NHTSA does not file owner complaints under this car's model name, so we cannot tell you either way.
+                Nothing is down — they answered, they just record this vehicle under a different name than the one on
+                this page. You can {nhtsaLink} to search under the names they use.
+              </span>
+            ) : (
+              <span>
+                Nothing on file for this model yet. Owner complaints could not be loaded, so this is not a clean bill of
+                health. In the meantime, {nhtsaLink}
+                {' '}— their site can surface a trim you weren't asked for that this list missed.
+              </span>
+            )}
           </p>
         )}
         {oldVehicleCaveat}
@@ -84,6 +97,21 @@ export function KnownIssuesList({ report, vehicle }: { report: KnownIssueReport;
           </li>
         ))}
       </ul>
+
+      {/* The list is non-empty but incomplete: these are our own entries with the NHTSA half
+          missing. Saying so matters most here, because a populated list reads as the whole
+          answer in a way an empty one does not. */}
+      {report.status !== 'ok' && (
+        <p className="mt-3 flex items-start gap-2 text-sm text-muted-foreground">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning-strong" />
+          <span>
+            {report.status === 'model_not_listed'
+              ? "Owner complaints are missing from this list: NHTSA does not file them under this car's model name."
+              : 'Owner complaints are missing from this list — they could not be loaded.'}{' '}
+            You can {nhtsaLink}.
+          </span>
+        </p>
+      )}
 
       {oldVehicleCaveat}
 

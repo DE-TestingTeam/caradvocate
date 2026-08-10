@@ -493,7 +493,8 @@ export const modelFeedSyncs = pgTable(
      * It rides on `succeededAt` deliberately. An unlisted name IS an answer -- it will not
      * start existing next week -- so it earns the full freshness window rather than the retry
      * ladder. What it must never do is read as an all-clear, which is why the distinction is
-     * stored rather than inferred from an empty list. See shared RecallCheckStatus.
+     * stored rather than inferred from an empty list. Set by both NHTSA feeds -- recalls and
+     * complaints -- which detect it differently. See shared FeedCheckStatus.
      */
     outcome: text('outcome'),
   },

@@ -160,7 +160,7 @@ function describeSources(
     });
   }
 
-  if (reports.synced && reports.reports.length > 0) {
+  if (reports.status === 'ok' && reports.reports.length > 0) {
     // Summed over the components the block actually described, not every component on file,
     // so the number the owner reads matches what the answer could have used.
     const shown = reports.reports.slice(0, COMPONENTS_IN_PROMPT);
@@ -230,8 +230,11 @@ function knownIssuesSection(
   reports: Awaited<ReturnType<typeof getOwnerReports>>,
   quotes: Map<string, string[]>,
 ): string {
-  if (!reports.synced) {
+  if (reports.status === 'unreachable') {
     return 'WHAT OWNERS REPORT\nNHTSA complaint data could not be loaded. Do not treat that as "no known problems".';
+  }
+  if (reports.status === 'model_not_listed') {
+    return 'WHAT OWNERS REPORT\nNHTSA answered but files no complaints under this car\'s model name, so nothing is known either way. Do not treat that as "no known problems"; it is a gap in the records, not a clean record. Say the model name may not match NHTSA\'s and point the owner at nhtsa.gov/recalls to check under the names they use.';
   }
   if (reports.reports.length === 0) {
     return 'WHAT OWNERS REPORT\nNo complaints filed with NHTSA for this year/make/model.';

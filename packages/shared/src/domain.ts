@@ -218,21 +218,28 @@ export interface Recall {
 }
 
 /**
- * How the recall check ended. Three states, not two, because an empty list has three
- * different meanings and only one of them is reassuring:
+ * How a check against one of NHTSA's per-model feeds ended. Three states, not two, because an
+ * empty list has three different meanings and only one of them is reassuring:
  *
  *   `ok`               NHTSA answered about this model. An empty list is a real all-clear.
- *   `model_not_listed` NHTSA answered, but files no recalls under this model name. Says
- *                      nothing about the car. NHTSA returns HTTP 400 for these -- e.g. a
- *                      2014 "F-350", which it files by cab as "F-350 SUPERCAB" and friends,
- *                      or a "GMT-400", which is a platform code no manufacturer sells.
+ *   `model_not_listed` NHTSA answered, but files nothing under this model name. Says nothing
+ *                      about the car -- e.g. a 2014 "F-350", which both feeds file under
+ *                      finer names, or a "GMT-400", a platform code no manufacturer sells.
  *   `unreachable`      No answer at all. Says nothing about the car either, but for a
  *                      reason that may fix itself.
  *
  * The last two both mean "unknown", and both were previously reported as `unreachable`,
  * which told owners a database was down when it had in fact replied in under a second.
+ *
+ * HOW THE MIDDLE STATE IS DETECTED DIFFERS BY FEED, which is why it is worth naming. Recalls
+ * answer HTTP 400 for a name they do not know. Complaints answer 200 with `count: 0` -- the
+ * same as a genuine all-clear -- so that feed has to check the name against NHTSA's own model
+ * list before believing the zero. See apps/api/src/services/complaints.ts.
  */
-export type RecallCheckStatus = 'ok' | 'model_not_listed' | 'unreachable';
+export type FeedCheckStatus = 'ok' | 'model_not_listed' | 'unreachable';
+
+/** @see FeedCheckStatus */
+export type RecallCheckStatus = FeedCheckStatus;
 
 /**
  * Recalls plus how the check ended. Without `status`, an empty list could mean this car is
@@ -288,10 +295,14 @@ export interface MileageAtFailure {
   sampleCount: number;
 }
 
-/** Known issues plus whether the complaint feed has been reached. See RecallReport. */
+/**
+ * Known issues plus how the complaint check ended. `status` covers the NHTSA half only --
+ * curated entries are ours and are always present when we have them -- so `ok` with an empty
+ * list means nothing is on file for the model, and anything else means nobody could find out.
+ */
 export interface KnownIssueReport {
   issues: KnownIssue[];
-  checked: boolean;
+  status: FeedCheckStatus;
 }
 
 export interface ServiceRecord {

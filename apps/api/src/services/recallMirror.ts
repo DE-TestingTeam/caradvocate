@@ -65,25 +65,6 @@ export async function listMirroredModelNames(
 }
 
 /**
- * The mirror's names for one owner's model, or `[]` when none match.
- *
- * Exact, then whole-word prefix -- "F-350" claims "F-350 SD" but never "F-3500". Prefix only,
- * never substring or fuzzy: a recall shown against the wrong car is worse than one not shown,
- * and "GMT-400" resolving to something plausible is exactly the failure to avoid. It is a
- * platform code, no manufacturer sells one, and the honest answer is that NHTSA has no such
- * model rather than a guess at which C/K truck was meant.
- */
-export function matchModelNames(candidates: readonly string[], model: string): string[] {
-  const wanted = model.trim().toUpperCase();
-  if (!wanted) return [];
-
-  const exact = candidates.filter((name) => name.trim().toUpperCase() === wanted);
-  if (exact.length > 0) return exact;
-
-  return candidates.filter((name) => name.trim().toUpperCase().startsWith(`${wanted} `));
-}
-
-/**
  * Recalls for one model from the mirror, or `undefined` when it has nothing for that model
  * -- which means "no answer", never "no recalls". See the header.
  */
