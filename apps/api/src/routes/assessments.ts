@@ -191,7 +191,6 @@ assessmentsRouter.post('/', validateBody(newAssessmentSchema), async (req, res) 
         quoteLabor: quote?.labor ?? null,
         quoteVerdict: quote?.verdict ?? null,
         quoteExplanation: quote?.explanation ?? null,
-        quoteFileName: req.body.quoteFileName ?? null,
       })
       .returning();
 

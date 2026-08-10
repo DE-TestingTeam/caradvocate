@@ -725,7 +725,11 @@ export const assessments = pgTable(
     quoteLabor: integer('quote_labor'),
     quoteVerdict: quoteVerdictEnum('quote_verdict'),
     quoteExplanation: text('quote_explanation'),
-    /** Display only -- the PDF is not parsed. */
+    /**
+     * RETIRED. Quote PDF upload was removed from the form, so nothing writes this any more;
+     * it is kept only so the rows created while the upload existed still carry their filename.
+     * New rows are always null. Drop it in a migration if those rows stop mattering.
+     */
     quoteFileName: text('quote_file_name'),
 
     /**

@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { ArrowLeft, Loader2, Search } from 'lucide-react';
+import { ArrowLeft, Info, Loader2, Search } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -229,22 +229,22 @@ function VehicleStep({ onBack, zip }: { onBack: () => void; zip: string }) {
 
       <h1 className="mt-2 text-h2 font-bold">Add your car</h1>
       <p className="mt-1 text-muted-foreground">
-        This is what everything else is built around — your history, recalls, and repair pricing.
+        We use this to match recalls, upkeep, and repair prices to your exact car.
       </p>
 
       <Card className="mt-6">
         <CardContent className="space-y-4 p-4 sm:p-6">
           <div className="space-y-2">
-            <Label htmlFor="vin">VIN</Label>
-            <p className="text-sm text-muted-foreground">
-              17 characters, on the driver's side dashboard or door frame. It is what your car's value,
-              service schedule and recalls are looked up by, so we need it to be right.
-            </p>
+            <div className="flex items-center gap-1.5">
+              <Label htmlFor="vin">VIN</Label>
+              <VinHint />
+            </div>
             <div className="flex gap-2">
               <div className="relative flex-1">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   id="vin"
+                  aria-describedby="vin-hint"
                   value={vin}
                   onChange={(e) => setVin(e.target.value.toUpperCase())}
                   placeholder="1HGCM82633A004352"
@@ -318,5 +318,40 @@ function VehicleStep({ onBack, zip }: { onBack: () => void; zip: string }) {
         </CardContent>
       </Card>
     </>
+  );
+}
+
+/**
+ * Where to find the VIN, behind an "i" next to the label.
+ *
+ * Tucked away rather than printed under the label because it only matters to the owner who does
+ * not already know, and this is the first field on the first screen of a form the VIN is now
+ * mandatory in -- a line of instructions above the box makes it read as harder than it is.
+ *
+ * Opens on hover, on keyboard focus and on tap, following `PhotoDisclaimer` in VehicleImage:
+ * `focus-within` drives the panel and tapping the button focuses it, so a phone -- which has no
+ * hover at all -- still reaches it. Hand-rolled for the same reasons noted there.
+ *
+ * `aria-describedby` sits on the input rather than on this button, so the hint is read out on
+ * arriving in the field instead of only to someone who finds and activates the icon.
+ */
+function VinHint() {
+  return (
+    <span className="group relative flex">
+      <button
+        type="button"
+        aria-label="Where to find your VIN"
+        className="flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <Info className="h-4 w-4" aria-hidden="true" />
+      </button>
+      <span
+        id="vin-hint"
+        role="tooltip"
+        className="pointer-events-none invisible absolute left-0 top-7 z-10 w-60 rounded-md border bg-popover p-2.5 text-xs leading-relaxed text-popover-foreground opacity-0 shadow-md transition-opacity group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100"
+      >
+        17 characters, on the driver's side dashboard or door frame.
+      </span>
+    </span>
   );
 }

@@ -537,9 +537,11 @@ opt-in extra, never the mechanism relied on.
 - **The fair/overpriced verdict is deliberately simple** — quote against a price range, nothing else.
   No regional labour rates, no per-shop history. It only flags quotes that are *too high*; a
   suspiciously low quote is reported as fair.
-- **Quote upload stores the filename only.** No PDF or photo parsing; you type the total.
-  `assessments.quote_file_name` is written on create, never read, and is not in the shared domain
-  type. Drop it whenever someone is writing a migration anyway.
+- **Quote PDF upload has been removed.** There is nothing to attach a quote to any more — you type
+  the total, which is all the fairness check ever used. The upload only stored a filename: no PDF or
+  photo was ever parsed. `assessments.quote_file_name` survives as a dead column holding the
+  filenames written while the upload existed; nothing writes or reads it now, and it is not in the
+  shared domain type. Drop it whenever someone is writing a migration anyway.
 - **`labor_rate_per_hour` is dead** — every real path writes null on purpose; only the demo seed puts
   a number in (§2 gap 4).
 

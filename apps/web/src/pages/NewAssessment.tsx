@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { Check } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ContextStep } from '@/components/assessments/ContextStep';
 import { QuoteStep, type QuoteChoice } from '@/components/assessments/QuoteStep';
@@ -10,6 +11,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { createAssessment, getRepairCatalog } from '@/lib/api';
 import { ApiError } from '@/lib/http';
 import { invalidateAll, useApi } from '@/lib/useApi';
+import { cn } from '@/lib/utils';
 import type { AssessmentPrompt, SymptomDuration } from '@caradvocate/shared';
 
 /**
@@ -20,7 +22,23 @@ import type { AssessmentPrompt, SymptomDuration } from '@caradvocate/shared';
  * editable, nothing is submitted for the owner, and a repair id the catalogue does not contain
  * is ignored rather than shown as a selection that cannot be seen. Arriving here from the nav
  * with no parameters is unchanged.
+ *
+ * WHY THE STEPS OPEN ONE AT A TIME. All three used to be on screen at once under headings that
+ * said "Step 1/2/3" -- a sequence the page did not actually have. A step opens once the one above
+ * it is answered, which makes the numbering true, and drops what an owner faces on arrival from
+ * three sections to one. All three headings stay visible throughout, so the length of the form is
+ * never a surprise; only the bodies are held back.
  */
+
+type StepId = 'repair' | 'context' | 'quote';
+
+/** Said beside the step that is holding the form up, once someone has tried to submit. */
+const MISSING: Record<StepId, string> = {
+  repair: 'Pick the repair you need before starting.',
+  context: 'Tell us what brought this repair up.',
+  quote: 'Let us know whether you have a quote yet.',
+};
+
 export function NewAssessmentPage() {
   const navigate = useNavigate();
   const catalog = useApi(getRepairCatalog);
@@ -47,18 +65,55 @@ export function NewAssessmentPage() {
   const [prompt, setPrompt] = React.useState<AssessmentPrompt>();
   const [notes, setNotes] = React.useState('');
   const [duration, setDuration] = React.useState<SymptomDuration>();
-  const [fileName, setFileName] = React.useState<string>();
   const [submitting, setSubmitting] = React.useState(false);
 
   const [error, setError] = React.useState<string>();
+  // Set by a submit that could not go through. Which step is called out is recomputed every
+  // render rather than stored, so answering the flagged step moves the message on by itself.
+  const [attempted, setAttempted] = React.useState(false);
 
   const quoteReady = choice === 'no' || (choice === 'yes' && Number(amount) > 0);
-  // `prompt` is required by the API, so it gates the button here too -- a 422 for a field the
-  // form did not insist on would read as a bug rather than a missing answer.
-  const canSubmit = Boolean(repairId) && prompt !== undefined && quoteReady && !submitting;
+
+  const done: Record<StepId, boolean> = {
+    repair: Boolean(repairId),
+    context: prompt !== undefined,
+    quote: quoteReady,
+  };
+  // First unanswered step, in order. `undefined` means the form is ready to send.
+  const missing: StepId | undefined = !done.repair
+    ? 'repair'
+    : !done.context
+      ? 'context'
+      : !done.quote
+        ? 'quote'
+        : undefined;
+
+  const stepRefs: Record<StepId, React.RefObject<HTMLElement>> = {
+    repair: React.useRef<HTMLElement>(null),
+    context: React.useRef<HTMLElement>(null),
+    quote: React.useRef<HTMLElement>(null),
+  };
 
   async function handleSubmit() {
-    if (!repairId || !canSubmit) return;
+    if (submitting) return;
+
+    // The button stays enabled and answers instead. A disabled button gives an owner no way to
+    // find out what is missing -- and screen readers routinely skip past one -- so an incomplete
+    // form is met with which step is short and a jump to it.
+    if (missing) {
+      setAttempted(true);
+      const target = stepRefs[missing].current;
+      target?.scrollIntoView({
+        behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+        block: 'start',
+      });
+      target?.focus({ preventScroll: true });
+      return;
+    }
+
+    // `missing` already covers both, but it is computed from state the compiler cannot follow
+    // into here -- this is what narrows them for the call below.
+    if (!repairId || prompt === undefined) return;
     setSubmitting(true);
     setError(undefined);
 
@@ -71,7 +126,6 @@ export function NewAssessmentPage() {
         symptomNotes: notes.trim() || undefined,
         symptomDuration: duration,
         quoteAmount: choice === 'yes' ? Number(amount) : undefined,
-        quoteFileName: fileName,
       });
       invalidateAll();
       navigate(`/assessments/${created.id}`);
@@ -110,10 +164,16 @@ export function NewAssessmentPage() {
         </p>
       )}
 
-      <section className="space-y-3">
-        <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-          Step 1: What repair do you need?
-        </h2>
+      <Step
+        id="repair"
+        number={1}
+        title="What repair do you need?"
+        complete={done.repair}
+        // Always open: it is the first question, and there is nothing above it to wait on.
+        open
+        flagged={attempted && missing === 'repair'}
+        sectionRef={stepRefs.repair}
+      >
         {!catalog.data ? (
           <div className="space-y-2">
             <Skeleton className="h-10 w-full" />
@@ -124,17 +184,22 @@ export function NewAssessmentPage() {
         ) : (
           <RepairPicker items={catalog.data.repairs} value={repairId} onChange={setRepairId} />
         )}
-      </section>
+      </Step>
 
       {/*
         Between the repair and the quote, deliberately. It reads as part of describing the problem
         rather than part of pricing it, and an owner who has not thought about why they are here is
         better asked before they have typed a number they are anchored to.
       */}
-      <section className="mt-8 space-y-3">
-        <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-          Step 2: What brought this up?
-        </h2>
+      <Step
+        id="context"
+        number={2}
+        title="What brought this up?"
+        complete={done.context}
+        open={done.repair}
+        flagged={attempted && missing === 'context'}
+        sectionRef={stepRefs.context}
+      >
         <ContextStep
           prompt={prompt}
           onPromptChange={setPrompt}
@@ -143,21 +208,24 @@ export function NewAssessmentPage() {
           duration={duration}
           onDurationChange={setDuration}
         />
-      </section>
+      </Step>
 
-      <section className="mt-8 space-y-3">
-        <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-          Step 3: Have a quote from a shop?
-        </h2>
+      <Step
+        id="quote"
+        number={3}
+        title="Have a quote from a shop?"
+        complete={done.quote}
+        open={done.repair && done.context}
+        flagged={attempted && missing === 'quote'}
+        sectionRef={stepRefs.quote}
+      >
         <QuoteStep
           choice={choice}
           onChoiceChange={setChoice}
           amount={amount}
           onAmountChange={setAmount}
-          fileName={fileName}
-          onFileChange={setFileName}
         />
-      </section>
+      </Step>
 
       {error && (
         <p role="alert" className="mt-6 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm">
@@ -165,9 +233,72 @@ export function NewAssessmentPage() {
         </p>
       )}
 
-      <Button className="mt-8 w-full" disabled={!canSubmit} onClick={handleSubmit}>
+      <Button className="mt-8 w-full" onClick={handleSubmit} aria-disabled={submitting}>
         {submitting ? 'Starting…' : 'Start assessment'}
       </Button>
     </div>
+  );
+}
+
+/**
+ * One numbered question.
+ *
+ * `complete` ticks the heading and `open` reveals the body. A closed step is its dimmed heading
+ * and nothing else -- the question itself already says what is coming, and the numbering says
+ * where it sits, so a line explaining that it opens later only repeats them.
+ *
+ * The section takes focus (`tabIndex={-1}`) rather than the first control inside it, so a jump
+ * from the submit button lands on the heading and a screen reader reads the question and the
+ * reason it was flagged before any of the options.
+ */
+function Step({
+  id,
+  number,
+  title,
+  complete,
+  open,
+  flagged,
+  sectionRef,
+  children,
+}: {
+  id: StepId;
+  number: number;
+  title: string;
+  complete: boolean;
+  open: boolean;
+  flagged: boolean;
+  sectionRef: React.RefObject<HTMLElement>;
+  children: React.ReactNode;
+}) {
+  return (
+    <section
+      ref={sectionRef}
+      tabIndex={-1}
+      aria-labelledby={`step-${id}-heading`}
+      className="mt-8 scroll-mt-6 space-y-3 focus-visible:outline-none"
+    >
+      <div className="flex items-center gap-2">
+        <h2
+          id={`step-${id}-heading`}
+          className={cn(
+            'text-xs font-semibold uppercase tracking-widest',
+            open ? 'text-muted-foreground' : 'text-muted-foreground/60',
+          )}
+        >
+          Step {number}: {title}
+        </h2>
+        {complete && (
+          <Check className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-label="Answered" />
+        )}
+      </div>
+
+      {flagged && (
+        <p role="alert" className="text-sm font-medium text-destructive">
+          {MISSING[id]}
+        </p>
+      )}
+
+      {open && children}
+    </section>
   );
 }

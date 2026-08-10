@@ -23,7 +23,6 @@ export function EditVehicleDialog({ vehicle }: { vehicle: Vehicle }) {
   const [trim, setTrim] = React.useState(vehicle.trim ?? '');
   const [mileage, setMileage] = React.useState(String(vehicle.mileage));
   const [vin, setVin] = React.useState('');
-  const [zip, setZip] = React.useState(vehicle.zip ?? '');
   const toast = useToast();
 
   React.useEffect(() => {
@@ -32,7 +31,6 @@ export function EditVehicleDialog({ vehicle }: { vehicle: Vehicle }) {
       setTrim(vehicle.trim ?? '');
       setMileage(String(vehicle.mileage));
       setVin('');
-      setZip(vehicle.zip ?? '');
     }
   }, [open, vehicle]);
 
@@ -40,7 +38,6 @@ export function EditVehicleDialog({ vehicle }: { vehicle: Vehicle }) {
   const canAddVin = !vehicle.vin;
   // The API requires exactly 17 characters;
   const vinIncomplete = canAddVin && vin.trim().length > 0 && vin.trim().length !== 17;
-  const zipIncomplete = zip.trim().length > 0 && !/^\d{5}$/.test(zip.trim());
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -50,7 +47,6 @@ export function EditVehicleDialog({ vehicle }: { vehicle: Vehicle }) {
       trim: trim.trim() || undefined,
       mileage: Number(mileage),
       ...(addedVin ? { vin: addedVin } : {}),
-      ...(zip.trim() && !zipIncomplete ? { zip: zip.trim() } : {}),
     });
     invalidateAll();
     setOpen(false);
@@ -89,17 +85,9 @@ export function EditVehicleDialog({ vehicle }: { vehicle: Vehicle }) {
               onChange={(e) => setMileage(e.target.value)}
             />
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="vehicle-zip">Zip code</Label>
-            <Input
-              id="vehicle-zip"
-              value={zip}
-              onChange={(e) => setZip(e.target.value.replace(/\D/g, '').slice(0, 5))}
-              inputMode="numeric"
-              placeholder="Used to estimate market value"
-            />
-            {zipIncomplete && <p className="text-sm text-muted-foreground">Enter a 5-digit zip code.</p>}
-          </div>
+          {/* The zip moved to Edit profile -- it says where the owner is, not what the car is,
+              even though it is stored on the vehicle row. Kept in one place so the two dialogs
+              cannot show different answers for the same field. */}
           {canAddVin && (
             <div className="space-y-2">
               <Label htmlFor="vehicle-vin">VIN (optional)</Label>
@@ -119,7 +107,7 @@ export function EditVehicleDialog({ vehicle }: { vehicle: Vehicle }) {
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={!model.trim() || Number(mileage) < 0 || vinIncomplete || zipIncomplete}>
+            <Button type="submit" disabled={!model.trim() || Number(mileage) < 0 || vinIncomplete}>
               Save changes
             </Button>
           </DialogFooter>

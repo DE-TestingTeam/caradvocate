@@ -120,6 +120,24 @@ export function AccountPage() {
                 <div>
                   <FieldRow label="Email" value={account.email} />
                   <FieldRow label="Phone" value={account.phone} />
+                  {/*
+                    A zip is where the OWNER is, not a property of the car, so it sits with the
+                    contact details however it is stored -- `vehicles.zip`, because the valuation
+                    call it feeds is per vehicle.
+
+                    Shown even when empty, and worth the row for that case: a zip is optional at
+                    onboarding but no market value can be fetched without one, so an owner
+                    looking at "not available yet" on My Car needs somewhere that names the
+                    missing ingredient.
+                  */}
+                  <FieldRow
+                    label="Zip code"
+                    value={
+                      vehicle.zip ?? (
+                        <span className="text-muted-foreground">Not added — needed for market value</span>
+                      )
+                    }
+                  />
                 </div>
                 <EditProfileDialog account={account} />
               </>

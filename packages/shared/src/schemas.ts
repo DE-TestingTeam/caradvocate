@@ -67,7 +67,6 @@ export const newAssessmentSchema = z.object({
   repairId: z.string().uuid('Pick a repair from the catalog'),
   /** Omitted when the user chose "No, not yet". */
   quoteAmount: moneySchema.positive().optional(),
-  quoteFileName: z.string().trim().max(255).optional(),
   /**
    * REQUIRED, unlike everything else added here, and it is one tap on the form.
    *

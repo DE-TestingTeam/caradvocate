@@ -454,9 +454,9 @@ export interface Assessment {
    * Why the owner asked. Absent on the four assessments created before this was collected --
    * "not asked", which is different from "nothing to report" and must stay tellable apart.
    *
-   * Read back rather than write-only on purpose: `quote_file_name` is a dead column in this same
-   * table for exactly the reason that it is written and never surfaced, and a field nothing can
-   * see is a field nobody notices has stopped being filled in.
+   * Read back rather than write-only on purpose: `quote_file_name` in this same table died for
+   * exactly the reason that it was written and never surfaced, and a field nothing can see is a
+   * field nobody notices has stopped being filled in.
    */
   context?: AssessmentContext;
   quote?: AssessmentQuote;

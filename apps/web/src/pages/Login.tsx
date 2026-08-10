@@ -52,8 +52,25 @@ export function LoginPage() {
   const emailRef = React.useRef<HTMLInputElement>(null);
   const passwordRef = React.useRef<HTMLInputElement>(null);
 
-  // Send people back where they were headed before the redirect to sign in.
-  const from = (location.state as { from?: string } | null)?.from ?? '/my-car';
+  /**
+   * An account created in this visit has no car yet, so /my-car is somewhere it can only be
+   * bounced out of -- and RequireVehicle draws the whole My Car skeleton, side nav and section
+   * headings included, for the length of the `GET /vehicle` that returns the 404 doing the
+   * bouncing. That read as the app opening and then being taken away again.
+   *
+   * A ref rather than state: the redirect below has to see this in the same render the session
+   * arrives in, and a queued setState is not guaranteed to have landed by then.
+   *
+   * Set for the whole visit, not just the redirect straight after signUp, because a project
+   * requiring email confirmation returns no session -- that owner comes back through the
+   * sign-in form on this same page, and is just as new when they do.
+   */
+  const signedUpHere = React.useRef(false);
+
+  // Otherwise send people back where they were headed before the redirect to sign in.
+  const from = signedUpHere.current
+    ? '/onboarding'
+    : ((location.state as { from?: string } | null)?.from ?? '/my-car');
 
   /**
    * Checked on submit rather than gating the button. A button that is disabled until the form
@@ -106,6 +123,8 @@ export function LoginPage() {
         await signIn(email.trim(), password);
       } else {
         await signUp(email.trim(), password);
+        // Before the notice below, so it is set whether or not a session came back with it.
+        signedUpHere.current = true;
         // Depending on the project's settings this may require confirming an
         // email first, so do not assume there is a session to redirect into.
         setNotice('Account created. If your project requires email confirmation, check your inbox.');

@@ -1,4 +1,4 @@
-import { AlertTriangle, CalendarClock, ClipboardList, HelpCircle, Wrench } from 'lucide-react';
+import { AlertTriangle, ClipboardList, HelpCircle, Wrench } from 'lucide-react';
 import type { AssessmentPrompt, SymptomDuration } from '@caradvocate/shared';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -17,9 +17,16 @@ import { cn } from '@/lib/utils';
  * optional: an owner who does not know what the shop meant should be able to say so by leaving it
  * empty rather than by inventing something.
  *
- * The duration only appears for the two prompts it means anything for. Asking how long a routine
+ * The duration only appears for the prompts it means anything for. Asking how long a routine
  * service has been going on produces an answer to a question nobody asked, and stored it would
  * later read as a reported symptom.
+ *
+ * WHY THERE IS NO "I'VE NOTICED SOMETHING". Removed by product decision; an owner reporting a
+ * noise or a smell picks "Something else" and describes it in the free-text box. `symptom` stays
+ * a valid value everywhere else -- the type, the API and the column all still accept it, so
+ * putting the option back is a one-entry change here. Two consequences worth knowing: an
+ * owner-reported symptom is no longer distinguishable from any other "something else" by the
+ * stored code alone, and "Something else" does not ask how long it has been happening.
  */
 
 const PROMPTS: {
@@ -28,12 +35,6 @@ const PROMPTS: {
   title: string;
   hint: string;
 }[] = [
-  {
-    value: 'symptom',
-    icon: AlertTriangle,
-    title: "I've noticed something",
-    hint: 'A noise, a smell, a vibration, something not working right',
-  },
   {
     value: 'warning_light',
     icon: AlertTriangle,
@@ -52,7 +53,12 @@ const PROMPTS: {
     title: "It's scheduled upkeep",
     hint: 'Due by mileage or time, not because of a problem',
   },
-  { value: 'other', icon: HelpCircle, title: 'Something else', hint: '' },
+  {
+    value: 'other',
+    icon: HelpCircle,
+    title: 'Something else',
+    hint: 'Including anything you have noticed yourself — a noise, a smell, a vibration',
+  },
 ];
 
 const DURATIONS: { value: SymptomDuration; label: string }[] = [
@@ -135,14 +141,15 @@ export function ContextStep({
                     key={value}
                     type="button"
                     onClick={() => onDurationChange(value)}
+                    // No icon: the same clock on all four pills distinguished nothing, and the
+                    // labels already say the answer is a length of time.
                     className={cn(
-                      'inline-flex items-center gap-1.5 rounded-pill border px-3 py-1.5 text-sm transition-colors',
+                      'inline-flex items-center rounded-pill border px-3 py-1.5 text-sm transition-colors',
                       duration === value
                         ? 'border-foreground ring-1 ring-inset ring-foreground'
                         : 'bg-muted/50 hover:bg-accent',
                     )}
                   >
-                    <CalendarClock className="h-3.5 w-3.5" aria-hidden="true" />
                     {label}
                   </button>
                 ))}
