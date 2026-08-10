@@ -84,8 +84,18 @@ export function formatNhtsaProse(text: string): string {
   return lowered.replace(/(^\s*|[.!?]\s+)([a-z])/g, (_match, lead: string, letter: string) => lead + letter.toUpperCase());
 }
 
-/** 1.5 -> "1.5 hrs", 1 -> "1 hr" */
+/**
+ * 1.5 -> "1.5 hrs", 1 -> "1 hr", 0.6 -> "36 min".
+ *
+ * Whole and part hours keep the decimal because that is how a shop quotes labour ("1.5 hours"),
+ * and matching their wording is what lets an owner compare the two. Under an hour it flips to
+ * minutes: "0.6 hrs" is a conversion sum on a screen someone is reading to decide whether a
+ * quote is fair, and a third of the jobs priced here fall below the hour.
+ */
 export function formatHours(hours: number): string {
+  if (hours > 0 && hours < 1) {
+    return `${Math.round(hours * 60)} min`;
+  }
   return `${hours} ${hours === 1 ? 'hr' : 'hrs'}`;
 }
 

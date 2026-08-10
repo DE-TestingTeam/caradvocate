@@ -52,7 +52,7 @@ Four invariants:
 | Free | Ask CA Q&A + banded severity | ✅ |
 | Paid | Necessity check | ❌ Inputs now collected, judgement unwritten |
 | Paid | Parts benchmark | ⚠️ Total only, no itemisation |
-| Paid | Labor baseline | ⚠️ Dollars and hours, no rate — and the hours barely show |
+| Paid | Labor baseline | ⚠️ Dollars and hours shown; no rate, and no vendor publishes one |
 | Paid | Past assessments · "Repair complete" writeback | ✅ |
 | Cut | OBD translation · Advocacy · Post-repair summary | ✅ Absent, as intended |
 
@@ -111,21 +111,29 @@ what we know?", with three bands including an explicit *not enough to say*.
 **3. Parts benchmark — one line, not a breakdown.** The vendor publishes no itemisation, so the
 sync writes a single row reading "All parts for this repair". Minor.
 
-**4. Labor baseline — no rate, and the hours barely show.**
+**4. Labor baseline — hours shown, no rate, and no vendor publishes one.**
 
 - **No hourly rate exists** and neither vendor publishes one. It cannot be derived: labor dollars ÷
   Open Labor Project hours gives a number well outside any real shop rate. The mock's "$95/hr" has
   no source.
-- **`LaborBaselineCard` needs the rate and hours together to show either.** So the "Labor Rate … ·
-  Est. Time …" line has never rendered for a real car and never will, until a rate source appears
-  or the card shows hours alone. Hours do appear in the task-breakdown rows.
+- **The hours are now shown — fixed 9 August.** `LaborBaselineCard` tested for a rate *and* hours
+  before showing either, so the hours were fetched, stored, sent to the browser and thrown away
+  because a rate we have never had was missing. The shared `Assessment` type warned about exactly
+  that: the two are not absent together, and a consumer testing for both gets neither. Rate and
+  time are now tested separately. This lights up **all four assessments on file** and 33 of 44
+  priced jobs. `formatHours` also gained sub-hour handling — a 0.6 h job read "0.6 hrs" and now
+  reads "36 min" — and the task rows, which hardcoded "hr" and rendered "1.5 hr", use it too.
+- **The title stays "Labor Baseline", not the mock's "OEM Labor & Time Baseline".** That word
+  cannot be earned from a source that labels every row `estimated`.
 - **The hours are estimates, not licensed book times.** Every Open Labor Project row is labelled
   `estimated` (1,454 of 1,454 across two vehicles), and its catalogue contradicts itself — front
   brake pads listed at both 1.0 h and 1.5 h for the same car. **The fair/overpriced verdict runs on
-  dollars alone and must keep doing so.**
+  dollars alone and must keep doing so** — and the card says so beneath the time, because a bare
+  number invites the wrong argument: an owner who reads "1 hr" and was billed for three has not
+  been shown overbilling.
 
-Gap 1 needs a product decision; gap 4 needs a licensed book-time source plus a decision about
-showing hours without a rate; gap 3 is minor.
+Gap 1 needs a product decision; gap 4 now needs only a licensed book-time source, the decision
+about showing hours having been made; gap 3 is minor.
 
 **A coverage limit gates the whole paid tier.** If the pricing vendor has nothing for the owner's
 car, the Repair Cost Checker offers **no repairs at all** — deliberate, because another vehicle's
