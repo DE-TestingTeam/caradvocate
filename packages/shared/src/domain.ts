@@ -191,6 +191,30 @@ export interface MaintenanceItem {
 }
 
 /**
+ * Why this car's upkeep list is empty. An empty list on its own says nothing an owner can act
+ * on -- the same blank page covered "we asked and this car has no published schedule", "we have
+ * not managed to ask yet" and "we cannot ask at all", which need three different responses.
+ *
+ * - `ok` -- there are jobs to show.
+ * - `pending` -- the schedule lookup has not returned a conclusive answer yet. It retries, so
+ *   this is worth coming back for.
+ * - `none_published` -- asked and answered: the vendor has no schedule for this vehicle. This
+ *   is final. The car is marked and never asked again, so nothing further will arrive.
+ * - `no_vin` -- the lookup is keyed by VIN and this car has none, so it was never attempted.
+ *   The only one of the three the owner can do something about.
+ */
+export type MaintenanceCheckStatus = 'ok' | 'pending' | 'none_published' | 'no_vin';
+
+/**
+ * Upkeep jobs plus how the schedule lookup ended, for the same reason RecallReport carries a
+ * status: an empty list is not self-explanatory.
+ */
+export interface MaintenanceReport {
+  items: MaintenanceItem[];
+  status: MaintenanceCheckStatus;
+}
+
+/**
  * One NHTSA safety recall for the owner's model. `severity` is derived from NHTSA's own
  * advisories rather than judged here.
  */

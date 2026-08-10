@@ -52,34 +52,53 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     let unsubscribe: (() => void) | undefined;
 
     (async () => {
-      const resolved = await getAuthConfig();
-      if (!active) return;
-      setConfig(resolved);
+      try {
+        const resolved = await getAuthConfig();
+        if (!active) return;
+        setConfig(resolved);
 
-      const supabase = await getSupabase();
-      if (!active) return;
-      if (!supabase) {
-        // No credentials, so nobody can sign in -- but the app has finished trying, and leaving
-        // `loading` true would hold the whole tree on skeletons instead of showing the login form.
-        setLoading(false);
-        return;
+        const supabase = await getSupabase();
+        if (!active) return;
+        if (!supabase) return;
+
+        /**
+         * SUBSCRIBED BEFORE `getSession()` IS ASKED, not after. Between those two lines the
+         * provider is blind, and a sign-in landing in that window used to be missed entirely --
+         * `getSession()` had already answered "nobody", and the event announcing the new session
+         * arrived before there was anything listening for it. The session then existed in
+         * Supabase and nowhere else, so `authenticated` stayed false and the redirect off /login,
+         * which is driven by that flag, never fired.
+         *
+         * Subscribing first cannot miss it. The listener also fires INITIAL_SESSION of its own
+         * accord, so the `getSession()` below is belt and braces rather than the only source.
+         */
+        const { data: subscription } = supabase.auth.onAuthStateChange((_event, next) => {
+          setSession(next);
+        });
+
+        // Unmounted while we were awaiting: nothing will call the cleanup below, so do it here.
+        if (!active) {
+          subscription.subscription.unsubscribe();
+          return;
+        }
+        unsubscribe = () => subscription.subscription.unsubscribe();
+
+        const { data } = await supabase.auth.getSession();
+        if (!active) return;
+        setSession(data.session);
+      } catch (cause) {
+        // Reaching here at all is a bug somewhere below, but the handling is what matters: an
+        // uncaught throw skipped the `setLoading(false)` that used to sit inline, and `loading`
+        // has no other way back to false. The whole app then sat on skeletons forever, and
+        // /login -- which is NOT behind AuthGate -- rendered a working sign-in form that could
+        // never redirect, because its redirect is guarded on `!loading`. Correct credentials,
+        // real session, and the page just sat there.
+        console.error('Auth initialisation failed; continuing signed out.', cause);
+      } finally {
+        // Unconditional. Whatever happened above, the app has finished trying, and staying in
+        // `loading` is the one outcome with no way out of it.
+        if (active) setLoading(false);
       }
-
-      const { data } = await supabase.auth.getSession();
-      if (!active) return;
-      setSession(data.session);
-      setLoading(false);
-
-      const { data: subscription } = supabase.auth.onAuthStateChange((_event, next) => {
-        setSession(next);
-      });
-
-      // Unmounted while we were awaiting: nothing will call the cleanup below, so do it here.
-      if (!active) {
-        subscription.subscription.unsubscribe();
-        return;
-      }
-      unsubscribe = () => subscription.subscription.unsubscribe();
     })();
 
     return () => {
@@ -118,16 +137,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       loading,
       authenticated: session !== null,
 
+      /**
+       * The session is taken from the RESPONSE, not just awaited from the listener.
+       *
+       * Supabase hands it back right here, and the listener is a second delivery of the same
+       * fact -- so reading it directly makes `authenticated` true the moment the password is
+       * accepted, whether or not the subscription is healthy. That matters because the redirect
+       * off /login is driven by `authenticated`: with the listener as the only source, anything
+       * that stopped it firing stranded a correctly signed-in owner on the sign-in form. Setting
+       * it twice is harmless -- same session object, and React skips the identical re-render.
+       */
       signIn: async (email, password) => {
         const supabase = await requireClient();
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw new Error(error.message);
+        if (data.session) setSession(data.session);
       },
 
       signUp: async (email, password) => {
         const supabase = await requireClient();
-        const { error } = await supabase.auth.signUp({ email, password });
+        const { data, error } = await supabase.auth.signUp({ email, password });
         if (error) throw new Error(error.message);
+        // Null whenever the project requires email confirmation, which is why the caller shows a
+        // "check your inbox" notice rather than assuming there is somewhere to redirect to.
+        if (data.session) setSession(data.session);
       },
 
       signInWithGoogle: async () => {

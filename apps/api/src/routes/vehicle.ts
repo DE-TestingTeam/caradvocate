@@ -10,6 +10,8 @@ import {
   updateVehicleSchema,
   vinSchema,
   type KnownIssueReport,
+  type MaintenanceCheckStatus,
+  type MaintenanceReport,
   type RecallReport,
   type VehicleImage,
 } from '@caradvocate/shared';
@@ -154,8 +156,37 @@ vehicleRouter.get('/decode/:vin', async (req, res) => {
 vehicleRouter.get('/maintenance', async (req, res) => {
   const vehicle = await requireOwnVehicle(req);
   await ensureMaintenanceSchedule(req.db, vehicle);
-  res.json(await loadMaintenanceItems(req.db, vehicle));
+
+  /*
+   * Re-read rather than reuse the row above. The sync may have just marked this car as asked,
+   * and the status below turns on that marker -- the copy of the vehicle fetched before the
+   * call still says "never asked" and would report a settled car as pending forever.
+   */
+  const checked = await requireOwnVehicle(req);
+  const items = await loadMaintenanceItems(req.db, checked);
+
+  res.json({ items, status: maintenanceStatus(checked, items.length) } satisfies MaintenanceReport);
 });
+
+/**
+ * Why an empty upkeep list is empty. Only ever asked when there are no items -- a car with jobs
+ * to show has nothing to explain.
+ *
+ * The three empty cases are genuinely different and the owner's next move differs for each, so
+ * they must not collapse into one blank list. See MaintenanceCheckStatus in shared/domain.ts.
+ */
+function maintenanceStatus(
+  vehicle: { vin: string | null; maintenanceScheduleCheckedAt: Date | null },
+  itemCount: number,
+): MaintenanceCheckStatus {
+  if (itemCount > 0) return 'ok';
+  // Checked first: the lookup is VIN-keyed, so without one it is never even attempted.
+  if (!vehicle.vin) return 'no_vin';
+  // Marked means the vendor gave a conclusive answer, and an empty list with one can only mean
+  // it had no schedule for this vehicle. The car is never asked again, so nothing is coming.
+  if (vehicle.maintenanceScheduleCheckedAt) return 'none_published';
+  return 'pending';
+}
 
 vehicleRouter.post('/maintenance', validateBody(newMaintenanceItemSchema), async (req, res) => {
   const vehicle = await requireOwnVehicle(req);

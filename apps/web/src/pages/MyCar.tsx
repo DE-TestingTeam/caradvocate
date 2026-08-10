@@ -1,5 +1,4 @@
 import * as React from 'react';
-import { Plus } from 'lucide-react';
 import { ErrorState } from '@/components/ErrorState';
 import { Section } from '@/components/my-car/Section';
 import { KnownIssuesList } from '@/components/my-car/KnownIssuesList';
@@ -12,7 +11,6 @@ import { RecallsList } from '@/components/my-car/RecallsList';
 import { ServiceHistory } from '@/components/my-car/ServiceHistory';
 import { ValueCard } from '@/components/my-car/ValueCard';
 import { VehicleImage } from '@/components/my-car/VehicleImage';
-import { Button } from '@/components/ui/button';
 import { useVehicle } from '@/components/layout/RequireVehicle';
 import { useToast } from '@/components/ui/toast';
 import {
@@ -36,7 +34,6 @@ export function MyCarPage() {
   const history = useApi(getServiceHistory);
   const toast = useToast();
 
-  const [addingJob, setAddingJob] = React.useState(false);
   const [editingJob, setEditingJob] = React.useState<MaintenanceItem>();
   const [editingRecord, setEditingRecord] = React.useState<ServiceRecord>();
 
@@ -133,19 +130,18 @@ export function MyCarPage() {
         )}
       </Section>
 
-      <Section
-        title="Scheduled maintenance"
-        action={
-          <Button variant="secondary" size="sm" onClick={() => setAddingJob(true)}>
-            <Plus className="h-4 w-4" />
-            Add an upkeep job
-          </Button>
-        }
-      >
+      {/*
+        No "Add an upkeep job" action. This list is the manufacturer's schedule for this car,
+        fetched by VIN -- not a to-do list someone builds by hand -- and a control to add rows to
+        it invited the owner to fill a gap that is ours to fill. The empty states below say which
+        kind of empty each car is in; see MaintenanceList. Editing an existing job stays, since
+        adjusting an interval is a judgement about a real row rather than an invented one.
+      */}
+      <Section title="Scheduled maintenance">
         {maintenance.error ? (
           <ErrorState message={maintenance.error.message} />
         ) : maintenance.data ? (
-          <MaintenanceList items={maintenance.data} onEdit={setEditingJob} />
+          <MaintenanceList report={maintenance.data} onEdit={setEditingJob} />
         ) : (
           <ListSkeleton rows={4} />
         )}
@@ -163,7 +159,7 @@ export function MyCarPage() {
 
       {/* Uncontrolled, so this instance renders its own trigger -- which is what sits on the
           heading rule. The controlled instance below, for editing an existing record, does not. */}
-      <Section title="Service history" action={<LogServiceDialog jobs={maintenance.data ?? []} />}>
+      <Section title="Service history" action={<LogServiceDialog jobs={maintenance.data?.items ?? []} />}>
         {history.error ? (
           <ErrorState message={history.error.message} />
         ) : history.data ? (
@@ -175,7 +171,6 @@ export function MyCarPage() {
 
       {/* Edit dialogs live here rather than inside each row, so one mounted dialog
           serves the whole list instead of one per item. */}
-      <MaintenanceItemDialog open={addingJob} onOpenChange={setAddingJob} />
       <MaintenanceItemDialog
         key={editingJob?.id}
         item={editingJob}
@@ -184,7 +179,7 @@ export function MyCarPage() {
       />
       <LogServiceDialog
         key={editingRecord?.id}
-        jobs={maintenance.data ?? []}
+        jobs={maintenance.data?.items ?? []}
         record={editingRecord}
         open={editingRecord !== undefined}
         onOpenChange={(open) => !open && setEditingRecord(undefined)}

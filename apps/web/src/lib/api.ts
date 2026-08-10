@@ -10,6 +10,7 @@ import type {
   DecodedVin,
   KnownIssueReport,
   MaintenanceItem,
+  MaintenanceReport,
   NewAssessmentInput,
   NewMaintenanceItemInput,
   NewServiceRecordInput,
@@ -53,8 +54,8 @@ export function decodeVin(vin: string): Promise<DecodedVin> {
  * Upkeep jobs with their due status already worked out server-side, so the client never
  * does the arithmetic and cannot disagree with it.
  */
-export function getMaintenance(): Promise<MaintenanceItem[]> {
-  return http.get<MaintenanceItem[]>('/vehicle/maintenance');
+export function getMaintenance(): Promise<MaintenanceReport> {
+  return http.get<MaintenanceReport>('/vehicle/maintenance');
 }
 
 export function addMaintenanceItem(input: NewMaintenanceItemInput): Promise<MaintenanceItem> {

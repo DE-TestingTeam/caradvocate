@@ -1,8 +1,14 @@
 import { AlertTriangle, CheckCircle2, HelpCircle, Pencil } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { formatLongDate, formatMileage } from '@/lib/format';
-import type { MaintenanceItem, MaintenanceStatus } from '@caradvocate/shared';
+import type {
+  MaintenanceCheckStatus,
+  MaintenanceItem,
+  MaintenanceReport,
+  MaintenanceStatus,
+} from '@caradvocate/shared';
 
 const statusMeta: Record<
   MaintenanceStatus,
@@ -20,20 +26,15 @@ const statusMeta: Record<
  * owner told "overdue" has to trust us, one told "due at 68,900, you're at 68,400" can check.
  */
 export function MaintenanceList({
-  items,
+  report,
   onEdit,
 }: {
-  items: MaintenanceItem[];
+  report: MaintenanceReport;
   onEdit: (item: MaintenanceItem) => void;
 }) {
-  if (items.length === 0) {
-    return (
-      <p className="py-2 text-sm text-muted-foreground">
-        No upkeep jobs yet. Add the ones you care about — oil, tyres, brake fluid — with how often each is due, and this
-        works out what needs doing from your service history.
-      </p>
-    );
-  }
+  const items = report.items;
+
+  if (items.length === 0) return <NothingToShow status={report.status} />;
 
   return (
     <ul className="space-y-2">
@@ -79,6 +80,55 @@ export function MaintenanceList({
         );
       })}
     </ul>
+  );
+}
+
+/**
+ * An empty list, saying which kind of empty it is.
+ *
+ * It used to read "No upkeep jobs yet. Add the ones you care about..." in every case, which was
+ * wrong twice over. It blamed the owner for a list the app fills from a factory schedule, not by
+ * hand -- and it read as an invitation on cars where the schedule is never coming, so someone
+ * could wait indefinitely for a list that had already been settled as empty.
+ *
+ * Same distinction RecallsList and KnownIssuesList already draw: "nothing found" and "we could
+ * not look" are different answers, and only one of them is finished. The icon marks the cases
+ * that are not an all-clear, and `warning-strong` rather than `warning` for the same contrast
+ * reason noted on those lists.
+ */
+function NothingToShow({ status }: { status: MaintenanceCheckStatus }) {
+  if (status === 'pending') {
+    return (
+      // Deliberately vague about when. The retry is an hour's cooldown and only fires when
+      // someone next opens this page, so promising "a few minutes" would be a straight
+      // invention -- see UNAVAILABLE_RETRY_MS in services/maintenanceScheduleSync.ts.
+      <p className="py-2 text-sm text-muted-foreground">
+        Still working out the manufacturer's service schedule for this car. It has not come back
+        yet — we keep trying, so this should fill in on a later visit.
+      </p>
+    );
+  }
+
+  return (
+    <p className="flex items-start gap-2 py-2 text-sm text-muted-foreground">
+      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning-strong" />
+      {status === 'no_vin' ? (
+        <span>
+          {/* The one empty case the owner can actually clear, so it says what to do and where. */}
+          We look this car's service schedule up by VIN, and this car does not have one on file.{' '}
+          <Link to="/account#vehicle" className="link-inline">
+            Add your VIN in Account
+          </Link>{' '}
+          and the schedule will fill in.
+        </span>
+      ) : (
+        <span>
+          No published service schedule for this car. We asked and the manufacturer's data does
+          not cover this vehicle, so this is settled rather than still loading — nothing further
+          will arrive here.
+        </span>
+      )}
+    </p>
   );
 }
 

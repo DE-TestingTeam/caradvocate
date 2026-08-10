@@ -54,22 +54,23 @@ export function AssessmentsPage() {
       )}
 
       {/*
-        The empty state sits on linen rather than on a white card. An empty card on an off-white
-        page looks like content that failed to arrive; a tinted panel reads as a deliberate
-        placeholder, which is what this is.
+        Styled as Ask CA's empty state, which is the other page in the app that can open with
+        nothing on it: centred on the page itself rather than in a panel, a short line in
+        foreground weight, then the explanation under it in muted. No card and no tint -- an
+        empty container is a thing to look at, and there is nothing in it.
+
+        The two lines are two paragraphs rather than one split by a <br>, so the second can hold
+        the muted colour and the `max-w-sm` measure that stops it running the width of the page.
       */}
       {data && data.length === 0 && (
-        <div className="rounded-lg bg-muted p-8 text-center">
-          <p className="mx-auto max-w-sm text-body text-muted-foreground">
-            Nothing here yet — which is the good outcome. Next time a shop quotes you, check it
-            here first.
+        <div className="flex flex-col items-center px-6 py-20 text-center">
+          {/* No button of its own: "Check a repair" is already in the header, a few inches up
+              and the only filled control on the page. A second copy of it made the same action
+              appear twice on a screen with nothing else on it. */}
+          <p className="text-sm font-medium">Nothing here yet</p>
+          <p className="mt-2 max-w-sm text-sm text-muted-foreground">
+            Next time a shop quotes you, check it here first.
           </p>
-          <Button asChild className="mt-5">
-            <Link to="/assessments/new">
-              <Plus className="h-4 w-4" />
-              Check a repair
-            </Link>
-          </Button>
         </div>
       )}
 
