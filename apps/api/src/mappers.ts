@@ -6,11 +6,13 @@
 import type {
   Account,
   Assessment,
+  AssessmentPrompt,
   KnownIssue,
   MileageAtFailure,
   Recall,
   RepairCatalogItem,
   ServiceRecord,
+  SymptomDuration,
   Vehicle,
 } from '@caradvocate/shared';
 import type * as t from './db/schema.js';
@@ -159,6 +161,19 @@ export function toAssessment(
       badge: row.recommendationBadge,
       body: row.recommendationBody,
     },
+    // Absent as a whole when `promptedBy` is null -- an assessment created before the question
+    // existed. A partial object would imply we asked and got nothing back.
+    ...(row.promptedBy
+      ? {
+          context: {
+            promptedBy: row.promptedBy as AssessmentPrompt,
+            ...(row.symptomNotes ? { notes: row.symptomNotes } : {}),
+            ...(row.symptomDuration
+              ? { duration: row.symptomDuration as SymptomDuration }
+              : {}),
+          },
+        }
+      : {}),
     parts: {
       items: [...parts]
         .sort((a, b) => a.position - b.position)

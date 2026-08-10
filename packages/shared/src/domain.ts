@@ -345,6 +345,49 @@ export interface AssessmentQuote {
   explanation: string;
 }
 
+/**
+ * Why the owner is asking about this repair.
+ *
+ * The necessity check cannot exist without this. "Is this repair needed?" has no answer from a
+ * repair name and a price alone -- a shop proposing brake pads to someone who reported grinding
+ * and a shop proposing them to someone who came in for an oil change are completely different
+ * questions, and until now the app recorded neither.
+ *
+ * Kept to a short fixed list rather than free text because it is the field that gets reasoned
+ * over. `symptomNotes` is where the words go.
+ */
+export type AssessmentPrompt =
+  | 'symptom'
+  | 'warning_light'
+  | 'routine_service'
+  | 'shop_suggested'
+  | 'other';
+
+/**
+ * How long it has been going on. Coarse on purpose: an owner rarely knows the date something
+ * started, and offering "3 days" precision invites a guess that reads as a fact.
+ */
+export type SymptomDuration = 'days' | 'weeks' | 'months' | 'unsure';
+
+export const ASSESSMENT_PROMPTS: readonly AssessmentPrompt[] = [
+  'symptom',
+  'warning_light',
+  'routine_service',
+  'shop_suggested',
+  'other',
+];
+
+export const SYMPTOM_DURATIONS: readonly SymptomDuration[] = ['days', 'weeks', 'months', 'unsure'];
+
+/** What the owner told us about why this repair came up. Absent on assessments predating it. */
+export interface AssessmentContext {
+  promptedBy: AssessmentPrompt;
+  /** What they are noticing, or what the shop said. Absent when they had nothing to add. */
+  notes?: string;
+  /** Only meaningful alongside a symptom or a warning light. */
+  duration?: SymptomDuration;
+}
+
 export interface Assessment {
   id: string;
   repairName: string;
@@ -369,6 +412,15 @@ export interface Assessment {
    * reference model stands in when the vendor cannot price theirs.
    */
   benchmarkSource: string;
+  /**
+   * Why the owner asked. Absent on the four assessments created before this was collected --
+   * "not asked", which is different from "nothing to report" and must stay tellable apart.
+   *
+   * Read back rather than write-only on purpose: `quote_file_name` is a dead column in this same
+   * table for exactly the reason that it is written and never surfaced, and a field nothing can
+   * see is a field nobody notices has stopped being filled in.
+   */
+  context?: AssessmentContext;
   quote?: AssessmentQuote;
   completedAt?: string;
   completedCost?: number;

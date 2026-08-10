@@ -1,481 +1,332 @@
 # CarAdvocate — what exists today
 
-A plain-language description of the app as the code currently stands.
+The app as the code currently stands. Last reviewed 9 August 2026 against the working tree and a
+read-only pass over the shared database.
 
-**Confirmed** means it was read in the source, or measured against the live database.
-**Needs checking** means the code cannot answer it — usually a question about the live
-environment. Every open question is collected at the end of §9.
-
-Last reviewed on 9 August 2026, against the working tree and a read-only pass over the shared
-database. Since the 8 August review: the NHTSA recall mirror landed, is committed, and is
-described here for the first time (§5); migrations `0019` and `0020` were applied and the recall
-import has run (§9); and the Ask CA review log took its first real rows (§4).
+Where a number appears — table counts, coverage, row counts — it was measured against the live
+database on that date rather than inferred from the code.
 
 ---
 
 ## 1. What the app is
 
-A web app for car owners. It answers two questions:
-
-1. Is this repair actually necessary?
-2. Is the price the shop quoted me fair?
-
-It is a prototype, not a live business: the paid feature charges nobody (see §8).
-
----
-
-## 2. What is built
-
-Six areas, all working end to end. **Confirmed** — each has a route in `apps/web/src/App.tsx`
-and a matching API endpoint. (The Repair Cost Checker is one row here but four routes: the
-list, a new check, a detail view, and the "we can't price your car" page.)
+A web app for car owners, answering two questions: **is this repair necessary?** and **is the
+price fair?**
 
 | Screen | What it does |
 |---|---|
-| **Login** | Email + password, or "Continue with Google" |
+| **Login** | Email + password, or Continue with Google |
 | **Onboarding** | Add your car, by VIN or by typing the details |
-| **My Car** | Value, recalls, problems other owners report, upkeep schedule, service history, a photo |
-| **Ask CA** | The AI chat (see §4) |
+| **My Car** | Value, recalls, known issues, upkeep schedule, service history, photo |
+| **Ask CA** | The AI chat (§3) |
 | **Repair Cost Checker** | Pick a repair, see a fair price range, paste your quote, get a verdict |
 | **Account** | Profile, car details, plan status |
 
-This is about the screens. It is not a claim that every planned feature behind them is
-finished — §3 checks the agreed feature list one by one, and several are not.
+Login is the only public screen. Everything else needs sign-in; the Repair Cost Checker also needs
+the paywall tap.
 
-Login is the only public screen. Everything else needs sign-in, and the Repair Cost Checker
-also needs the paywall tap (§8).
+Four invariants:
 
-Behind those screens:
-
-- **Sign-in is mandatory in every environment, including a laptop.** No test or bypass mode.
-  The API refuses to start if it cannot verify a token.
-- **Every owner only ever sees their own data.** Each user-owned table carries a `user_id` and
-  every query filters on it.
-- **Outside data is mirrored locally.** Recalls, owner complaints, repair pricing and labour
-  hours are fetched once per car model, stored, and re-checked weekly. Pages load from our own
-  database, so the app still works when a supplier is down.
-- **The API fails loudly at startup**, not on the first request — it exits if the database URL
-  is missing, if the tables are absent, or if auth is unconfigured.
+- **Sign-in is mandatory in every environment.** No test or bypass mode. The API refuses to start
+  if it cannot verify a token.
+- **Every owner only sees their own data.** Each user-owned table carries a `user_id` and every
+  query filters on it.
+- **Outside data is mirrored locally.** Recalls, complaints, pricing, labour hours and factory
+  schedules are fetched per model, stored, and re-checked on a schedule. Pages load from our own
+  database, so the app works when a supplier is down.
+- **The API fails at startup, not on the first request** — it exits if the database URL is missing,
+  the tables are absent, or auth is unconfigured.
 
 ---
 
-## 3. Planned scope vs what exists
-
-The agreed feature list, checked line by line against the code. "Built" means a real person
-with a real car gets the thing — not that a screen exists or that the demo account looks right.
+## 2. Planned scope vs what exists
 
 | Tier | Feature | Status |
 |---|---|---|
-| Free / My Car | Single-vehicle profile | ✅ Built |
-| Free / My Car | User-entered service history | ✅ Built |
-| Free / My Car | Value + trend line | ⚠️ Live via MarketCheck, refreshed nightly; needs VIN + zip, trade-in range still missing |
-| Free / My Car | Recall schedule | ✅ Built |
-| Free / My Car | Maintenance schedule | ⚠️ Tracker built, starts empty |
-| Free / My Car | Model known issues | ✅ Built |
-| Free / Ask CA | Q&A + banded severity | ✅ Built |
-| Paid / RCC | Necessity check | ❌ Not implemented |
-| Paid / RCC | Parts benchmark | ⚠️ Total only, no itemisation |
-| Paid / RCC | Labor baseline | ⚠️ Dollars and time, no rate — and the time barely shows |
-| Paid / RCC | Past assessments | ✅ Built |
-| Paid / RCC | "Repair complete" writeback | ✅ Built |
+| Free | Single-vehicle profile | ✅ |
+| Free | User-entered service history | ✅ |
+| Free | Value + trend line | ⚠️ Live via MarketCheck; needs VIN + zip, no trade-in range |
+| Free | Recall schedule | ✅ |
+| Free | Maintenance schedule | ✅ Factory intervals from Vehicle Databases, VIN required |
+| Free | Model known issues | ✅ |
+| Free | Ask CA Q&A + banded severity | ✅ |
+| Paid | Necessity check | ❌ Inputs now collected, judgement unwritten |
+| Paid | Parts benchmark | ⚠️ Total only, no itemisation |
+| Paid | Labor baseline | ⚠️ Dollars and hours, no rate — and the hours barely show |
+| Paid | Past assessments · "Repair complete" writeback | ✅ |
 | Cut | OBD translation · Advocacy · Post-repair summary | ✅ Absent, as intended |
 
-### The five gaps, in priority order
+### The four gaps
 
-**1. Necessity check — the paid tier's headline promise, and it is not there.** The
-recommendation fields exist and render, but nothing works them out. For a real car,
-`services/repairPricingSync.ts` writes the same fixed text for every repair: headline *"Priced
-for your car"*, badge *"ASSESSED"*, and a body about comparing quotes to a range. That is a
-pricing statement, not a judgement about whether the repair is needed.
+**1. Necessity check — the paid tier's headline promise, and it is not there.** The recommendation
+fields render, but nothing works them out. `services/repairPricingSync.ts` writes the same fixed
+text for every repair on every car: *"Priced for your car"*, badge *ASSESSED*, and a body about
+comparing quotes to a range. That is a pricing statement, not a judgement about whether the repair
+is needed. The demo Civic reads better only because `db/fixtures.ts` has the answer typed in by
+hand. Nothing reads symptoms, mileage, service history or complaint patterns.
 
-The demo Civic reads better only because that copy was typed by hand from the wireframes with
-the answer already in it — `db/fixtures.ts` contains *"At 68,400 miles with reported grinding,
-brake pad replacement is recommended."* That sentence is fixed text. It says "grinding"
-whatever the owner reported, and 68,400 miles whatever their odometer says. Nothing reads
-symptoms, mileage, service history or complaint patterns to decide.
+This is the one place the product claim and the code genuinely disagree, and it is what the paywall
+sells.
 
-This is the one gap where the product claim and the code genuinely disagree, rather than the
-feature merely being unfinished — and it is what the paywall sells. **It needs a product
-decision first:** whether necessity is calculated from the mileage, service history and
-complaint data already in the database, or answered by Claude the way Ask CA already answers
-questions.
+**The blocker was never the technique — it was the input.** The assessment recorded which repair and
+what it cost, and nothing about why it came up. A shop proposing brake pads to someone reporting
+grinding and a shop proposing them to someone in for an oil change are different questions, and the
+app could not tell them apart. Three prerequisites were closed on 9 August:
 
-**2. Value + trend line — working, with four real limits.** MarketCheck prices a real car from
-actual dealer listings (`services/marketCheck.ts`, `services/marketValueSync.ts`). The refresh
-rule is monthly, and a nightly job now sweeps every due car
-(`scripts/refreshMarketValues.mts`) — before that, a car was only re-priced when its owner
-happened to open the app, so the chart held one point per month in which somebody signed in.
-Four things still keep this short of the original ask:
+- **The assessment asks why.** Migration `0022` adds `prompted_by` (symptom · warning light · shop
+  suggested · routine upkeep · other), `symptom_notes` and `symptom_duration`. `ContextStep` collects
+  them as step 2 — between the repair and the quote, so it reads as describing the problem rather
+  than pricing it, and is asked before the owner anchors on a number. `prompted_by` is required for
+  new rows; the four existing ones stay null, meaning *never asked*, which must stay distinct from
+  *nothing to report*. A duration is stored only for a symptom or warning light — on routine upkeep
+  it would later read as a reported symptom.
+- **Complaint mileage is loaded.** `npm run ingest:mileage` had never run, so all 81 owner-report
+  groups had counts and no mileage-at-failure. Now **28 of 81** carry one — 2019 Civic service brakes
+  at a median 11,800 mi (n=15), 2021 RAV4 air bags at 30,000 (n=21). The other 51 have fewer than
+  four odometer samples and are skipped by design, not missing.
+- **Interval availability is settled** — see the factory-schedule note in §4.
 
-- **Both a VIN and a zip code have to be on file.** MarketCheck requires both, and onboarding
-  lets an owner skip either; a car missing one shows "not available yet". Live on 9 August:
-  **3 of the 6 cars on file have both.**
-- **The price is only as current as the odometer we hold.** The call takes `miles`, so a stale
-  reading prices the car high. Now addressed: the app tracks when a reading was taken and asks
-  the owner to confirm one older than 90 days — see §9, "The odometer".
-- **The trend cannot be backfilled.** Confirmed against MarketCheck's docs: the predict endpoint
-  takes no date parameter, so there is nothing to ask "what was this worth in March".
-  `/v2/history/car/{vin}` is not the answer either — it returns *listing* records (what a dealer
-  asked while the car sat on a lot), empty for a car its owner has driven for years and never
-  listed, and where it is not empty it is a different quantity from a predicted value. Joining
-  the two would draw a trend that never happened. MarketCheck sells a separate Historical Price
-  API, not on this tier. So the line is built going forward, one point per month, from whenever
-  VIN and zip are both in place. Live: the only real car with history has **1 point** (the Civic
-  and RAV4 show 6 each; those are seeded demo rows).
-- **Some vehicles get a conclusive "cannot be estimated", not a retry loop.** MarketCheck
-  returns a real HTTP 400 for a VIN old enough to fall outside its training data (a 1993 truck,
-  confirmed). That is stored as distinct from "vendor unreachable, will retry"
-  (`Vehicle.valuationUnavailable`), so the card says so instead of implying a price is still
-  coming. Live: **2 of the 3 priceable cars are in this state** — checked, no price stored.
-  Two out of three is a high rate for a verdict meant to describe unusually old vehicles, and
-  it is worth reading alongside the standing question in `marketCheck.ts` about whether this
-  key carries the VIN-decode entitlement the predict endpoint depends on.
+**What remains is the shape of the judgement.** Recommended: compute the evidence deterministically
+in code and let Claude write the prose from those signals only, never the band — the same split that
+makes Ask CA's "Based on" line trustworthy. And reframe the claim from "is this necessary?" — a
+diagnosis the app cannot make, and forbids Ask CA from attempting — to "does this hold up against
+what we know?", with three bands including an explicit *not enough to say*.
 
-**Not sourced yet: the trade-in range.** MarketCheck's percentile data is a Premium-tier
-feature and this key is not known to carry it. `tradeInLow`/`tradeInHigh` are null for every
-real car — confirmed live, the only two rows holding values are the seeded demo cars.
+**2. Value + trend line — working, with three limits.**
 
-**3. Maintenance schedule — the tracker works, the schedule does not exist.** The due/overdue
-calculation is real: mileage or time, whichever comes first, with a "due soon" margin. But a
-new owner starts with an empty list and has to type every job and interval themselves.
-Manufacturer intervals are licensed data the app does not have. If "maintenance schedule" is
-meant to arrive pre-filled, that part is unbuilt.
+- **Both a VIN and a zip must be on file.** Onboarding lets an owner skip either; a car missing one
+  shows "not available yet". Live: 3 of 6 cars have both.
+- **The trend cannot be backfilled.** MarketCheck's predict endpoint takes no as-of date, and its
+  history endpoint returns *listing* records — a different quantity, usually empty. Joining them
+  would draw a trend that never happened. The line builds forward, one point per month. Live: the
+  only real car with history has 1 point.
+- **Some vehicles get a conclusive "cannot be estimated"** — MarketCheck returns HTTP 400 for a VIN
+  outside its training data. Stored as `Vehicle.valuationUnavailable`, distinct from "unreachable,
+  will retry", so the card says so rather than implying a price is coming. Live: 2 of the 3
+  priceable cars are in this state — a high rate for a verdict meant to describe very old cars.
 
-The calculation is also only as good as its input, and it reads `vehicles.mileage` as the
-current odometer. A stale figure here does not merely look wrong: it tells someone a job is
-fine when it is overdue, which is the one failure mode in this app that can cost an engine
-rather than an argument. Fixed on 9 August — see §9, "The odometer".
+**Not sourced: the trade-in range.** Premium-tier MarketCheck data this key does not carry.
+`tradeInLow`/`tradeInHigh` are null for every real car.
 
-*(A separate branch is building manufacturer schedules with a Claude research pipeline. It is
-not part of this branch — see §9, "A second migration line".)*
+**3. Parts benchmark — one line, not a breakdown.** The vendor publishes no itemisation, so the
+sync writes a single row reading "All parts for this repair". Minor.
 
-**4. Parts benchmark — one line rather than a breakdown.** The low/average/high range is real
-vendor data, but the sync writes a single row reading "All parts for this repair" set to the
-parts total, because the vendor publishes no itemisation. So the parts list renders with
-exactly one entry. Minor, and may not be worth solving.
+**4. Labor baseline — no rate, and the hours barely show.**
 
-**5. Labor baseline — time has arrived, the rate has not, and the screen barely shows either.**
-Labor dollars are real, and Open Labor Project fills labor *hours* per repair per model. Three
-caveats, and they matter more than the win:
+- **No hourly rate exists** and neither vendor publishes one. It cannot be derived: labor dollars ÷
+  Open Labor Project hours gives a number well outside any real shop rate. The mock's "$95/hr" has
+  no source.
+- **`LaborBaselineCard` needs the rate and hours together to show either.** So the "Labor Rate … ·
+  Est. Time …" line has never rendered for a real car and never will, until a rate source appears
+  or the card shows hours alone. Hours do appear in the task-breakdown rows.
+- **The hours are estimates, not licensed book times.** Every Open Labor Project row is labelled
+  `estimated` (1,454 of 1,454 across two vehicles), and its catalogue contradicts itself — front
+  brake pads listed at both 1.0 h and 1.5 h for the same car. **The fair/overpriced verdict runs on
+  dollars alone and must keep doing so.**
 
-- **The hourly rate is still missing**, and neither vendor publishes one. It cannot be derived:
-  dividing the pricing vendor's labor dollars by these hours gives a number well outside any
-  real shop rate. This is why the mock's "$95/hr" has no source.
-- **The card needs the rate and the hours together to show anything.** It tests for both, so
-  the title stays "Labor Baseline" rather than "OEM Labor & Time Baseline" and the "Labor Rate
-  … · Est. Time …" line stays hidden. The hours reach the browser and are stored, but the only
-  place they appear is one task-breakdown row: "Shop labor for this repair — 1 hr". **A small
-  front-end change would show a time without a rate**; nobody has decided whether to make it.
-- **The hours are estimates, not licensed book times.** Every row the vendor returns is
-  labelled `estimated` — 1,454 out of 1,454 across two vehicles checked. The data varies
-  sensibly by engine (spark plugs 0.8 h on an inline-four, 1.5 h on a V6), but its catalogue
-  contradicts itself: front brake pads are listed twice, at 1.0 h and 1.5 h, for the same car.
-  So the hours are display-only. **The fair/overpriced verdict still runs on dollars alone and
-  must keep doing so.**
+Gap 1 needs a product decision; gap 4 needs a licensed book-time source plus a decision about
+showing hours without a rate; gap 3 is minor.
 
-Still missing for the mock: the per-task hour split. The vendor publishes one figure per job,
-not a decomposition.
-
-**What kind of work each is.** Gap 1 needs a product decision. Gap 3 is procurement — it waits
-on a manufacturer-schedule source, and the sync machinery to plug one in already exists. Gap 5
-is half procurement, half product decision: the rate needs a vendor, a hand-curated regional
-table, or asking the owner what their shop charges. Gap 4 is minor.
-
-### A coverage limit that affects the whole paid tier
-
-If the pricing vendor has nothing for the owner's car, the Repair Cost Checker offers **no
-repairs at all**. That is deliberate — substituting another vehicle's figures would produce
-confidently wrong verdicts — but it makes vendor coverage a hard gate on the only paid feature,
-and nobody has measured which cars real signups actually bring.
+**A coverage limit gates the whole paid tier.** If the pricing vendor has nothing for the owner's
+car, the Repair Cost Checker offers **no repairs at all** — deliberate, because another vehicle's
+figures produce confidently wrong verdicts, but it makes vendor coverage a hard gate on the only
+paid feature. Nobody has measured which cars real signups bring.
 
 ---
 
-## 4. How the AI chat works
+## 3. Ask CA
 
-This is the "Ask CA" screen. The short version: **the AI is never asked to remember anything
-about the car. Every fact is looked up in our database first and handed to it, and it is told
-it may not go beyond them.**
+**The AI is never asked to remember anything about the car.** Every fact is looked up in our
+database, handed to it, and it is told it may not go beyond them.
 
-### Step by step
+1. You type a question; the browser sends it with the last 10 messages.
+2. **The conversation lives in the browser** (`sessionStorage`) — survives a refresh, dies with the
+   tab, cleared on sign-out. There is no GET and no screen that could show an old conversation.
+3. The API builds a **facts block about your car**, each item labelled with its source: the car
+   itself; NHTSA recalls plus whether *you* said each was fixed; NHTSA complaints for the model
+   grouped by component, with counts, deaths/injuries/crashes/fires, mileage range and up to two
+   owners' own words; your upkeep schedule and what is due; your last 8 services. Each section
+   states what missing data means — if NHTSA could not be reached, the block says *"This is NOT an
+   all-clear."*
+4. The question goes to Claude (`claude-sonnet-5`) with a fixed system prompt.
+5. **The reply comes back in a fixed shape**: `text`, `urgency` (`low`/`medium`/`high`/none), `cta`.
+6. The reply streams. What you see mid-stream is a preview the app throws away — the finished
+   reply, the one that went through the checks, replaces it, and only that one can carry an urgency
+   banner or button.
 
-1. **You type a question.** The browser shows your message immediately and sends it to the API
-   with the conversation so far (last 10 messages, so follow-ups make sense).
-2. **The conversation is held by the browser, not the server.** No GET, no screen that could show
-   an old one. This is deliberate: saving-and-deleting fails exactly when it matters, because a
-   closed tab or a crash skips the cleanup and the leftover rows come back as "history". The
-   transcript lives in `sessionStorage`, so it survives navigation and a refresh and dies with
-   the tab; signing out clears it, so the next person on a shared machine does not inherit it.
-   *(Exchanges are separately written to a review log — see below. Nothing the server keeps can
-   come back to an owner as history.)*
-3. **The API checks who you are** and looks up your car.
-4. **The API builds a "facts block" about *your* car**, each item labelled with its source: the
-   car itself (year, make, model, trim, odometer, whether a VIN is on file); **safety recalls**
-   from NHTSA plus whether *you* said each was fixed; **what other owners report** (NHTSA
-   complaints for this model, grouped by component, with counts, any deaths/injuries/crashes/
-   fires, the mileage range reported, and up to two owners' own words); **your upkeep schedule**
-   and whether each job is due; **your last 8 logged services**. Each section says what it means
-   when data is missing — if NHTSA could not be reached, the block literally says *"This is NOT
-   an all-clear."*
-5. **The question goes to Claude** (`claude-sonnet-5`) with a fixed system prompt, the facts
-   block, the recent conversation, and your question.
-6. **The reply comes back in a fixed shape**, not free-form prose: `text`, `urgency`
-   (`low`/`medium`/`high`/nothing), and `cta` (show the Check Repair Costs button, or nothing).
-7. **The browser renders it** as a chat bubble, plus an urgency banner and button if set.
-
-**Each answer shows what it was based on.** A quiet line under the reply — "Based on · Your 2019
-Honda Civic · 4 NHTSA recalls for this model · Your last 6 logged services". It is built so it
-cannot lie: the AI picks only *which kinds* of fact it leaned on, from a fixed list of five, and
-the app writes the wording and counts from the facts it actually assembled. A kind the facts
-block did not contain is dropped. An answer that drew on nothing shows no line at all.
-
-**The answer appears as it is written.** The reply streams, so words appear a few at a time
-instead of a spinner. What you see mid-stream is a *preview* the app throws away: the finished
-reply — the one that went through the checks below — replaces it, and only that one can carry
-an urgency banner or the button. Closing the tab stops the request rather than leaving it
-running.
+**Each answer shows what it was based on** — "Based on · Your 2019 Honda Civic · 4 NHTSA recalls for
+this model · Your last 6 logged services". It cannot lie: the AI picks only *which kinds* of fact
+it used from a fixed list of five, and the app writes the wording and counts from the facts it
+actually assembled. A kind the block did not contain is dropped.
 
 ### What stops it making things up
 
-Enforced in five places rather than asked for:
+Five enforcement points, not requests:
 
-1. **The facts block is the only source.** The AI is told those facts are all it knows.
-2. **Explicit prohibitions.** Do not invent recalls, part prices, labour times, service
-   intervals or resale values. Do not state a manufacturer's maintenance schedule (not
-   licensed). Do not diagnose — it cannot see or hear the car. Do not turn "we couldn't reach
-   the data source" into "nothing's wrong". Do not repeat an owner complaint as an established
-   fault.
-3. **The reply shape is enforced by the API**, so `urgency` can only be a value the app knows
-   how to display.
-4. **The button's wording is set by our code, not the AI.**
-5. **Streaming does not skip any of that.** The checks sit on the finished reply, not the
-   stream, so the fast path cannot become the unchecked path.
+1. **The facts block is the only source**, and the AI is told so.
+2. **Explicit prohibitions:** do not invent recalls, part prices, labour times, service intervals or
+   resale values; do not state a manufacturer's schedule; do not diagnose; do not turn "we couldn't
+   reach the data source" into "nothing's wrong"; do not repeat an owner complaint as fact.
+3. **The reply shape is enforced by the API**, so `urgency` can only be a value the UI renders.
+4. **The button's wording is set by our code**, not the AI.
+5. **Streaming does not skip any of that** — the checks sit on the finished reply.
 
-Behaviour rules worth knowing:
+Behaviour rules:
 
-- If a recall carries NHTSA's *stop driving* or *park outside* warning and you have not said it
-  was repaired, the AI leads with it whatever you asked — including if all you said was "hi".
-  This is the one thing allowed to interrupt, because the car should not be moving.
-- Otherwise it raises an unrepaired recall **once per conversation**, and only when actually
-  answering a question about the car. Repeating it teaches people to ignore it.
-- **A greeting gets a greeting** — one line, no car summary, no recall list, no urgency banner.
-- **A price question arrives at the Repair Cost Checker with the form already filled in.** When
-  the question is clearly about one of the twelve jobs the checker covers, the button carries
-  that repair through and preselects it, and a mentioned quote ("they want $640") lands in the
-  quote box. Everything is editable and the form says where the values came from. The assistant
-  only ever *names* a repair — the API matches that name against the owner's own catalogue and
-  supplies the id, so an invented name prefills nothing rather than selecting the wrong job.
-  The quote is only ever the owner's own figure repeated back. A job the checker does not cover
-  gets told so rather than sent to a form that cannot help.
-- **A price question is handed to the checker, not apologised for.** It used to lead with "I
-  don't have pricing data" — true of the chat, wrong about the app. It now points at the checker
-  in a sentence and shows the button, including when the owner does not yet know which repair
-  they need. It names no number and does not promise what the checker will say.
-- **Recalls have three states in the facts block, not two.** "NHTSA could not be reached",
-  "NHTSA does not list recalls under this car's model name" and a genuine all-clear now read
-  differently, because the honest answer differs: the second means nothing is down, the name is
-  wrong, and a VIN check at nhtsa.gov settles it today. See §5.
+- An unrepaired recall carrying NHTSA's *stop driving* or *park outside* warning leads the answer
+  whatever you asked. The one thing allowed to interrupt.
+- Otherwise an unrepaired recall is raised **once per conversation**, only when answering a question
+  about the car.
+- **A greeting gets a greeting** — one line, no car summary, no recall list, no banner.
+- **A price question arrives at the Repair Cost Checker with the form filled in.** The assistant
+  only ever *names* a repair; the API matches that name against the owner's own catalogue and
+  supplies the id, so an invented name prefills nothing. A mentioned quote ("they want $640") is
+  only ever the owner's own figure repeated back.
+- **Recalls have three states in the facts block:** unreachable, model-not-listed, and a genuine
+  all-clear (§4).
 
-### When things go wrong
+**Failure modes:** no Anthropic key → four cycling canned replies, announced at startup; a failed
+call → a sentence saying so, never a canned reply dressed up as real; a safety refusal → asked to
+rephrase; no car on file → deliberately uncaught, because it is a setup problem.
 
-- **No Anthropic API key** → four canned replies that cycle. They are obviously generic, and
-  the API prints `Ask CA: canned replies` at startup.
-- **The AI call fails** → a sentence saying the question was not answered. It does **not**
-  quietly serve a canned reply dressed up as a real one.
-- **A safety filter declines** → you are told to rephrase.
-- **You have no car on file** → deliberately *not* caught, because it is a setup problem and a
-  generic error would hide it.
+### The review log
 
-### Every exchange is recorded for quality assurance
+`ask_transcripts` stores one row per exchange: question, answer as shown, `outcome`
+(`answered`/`canned`/`declined`/`timed_out`/`failed`/`abandoned`), urgency, button label, which
+fact kinds it used (`ask_transcript_sources`), duration, tokens, prior message count, model. The
+facts block itself is not stored — kilobytes of reference data the database still holds; a reviewer
+rebuilds it from `vehicle_id`.
 
-**Confirmed and live.** `ask_transcripts` stores one row per exchange: the question, the answer
-as the owner saw it, and enough context to judge it — `outcome` (`answered`, `canned`,
-`declined`, `timed_out`, `failed`, `abandoned`), urgency band and button label, which facts it
-leaned on (child table `ask_transcript_sources`), duration and token counts, how many prior
-messages, and which model answered.
+Three load-bearing properties:
 
-Three properties are load-bearing, and each is why this is safe where the old `chat_messages`
-table was not:
+- **Nothing reads it back.** No GET, no mapper, no screen. Migration `0010` dropped `chat_messages`
+  because that table *was* the rendered history, kept tidy by a delete-on-exit a closed tab skipped
+  — so every miss resurfaced as turns the owner thought they had left behind.
+- **Recording can never cost someone an answer.** The write happens after the reply is on the wire,
+  and `services/askTranscripts.ts` swallows and logs its own failures.
+- **Failures are recorded too**, including `abandoned`. A climbing abandoned rate is the clearest
+  signal that answers are too slow.
 
-- **Nothing reads it back.** No GET, no mapper, no screen. Migration `0010` dropped
-  `chat_messages` because that table *was* the history the screen rendered, kept tidy by a
-  delete-on-exit that a closed tab skipped — so every miss resurfaced as turns the owner thought
-  they had left behind. A write-only log cannot do that.
-- **Recording can never cost someone an answer.** The write happens after the reply is on the
-  wire, and `services/askTranscripts.ts` swallows and logs its own failures.
-- **Failures are recorded too**, including `abandoned` when the owner closes the tab mid-answer.
-  A climbing abandoned rate is the clearest available signal that answers are too slow.
-
-**Deliberately not stored: the facts block.** It runs to kilobytes per exchange and is mostly
-reference data the database still holds, so the source rows record *which* blocks were used. A
-reviewer who needs the exact wording rebuilds it from the transcript's `vehicle_id`.
-
-**This is personal data, and it is now handled on four fronts.** Owners describe their cars,
-their money and sometimes themselves.
-
-1. **Rows cascade with the user**, so deleting an account takes its transcripts.
-2. **The tables are excluded from `sql/rls-policies.sql`**, so no browser key can read them — and
-   as of 9 August RLS is on and there are no policies anywhere, so nothing outside the API can.
-3. **They are deliberately unreadable by the app itself.** No GET, no mapper, no screen.
-4. **A 90-day retention window, set 9 August and enforced nightly.** Transcripts used to live
-   forever, which is not a decision anyone made — it is what you get when nobody sets a window.
-   `ASK_TRANSCRIPT_RETENTION_DAYS` in `env.ts` holds the number with the reasoning beside it;
-   `scripts/pruneAskTranscripts.mts` deletes what is past it, from
-   `prune-ask-transcripts.yml` at 10:30 UTC. Source rows go by cascade.
-
-Ninety days is long enough to review a quarter's answers, catch a regression after a prompt
-change, and investigate a complaint — and short enough that a breach or a subject-access request
-touches a season rather than the lifetime of the product. It is configurable so it can be
-**shortened** without a deploy; lengthening it is a policy change to argue for, not to type into
-an environment.
-
-Unlike the write path, the prune **does not swallow its failures**. The rule that recording must
-never cost an owner an answer does not apply to a cron nobody is waiting on, and a retention job
-that fails quietly is a policy that silently is not one.
+**It is the most sensitive table in the schema**, handled on four fronts: rows cascade with the
+user; the tables are excluded from `sql/rls-policies.sql` and RLS is on with no policies anywhere;
+the app has no read path; and a **90-day retention window**
+(`ASK_TRANSCRIPT_RETENTION_DAYS` in `env.ts`) is enforced nightly by
+`scripts/pruneAskTranscripts.mts`. It is configurable so it can be **shortened** without a deploy —
+lengthening it is a policy change. Unlike the write path, the prune **does not swallow failures**,
+so a job that stops enforcing the window goes red.
 
 ### Cost and speed
 
-**Confirmed**, measured against the seeded Civic on a live database. The system prompt and facts
-block are both cached, so a follow-up only pays full price for the new question (7,741 tokens
-written on the first turn, read back on every turn after).
+Measured on the seeded Civic, warm cache, one location. The system prompt and facts block are
+cached, so a follow-up only pays full price for the new question (7,741 tokens on the first turn).
+**About 3 s for a greeting, 5–6 s for a real question**, down from a median 15 s. Three settings
+account for it:
 
-**Answers take about 3 seconds for a greeting and 5–6 for a real question**, down from a median
-15 seconds and sometimes closer to 20. Almost all of that came from one setting, and not the
-expected one:
+- **Extended thinking is off** — it cost a median 12.3 s before the first word (range 5.8–16.8)
+  against 3.1 s, and roughly doubled every answer.
+- **Reasoning effort stays at `medium`.** `low` was tried: `medium` grounded answers in the owner's
+  own data 6/6 against 5/6, for ~180 ms. Thinking surfaced that data slightly more often too, which
+  is why effort went up as thinking went off — change one and re-measure the other.
+- **The facts block is built in one round of queries**, not three in sequence.
 
-- **Extended thinking is off.** Sonnet 5 thinks by default; on a real question that cost a
-  median 12.3 seconds before the first word (range 5.8–16.8) against 3.1 with it off, and
-  roughly doubled every answer's length. On a greeting it made no difference — it correctly
-  declines to think about "hi".
-- **Reasoning effort stays at `medium`.** It was briefly dropped to `low` on the assumption that
-  effort was the cost; measurement showed it was not. `medium` grounded its answer in the
-  owner's own data in 6 of 6 test runs where `low` managed 5 of 6, for about 180 ms.
-- **Streaming** does not make an answer faster — the owner reads it as it is written.
-- **The facts block is built in one round of queries** instead of three in sequence. That was
-  roughly 2 seconds of pure waiting on a cold cache, on every message.
-
-Thinking did buy *something*: it surfaced the owner's own complaint and recall data slightly
-more often, which is why effort went up as thinking went off. Change one and re-measure the
-other.
-
-**Needs checking:** all of this was measured on one car with a warm cache, from one location.
-The shape is not in doubt; the exact numbers will move. Each answer logs its own duration and
-tokens (`Ask CA: 1234ms in=… out=… cacheRead=… cacheWrite=…`), which is the only instrumentation
-on this path. Watch `cacheRead`: if it stays near zero across a conversation, the cached prefix
-is being invalidated and every follow-up is charged in full.
+Every answer logs `Ask CA: 1234ms in=… out=… cacheRead=… cacheWrite=…`, the only instrumentation on
+this path. **Watch `cacheRead`:** near zero across a conversation means the cached prefix is being
+invalidated and every follow-up is charged in full.
 
 ---
 
-## 5. Outside services used
+## 4. Outside services
 
 | Service | Used for |
 |---|---|
-| **Supabase** | Sign-in, and the Postgres database |
+| **Supabase** | Sign-in, and the Postgres database (the only required key) |
 | **Anthropic (Claude)** | Ask CA answers (`claude-sonnet-5` — the only place Claude is used) |
-| **NHTSA — recalls / complaints / vPIC** | Safety recalls, what owners report, VIN decoding |
+| **NHTSA — recalls / complaints / vPIC** | Safety recalls, owner reports, VIN decoding |
 | **CarImages** | Studio photo on My Car |
-| **Vehicle Databases** | Real parts and labour pricing |
+| **Vehicle Databases** | Parts and labour pricing, factory maintenance schedules |
 | **Open Labor Project** | Labour hours per repair |
 | **MarketCheck** | Market value estimate on My Car |
 
-Which need a key, and what happens when one is unset, is in the README's environment-variable
-table — the single place that answers it, so the two cannot drift. Only Supabase is required;
-the API will not start without it.
+Which need a key, and what happens when one is unset, lives in the README's environment-variable
+table — the single place that answers it, so the two cannot drift.
 
-- **The three NHTSA feeds are free and need no key.** When one cannot be reached the app says
-  so rather than implying an all-clear: recalls and owner reports show as "unknown", and a
-  failed VIN decode drops the owner back to typing the details by hand.
-- **Vehicle Databases is metered.** Its monthly allowance is finite and it returns 403 on
-  *every* call once spent. The code treats "no answer" differently from "no record", so a spent
-  quota does not wipe out pricing we already have.
-- **Repair pricing is per car model, with no fallback.** No data for your car means the checker
-  shows nothing rather than another vehicle's prices. A Pathfinder judged against Civic brake
-  prices sends the owner to argue with a shop that did nothing wrong.
+- **The three NHTSA feeds are free and need no key.** When one cannot be reached the app says so
+  rather than implying an all-clear; a failed VIN decode drops the owner back to typing details.
+- **Vehicle Databases is metered** and returns 403 on *every* call once the monthly allowance is
+  spent. The code treats "no answer" differently from "no record", so a spent quota does not wipe
+  out pricing we already hold.
+- **Repair pricing is per model with no fallback.** No data means the checker shows nothing rather
+  than another car's prices. A Pathfinder judged against Civic brake prices sends the owner to argue
+  with a shop that did nothing wrong.
+- **Factory maintenance schedules** come from the same vendor's repair-estimates feed, keyed by VIN
+  so the trim is right, fetched **once per car and never refreshed** — a factory schedule does not
+  change, and `vehicles.maintenance_schedule_checked_at` is the whole freshness policy. Rows are
+  updated in place or appended, **never deleted**, because `service_records.maintenance_item_id`
+  points at them. Every dollar figure in that response is ignored: it assumes $55/hour, about half a
+  real shop rate. A car with no VIN gets nothing.
+
+  **Four interval states, live on 9 August, and they are not interchangeable:** factory schedule
+  present and authoritative (Pathfinder 6 jobs, F-350 4); vendor answered *no schedule exists for
+  this car* (GMT-400, 0); never asked because there is no VIN (Golf, 0); and seeded demo values that
+  are not the manufacturer's (Civic 5, RAV4 1). **Only the first may produce a "due / not due"
+  signal** — an empty interval list is not evidence that nothing is due. The other three degrade to
+  *not enough to say*. Two are recoverable: a VIN would fix the Golf, and **nothing in the app ever
+  asks for one**.
+- **Open Labor Project allows 10 calls per day** on the free tier, then 429. A sync makes at most one
+  call per model per week, so the limit caps how many *different* cars can be primed in a day. Paid
+  tier is $49/mo for 1,000/day.
+- **MarketCheck needs a VIN and a zip on every call**, and is asked at most once a month per car, by
+  the nightly sweep rather than a page load. The monthly rule lives once, in `marketValueDue`, so a
+  steady fleet costs roughly *vehicles ÷ 30* calls a night. The sweep caps itself at 250 calls per
+  run and logs when it does. The route call stays — it is what prices a car the moment it is added.
 - **The CarImages photo is of the model, not your car**, and the supplier returns a generic
-  placeholder for vehicles it doesn't have — indistinguishable from a real photo at our end.
-  Nothing in the UI claims otherwise.
-- **Open Labor Project is metered far more tightly**: **10 calls per day** on the free tier,
-  then 429. A sync makes at most one call per model per week, so the limit caps how many
-  *different* cars can be primed in a day rather than how often one refreshes. An outage keeps
-  the hours already stored. The paid tier is $49/mo for 1,000 calls a day.
-- **Neither pricing vendor publishes an hourly labour rate**, so the app has none (§3, gap 5).
-- **MarketCheck needs a VIN and a zip on every call**, and is asked at most once a month per
-  car. Same three-outcome discipline as the others: a price, a conclusive "cannot decode this
-  VIN" (cached, so a car that will never price is not re-asked every visit), or an outage that
-  is retried rather than remembered.
-- **MarketCheck is asked by a nightly job, not a page load** (`refresh-market-values.yml`, 09:30
-  UTC, clear of the 08:00 recall import). The monthly rule lives in one place —
-  `marketValueDue` in `services/marketValueSync.ts`, which both the sweep and the routes call —
-  so a steady fleet costs roughly *vehicles ÷ 30* calls a night, and a night with nothing due
-  costs one query and no vendor calls. The sweep caps itself at 250 calls per run and logs when
-  it does; that matters on the first run, when every eligible car falls due at once. The route
-  call stays, because it is what prices a car the moment it is added.
+  placeholder for vehicles it lacks, indistinguishable from a real photo at our end.
 
 ### The NHTSA recall mirror
 
-**New, and the biggest change since 8 August.** NHTSA's live recall API answers HTTP 400 for a
-model name it does not recognise — with a body that reads `{"Count":0,"Message":"Results
-returned successfully"}`, a success shape carrying a failure. That was being recorded as "could
-not reach NHTSA", which told owners a federal database was down when it had replied in under a
-second, and left the model on a retry ladder re-asking a settled question.
+NHTSA's live recall API answers HTTP 400 for a model name it does not recognise — with a body
+reading `{"Count":0,"Message":"Results returned successfully"}`, a success shape carrying a failure.
+So a recall check has **three outcomes, not two** — `ok`, `model_not_listed`, `unreachable` — stored
+in `model_feed_syncs.outcome` and carried to the screen and the Ask CA facts block.
 
-So a recall check now has **three outcomes, not two** — `ok`, `model_not_listed`, `unreachable`
-— stored in `model_feed_syncs.outcome` (migration `0020`) and carried all the way to the screen
-and the Ask CA facts block.
+A 400 usually means NHTSA files the car under a finer name than the owner's: a 2014 "F-350" is
+"F-350 SD" to them. So `scripts/importNhtsaRecalls.mts` loads NHTSA's bulk recall catalogue into two
+local tables and `services/recallMirror.ts` reads it. Three things to keep:
 
-A 400 is usually recoverable, because it normally means NHTSA files the car under a finer name
-than the owner's: a 2014 "F-350" is "F-350 SD" to them. Resolving that needs NHTSA's own
-vocabulary, which is why `scripts/importNhtsaRecalls.mts` loads their entire bulk recall
-catalogue into two local tables (migration `0019`) and `services/recallMirror.ts` reads it.
+- **The mirror holds the vocabulary the *recall API* uses**, which is not NHTSA's published model
+  list — that list offers "F-350 REGULAR CAB"/"SUPERCAB"/"SUPER CREW", all of which the recall
+  endpoint refuses.
+- **The live API is asked first; the mirror is the fallback.** The API normalises names and the flat
+  file is raw, so some models are filed oddly there (a 2023 Ariya appears as "redundant ARIYA").
+  Measured 57/60 models exact against the API, the three misses off by one campaign.
+- **A mirror miss is never an all-clear.** Zero rows may only mean a different spelling, so the
+  lookup answers "don't know" and the caller keeps reporting the feed as unreached. Showing "no open
+  recalls" on a name mismatch is the failure this feature exists to prevent.
 
-Four design points worth keeping:
-
-- **The mirror holds the vocabulary the *recall API* uses.** NHTSA's published model list is a
-  different dictionary — it offers "F-350 REGULAR CAB"/"SUPERCAB"/"SUPER CREW", and the recall
-  endpoint answers 400 for all three. The bulk files say "F-350 SD" and "F-350 SUPER DUTY", and
-  the recall endpoint answers those with 5 and 1 campaigns. This is the dictionary that matches
-  the door we knock on.
-- **The live API is asked first; the mirror is the fallback.** The API normalises model names
-  before answering and the flat file is raw, so a handful of models are filed oddly in the file
-  (a 2023 Ariya appears as "redundant ARIYA"). Measured at 57/60 models exact against the API,
-  with the three misses off by a single campaign rather than empty.
-- **A mirror miss is never an all-clear.** Zero rows in the file may only mean the model is
-  spelled differently there, so the lookup answers "don't know" rather than "none", and the
-  caller keeps reporting the feed as unreached. Showing "no open recalls" on the strength of a
-  name mismatch is the failure this whole feature exists to prevent.
-- **Two tables, not one, for size.** Denormalised the catalogue is 268 MB — the same paragraphs
-  repeated for every model a campaign names. Split, 169,240 model rows share 26,482 campaigns
-  and it is 28 MB. Neither table has an `id`: NHTSA's campaign number is already the identifier,
-  and the importer replaces both outright on each run.
+Two tables rather than one for size: denormalised the catalogue is 268 MB; split, 169,240 model rows
+share 26,482 campaigns at 28 MB. Neither has an `id` — NHTSA's campaign number is the identifier —
+and the importer replaces both outright on each run.
 
 ### Both pricing vendors are under review
 
-**We are actively looking for alternatives to Open Labor Project and Vehicle Databases.**
-Neither is committed to, and the Repair Cost Checker — the only paid feature — depends on both.
+Neither is committed to, and the Repair Cost Checker depends on both. Open Labor Project labels
+every figure `estimated`, publishes no rate and no parts, and contradicts itself (§2 gap 4) — fine
+for a rough duration, not for telling an owner a shop overbilled by a specific number of hours. That
+needs Mitchell, ALLDATA or MOTOR, all materially more than $49/mo. Vehicle Databases has a small
+monthly allowance and hard coverage gate.
 
-**Open Labor Project** labels every figure `estimated`, publishes no rate and no parts, and
-ships a catalogue that disagrees with itself on the same job for the same car (§3, gap 5). Good
-enough to display a rough duration; not good enough to tell an owner a shop overbilled them by a
-specific number of hours, which is where the product wants to go. That claim needs a licensed
-book-time source — Mitchell, ALLDATA or MOTOR — and those cost materially more than $49/mo.
+Both sit behind the shared sync machinery in `services/modelFeed.ts` with their own client and
+parser, so swapping either is contained work. A replacement must keep three properties:
 
-**Vehicle Databases** has two structural problems: its monthly allowance is small enough to be
-the real limit on the paid tier, and its coverage is a hard gate (no data for the owner's car
-means no repairs offered at all). It also publishes no parts itemisation, which is gap 4.
-
-**What a replacement has to preserve.** Both feeds sit behind the shared sync machinery in
-`services/modelFeed.ts` with their own client and parser, so swapping either is contained work
-rather than a rewrite. Any candidate must keep three properties:
-
-1. **Three outcomes, not two** — "no record for this car" must be distinguishable from "the
-   vendor did not answer", or a spent quota silently retracts data we hold.
-2. **One call per model, not per repair** — both current feeds return a whole catalogue per
-   vehicle in one response, which is what makes a metered plan affordable.
-3. **No cross-vehicle substitution** — a vendor that quietly answers with a similar car's
-   figures is worse than one that answers with nothing.
+1. **Three outcomes, not two** — "no record for this car" must be distinguishable from "the vendor
+   did not answer", or a spent quota silently retracts data we hold.
+2. **One call per model, not per repair** — what makes a metered plan affordable.
+3. **No cross-vehicle substitution** — a vendor that quietly answers with a similar car's figures is
+   worse than one that answers with nothing.
 
 ---
 
-## 6. Architecture
+## 5. Architecture
 
 ```
 apps/web        React 18 + Vite + Tailwind + shadcn/ui + React Router
@@ -483,505 +334,264 @@ apps/api        Express 5 + Drizzle ORM + Postgres
 packages/shared Types and validation rules both sides import
 ```
 
-- **One door to the server.** The browser talks to the API through a single module, the only
-  place `fetch` is called. It attaches the Supabase access token to every request.
-- **One door to the database.** All queries go through Drizzle in the API. The browser never
-  talks to the database directly.
-- **Auth is mounted once**, so a new endpoint cannot forget it. Only `/api/health` and
-  `/api/auth/config` are public.
-- **Shared validation.** What a valid request looks like lives in `packages/shared` and is used
-  by both sides, so the rules cannot drift.
-- **23 tables defined in `schema.ts`**, in five groups: things you own (car, service records,
-  assessments), things about a *model* everyone with that car shares (recalls, complaints,
-  pricing), the reference catalogue of repairs, the Ask CA review log, and the NHTSA recall
-  mirror. The shared database holds **29** — see §9.
-- **Assessments are snapshots.** Running a repair check copies the prices into the assessment.
-  Refreshing supplier pricing later never changes what you were shown.
-- **Three scheduled jobs, all GitHub Actions**, spaced an hour apart because all three hold a
-  Postgres pool against the same database: `import-nhtsa-recalls.yml` mirrors NHTSA's catalogue
-  at 08:00 UTC, `refresh-market-values.yml` re-prices due cars at 09:30, and
-  `prune-ask-transcripts.yml` deletes expired Ask CA transcripts at 10:30. None applies
-  migrations and none is on the request path, so a failed night degrades freshness rather than
-  breaking the app. All need `DATABASE_URL` as a repository secret; the market-value sweep also
-  needs the vendor key — see §9.
+- **One door to the server.** The browser talks to the API through a single module, the only place
+  `fetch` is called. It attaches the Supabase access token to every request.
+- **One door to the database.** All queries go through Drizzle in the API.
+- **Auth is mounted once** in `app.ts`, so a new endpoint cannot forget it. Only `/api/health` and
+  `/api/auth/config` are public. Mount order is load-bearing — a route added above the `requireUser`
+  line is silently exposed.
+- **Shared validation** in `packages/shared`, used by both sides, so the rules cannot drift.
+- **23 tables in `schema.ts`**, in five groups: things you own (car, service records, assessments);
+  things about a *model* everyone with that car shares (recalls, complaints, pricing); the reference
+  catalogue of repairs; the Ask CA review log; and the NHTSA recall mirror. The shared database
+  holds **29** — see §7.
+- **Assessments are snapshots.** Running a repair check copies the prices in, so refreshing supplier
+  pricing later never changes what you were shown.
 
-### The endpoints
+**Endpoints — 27 authenticated, 2 public:** `/api/vehicle` (13 — car, VIN decode, maintenance jobs,
+recalls and your answers to them, photo, known issues), `/api/service-records` (4),
+`/api/assessments` (4, **paywalled**), `/api/account` (2), `/api/paywall` (2), `/api/repairs` (1),
+`/api/chat` (1, POST only, the one endpoint that streams), plus `/api/health` and
+`/api/auth/config`.
 
-**Confirmed — 27 in total.**
-
-- `/api/vehicle` — your car, VIN decode, maintenance jobs, recalls and your answers to them,
-  photo, known issues
-- `/api/service-records` — log, edit, delete service history
-- `/api/chat` — Ask CA (POST only; still no GET — the exchange goes to the review log and
-  nothing reads it back). The one endpoint that streams its reply
-- `/api/assessments` — the Repair Cost Checker (**paywalled**)
-- `/api/repairs` — which repairs we can price for your car
-- `/api/paywall` — the price on screen, and recording an unlock
-- `/api/account` — profile
-- `/api/health`, `/api/auth/config` — public
+**Three scheduled jobs, all GitHub Actions**, spaced an hour apart because all three hold a Postgres
+pool against the same database: `import-nhtsa-recalls.yml` at 08:00 UTC, `refresh-market-values.yml`
+at 09:30, `prune-ask-transcripts.yml` at 10:30. None applies migrations and none is on the request
+path, so a failed night degrades freshness rather than breaking the app. All need `DATABASE_URL` as
+a repository secret; the market-value sweep also needs the vendor key (§8).
 
 ---
 
-## 7. Sign-in
+## 6. Sign-in and the paywall
 
-**Confirmed.** Supabase handles sign-in in the browser (email + password, or Google) and hands
-back an access token. The API verifies that token itself on every request — signature, expiry,
-issuer, audience, and that it carries a valid user id and an email. A validly-signed token from
-a *different* Supabase project is rejected. The first time a verified person arrives, a profile
-row is created automatically.
+Supabase handles sign-in in the browser (email + password, or Google) and returns an access token.
+The API verifies it on every request — signature, expiry, issuer, audience, a valid user id and an
+email. A validly-signed token from a *different* Supabase project is rejected. A profile row is
+created the first time a verified person arrives.
 
-**The browser fetches its Supabase credentials from the API** (`GET /api/auth/config`) rather
-than having them baked into the bundle, so the two can never disagree about which project they
-are talking to.
+**The browser fetches its Supabase credentials from the API** (`GET /api/auth/config`) rather than
+baking them into the bundle, so the two cannot disagree about which project they use. That config
+and the Supabase client both cache successes and evict failures, so a momentary API outage does not
+wedge sign-in until reload. The failure message is split in two: "the server serves no credentials"
+is a deployment to fix, "we could not reach the server" is usually momentary.
 
-**How much of token verification is now proven — 9 August.** The project publishes a live JWKS at
-`/auth/v1/.well-known/jwks.json` serving a single **ES256** key, so the asymmetric path is the one
-in use and `SUPABASE_JWT_SECRET` is unset and unneeded. Three things are confirmed by test:
-
-- **Signatures are genuinely enforced.** A fabricated token carrying a correct issuer, `aud`,
-  UUID subject, email and future expiry — everything the claim checks want — is still rejected,
-  because the signature does not verify against the JWKS. The claim checks are not standing in
-  for a signature check.
-- **The issuer pin works.** The same token with the issuer swapped for another project's is
-  refused. Without that pin, any validly-signed Supabase token from anywhere would authenticate.
-- **The positive path is exercised constantly** — every authenticated request anyone makes in the
-  app goes through `verifyAccessToken`, and the app works, so real tokens do pass.
-
-**What is left is explicit confirmation of the claim fields against a real token**, which needs a
-live credential. `npm run verify:token` does it: it reads a token from stdin (never an argument or
-an environment variable, so it stays out of shell history and process lists), never prints it,
-masks the email unless `--show-email` is passed, and runs the API's own `verifyAccessToken` rather
-than a reimplementation — which would only prove that two pieces of code agree with each other. It
-prints a PASS/FAIL for issuer, audience, subject shape, email presence and expiry, plus the
-forged-issuer negative check. Get a token by signing in and running, in the browser console:
+The project publishes a live JWKS serving a single **ES256** key, so the asymmetric path is in use
+and `SUPABASE_JWT_SECRET` is unset and unneeded. Proven by test: a fabricated token with correct
+issuer, `aud`, UUID subject, email and future expiry is still rejected on signature; and swapping in
+another project's issuer is refused, so the issuer pin works. `npm run verify:token` checks the
+claim fields against a real token — read from stdin, never printed, email masked unless
+`--show-email`, running the API's own `verifyAccessToken` rather than a reimplementation. Get a
+token by signing in and running in the browser console:
 
 ```js
 JSON.parse(localStorage[Object.keys(localStorage).find(k => k.endsWith('-auth-token'))]).access_token
 ```
 
-**A momentary API outage used to wedge sign-in until the tab was reloaded — fixed 9 August.**
-`getAuthConfig` cached whatever came back, failures included, so a single failed fetch stuck an
-empty config for the life of the page; `getSupabase` then cached `undefined` on top of it, and
-every later attempt threw "Sign-in is not configured on this server" long after the server was
-healthy again. Both caches now keep successes and evict failures, so pressing sign-in again
-genuinely re-asks — which is the moment a retry is wanted. The message was also split in two,
-because "the server serves no credentials" is a deployment to fix and "we could not reach the
-server" is usually momentary, and naming the wrong one sends people to check a server that is
-fine. Verified against the real module text: a failed fetch is re-asked, a successful one is
-cached, and the client is created without a reload.
+### The paywall — read this before any user test
+
+The Repair Cost Checker is the only paid feature, and **it takes no money.** Tapping unlock charges
+nothing, opens the feature permanently, and records the tap. The tap *is* the data — willingness to
+pay, without building billing.
+
+**Two offers side by side:** Unlimited at **$99.00/year**, Per-Incident at **$35.00/year plus $50.00
+per parts-benchmark lookup**. Which shape of pricing people prefer is part of what this tests. Both
+open all three paid features; the per-incident fee is disclosed on screen but not metered in v1.
+
+- **The price and chosen offer are stored with the tap**, so changing a price mid-test leaves
+  earlier records meaning what they meant.
+- **The gate is enforced on the server** (a 402), not just hidden in the UI.
+- **The prices live as the defaults in `env.ts`, and those defaults are the chosen prices.** They
+  read like placeholders and are not; do not "fix" them. An override is for running a different
+  cohort. The API prints both at startup.
+
+`services/featureCatalog.ts` computes the Account screen's Subscription list from `users.plan`
+alone; migration `0017` dropped the `user_features` table it replaced.
 
 ---
 
-## 8. The paywall — read this before any user test
+## 7. State of the database (verified live, read-only, 9 August)
 
-The Repair Cost Checker is the only paid feature, and **it takes no money.** The paywall shows a
-price; tapping unlock charges nothing, opens the feature permanently, and records the tap. The
-tap *is* the data — it measures willingness to pay without building billing.
+- **29 tables** — 23 from this branch's `schema.ts`, six from another migration line (§8).
+- **All 23 migrations this branch defines are applied**, checked against `information_schema` rather
+  than drizzle's journal. 24 are applied in total; the odd one is `0016_factory_schedules` from the
+  `maintenance` branch, identified by matching drizzle's sha256 hashes.
+- **The recall import has run**: 26,482 campaigns, 169,240 model rows. The 2014 F-350 NHTSA's API
+  refused by name now holds **6 recalls** via the mirror; a 1993 Chevrolet is correctly
+  `model_not_listed` rather than looking like an outage.
+- `ask_transcripts` holds 5 rows, all `answered` — worth knowing, because the write path fails
+  silently by design, so an empty log would be ambiguous between "nobody asked" and "every insert is
+  failing".
+- **Owner-report mileage is populated**: 28 of 81 component groups carry a mileage-at-failure range
+  after `ingest:mileage` was run for the first time. The rest have too few odometer samples.
+- Row counts: 6 users, 6 vehicles, 10 service records, 4 assessments (0 with a recorded reason —
+  all four predate `0022`), 2 paywall intents.
 
-**Two offers are shown side by side, not one:** an Unlimited subscription and a cheaper
-Per-Incident subscription with a separate per-lookup fee for the parts benchmark — because which
-shape of pricing people prefer is itself part of what this prototype tests. Both open all three
-paid features the same way; the per-incident fee is disclosed on screen but not metered in v1.
+**Row-level security is closed.** Supabase serves the same database through PostgREST, reachable by
+anyone holding the public anon key, and its stock grants give `anon`/`authenticated` everything on
+the assumption RLS says no. It was off on 25 of 29 tables. After `rls-lockdown.sql`: **29 of 29
+tables have RLS on and `anon`/`authenticated` hold zero grants** on tables, sequences and routines.
+The app is unaffected — the API connects as `postgres`, whose `rolbypassrls` is true.
 
-Two things make the recorded numbers trustworthy, and both are handled:
+Three things follow:
 
-- **The price and the chosen offer are stored with the tap**, not looked up later. Change a
-  price mid-test and earlier records still mean what they meant.
-- **The gate is enforced on the server** (a 402), not just hidden in the UI. A typed URL or a
-  stale tab cannot hand someone the feature without a tap.
-
-**The prices are settled — confirmed 9 August.** Unlimited is **$99.00/year**; Per-Incident is
-**$35.00/year plus $50.00 per parts-benchmark lookup**. They live as the defaults in `env.ts`
-rather than in `.env`, and that is fine: the defaults *are* the chosen prices, so nothing needs
-setting for a real test and an override exists to run a different cohort, not to correct these.
-Worth stating plainly because they read like placeholder round numbers and were described as
-placeholders in this file until today — they are not. The API prints both at every startup, so a
-wrong one is visible at a glance rather than discovered in the data afterwards.
-
-**`services/featureCatalog.ts` replaces the `user_features` table.** The Account screen's
-Subscription list used to be rows written per-owner at signup; it is now computed from
-`users.plan` alone, since every free row was identical and every paid row moved with one
-boolean. Migration `0017` drops the table. **Needs checking:** read from the diff, not exercised
-by hand against a real Account screen.
+- **`rls-policies.sql` is deliberately NOT run and should stay unrun.** It grants `select` back to
+  `authenticated` for browser-direct PostgREST queries, and there is not one `.from()` call in
+  `apps/web/src`. It also traps on `users.supabase_user_id` being null for seeded and dev rows,
+  which would match `auth.uid()` never.
+- **A table created through the Supabase dashboard arrives exposed** — `supabase_admin`'s default
+  privileges still grant `anon`/`authenticated` full rights, and that is the role the dashboard uses.
+- **Postgres has no default for RLS itself**, so: **a migration that adds a table adds an `enable row
+  level security` line in the same file.** That belongs in review.
 
 ---
 
-## 9. What still needs doing
+## 8. What still needs doing
 
 ### There is no automated test suite
 
-It was removed deliberately. `npm run typecheck` (every workspace plus `scripts/`) and
-`npm run build` are the only automatic checks, and both pass. Nothing verifies behaviour, so the
-paywall gate, the per-user data filters and anything reading an outside feed have to be checked
-by hand after a change.
+Removed deliberately. `npm run typecheck` (every workspace plus `scripts/`) and `npm run build` are
+the only automatic checks, and both pass. Nothing verifies behaviour, so the paywall gate, the
+per-user filters and anything reading an outside feed must be checked by hand.
 
-Ask CA is the exception, with two read-only checks of its own; both cost model calls.
+Ask CA is the exception, with two read-only checks; both cost model calls.
 
-- **`npm run test:chat`** is the test plan, executable: 46 assertions across validation, access
-  control, throttling, the event-stream wire format, reply integrity, the facts block,
-  transcript storage and the streaming decoder. Exits non-zero on failure. Its "transcript
-  storage" section is the **browser's** `sessionStorage` thread, not the server-side review log
-  — nothing yet covers the log. Run it twice, plain and with `ANTHROPIC_API_KEY=`, because the
-  canned-reply path is a separate branch that has caught real bugs the configured path did not.
-- **`npm run probe:ask`** covers what assertions cannot: the prompt guardrails. It asks the real
-  model ten questions built to push at each rule — invent a price, state Honda's schedule,
-  confirm a complaint as a fault, give a flat "safe to drive" — and prints the answers. It
-  reports rather than asserts, because whether a reply respected a guardrail is a judgement a
-  reader makes in a second and a regex gets wrong. Run it after any change to the prompt, the
-  model, or the effort and thinking settings.
+- **`npm run test:chat`** — 46 assertions across validation, access control, throttling, the
+  event-stream wire format, reply integrity, the facts block, transcript storage and the streaming
+  decoder. Its "transcript storage" section is the **browser's** `sessionStorage` thread, not the
+  server-side review log — nothing covers the log. Run it twice, plain and with
+  `ANTHROPIC_API_KEY=`, because the canned-reply path is a separate branch that has caught real bugs.
+- **`npm run probe:ask`** — the prompt guardrails. Ten questions built to push at each rule, printing
+  the answers. It reports rather than asserts. Run after any change to the prompt, the model, or the
+  effort and thinking settings.
 
-**And typecheck cannot see the database.** On 8 August a dev-server log showed `column "outcome"
-does not exist` thrown on the request path (`routes/vehicle.ts` → `getModelRecalls` →
-`readSyncState`) — My Car's recalls section failing for a real request, because code expecting a
-column shipped ahead of the migration adding it. `npm run typecheck` was blind to it: drizzle's
-schema is TypeScript, so the column existed as far as the compiler was concerned. That gap is
-closed, and the lesson stands — confirming migrations against the live database rather than
-drizzle's journal is the only check that catches this class of bug.
-
-### ✅ Row-level security — closed on 9 August
-
-**`rls-lockdown.sql` was run against the shared database and verified from both sides.** This
-was the top item on this list for three days; it is done.
-
-**What it was.** Supabase serves the same database through a second door — PostgREST, reachable
-by anyone holding the anon key, which is public by design because the browser needs it to sign
-in. Supabase's stock grants give `anon` and `authenticated` everything, on the assumption that
-RLS is what says no. RLS was off on 25 of 29 tables and there were no policies anywhere, so
-nothing said no. Every per-user filter in the API was correct and none of it mattered.
-
-**It was confirmed from the open internet, not reasoned about.** Before the fix, a plain `curl`
-carrying only the anon key returned real account emails and real VINs:
-
-```
-curl "$SUPABASE_URL/rest/v1/users?select=email&limit=3" -H "apikey: $SUPABASE_ANON_KEY" ...
-→ [{"email":"alex.rivera@email.com"}, {"email":"dana@example.com"}, {"email":"hweider@gmail.com"}]
-```
-
-The same call against `ask_transcripts` returned `[]`, because `0018` had switched RLS on there.
-That contrast was the whole fix in one line: the mechanism worked, it was simply switched off
-nearly everywhere.
-
-**After: 29 of 29 tables have RLS on, and `anon`/`authenticated` hold zero grants** — on tables,
-sequences and routines alike. The same `curl` now returns `42501 permission denied` for `users`,
-`vehicles`, `service_records`, `paywall_intents`, `assessments` and `model_recalls`. Row counts
-are identical before and after (6 users, 6 vehicles, 10 service records, 4 assessments, 2
-paywall intents, 5 transcripts, 169,240 mirror rows) — this granted and revoked privileges, it
-touched no data.
-
-**The app is unaffected, checked rather than assumed.** The API connects as `postgres`, whose
-`rolbypassrls` is `true`, so RLS is never consulted for any query it runs. Confirmed live after
-the change: the API starts clean, `/api/health` returns `{"ok":true}`, `/api/auth/config`
-serves, and an unauthenticated `/api/vehicle` returns 401 — an auth refusal, not a database
-error.
-
-**Two bugs in the scripts had to be fixed first, and they were the same bug twice:**
-
-- `rls-lockdown.sql` listed `user_features`, dropped by migration `0017`. `alter table` on a
-  missing table is an error rather than a no-op, and the script runs in one transaction, so that
-  one line had been aborting the entire lockdown. This is why it had never applied.
-- `rls-policies.sql` still had the identical fault — a `grant` and a policy on the same dead
-  table — so it would have failed the same way. Removed.
-
-`rls-lockdown.sql` also named only 21 tables against a live 29. It now covers all of them: the
-two recall-mirror tables, plus the six belonging to the factory-schedule migration line in their
-own block, so it stays obvious this branch does not define them. The list was diffed against
-`pg_class` before running — an exact match, so it could neither abort on a missing table nor
-silently skip a live one.
-
-**`rls-policies.sql` was deliberately NOT run, and should stay unrun for now.** It grants
-`select` *back* to `authenticated` so the browser can query PostgREST directly, and there is not
-one `.from()` call in `apps/web/src` — it would widen access for a capability nothing uses. Its
-own header says as much. It also carries a trap: `users.supabase_user_id` is null for seeded and
-dev-stub rows, so those accounts would match `auth.uid()` never and go invisible to browser
-queries while still showing in the app. Backfill that column before leaning on it. The lockdown
-alone is the complete fix.
-
-**⚠️ Two residual holes, both about tables that do not exist yet.** The lockdown reset the
-default privileges for tables created by `postgres`, which is the role drizzle migrations run
-as — so a new migration no longer hands `anon` rights on its table. But:
-
-1. **`supabase_admin`'s default privileges still grant `anon` and `authenticated` full rights**,
-   and that is the role the Supabase dashboard creates tables as. A table made by clicking
-   around in the dashboard arrives exposed.
-2. **Postgres has no default for RLS itself.** Every new table needs its own
-   `enable row level security` line whatever created it.
-
-So the rule for anything new, and it belongs in review: **a migration that adds a table adds an
-`enable row level security` line in the same file.** `0018` and `0019` both already do this.
-
-### ✅ The odometer — both halves closed, 9 August
-
-`vehicles.mileage` was written in exactly two places — onboarding and the Account edit dialog —
-and nothing ever asked again. For most owners it sat frozen at whatever they typed on signup
-day, while three things downstream read it as current: the maintenance due calculation, the
-price sent to MarketCheck, and My Car's masthead. Of those the first is the one that matters: a
-stale figure says a job is fine when it is overdue, which is the only failure in this app that
-costs an engine rather than an argument.
-
-**Half one — service records feed the car's mileage.** `services/odometer.ts` raises
-`vehicles.mileage` whenever a logged service carries a higher reading, on both the create and
-the correct path. Those readings were already being typed in and already used for the
-maintenance calculation; they were simply never fed back to the car. A one-way ratchet, and it
-needs no date comparison to decide whether to fire: an odometer is monotonic, so a reading higher
-than the figure on file is necessarily the later of the two.
-
-**Half two — the app can now tell how old a reading is, and asks when it is too old.**
-
-- **Migration `0021` adds `vehicles.mileage_updated_at`** — applied and verified on 9 August. All
-  6 cars are stamped, backfilled from `created_at`, which is the honest answer for rows written
-  before the column existed: their mileage came from onboarding. It errs old deliberately. The
-  cost of treating a fresh reading as stale is one dismissible prompt; the cost of the reverse is
-  telling someone their brakes are fine.
-- **It stores when the reading was TAKEN, not when the row was written**, and that distinction is
-  the point. `odometer.ts` stamps the *service date*, so logging a 2019 receipt at 90,000 miles
-  raises the mileage — correctly, the car has covered that — without claiming the odometer was
-  checked this morning. Recording `now()` there would suppress the prompt in exactly the case
-  that most needs it. Onboarding and the Account/prompt PATCH do stamp now, because there the
-  owner is reading the dial as they type.
-- **The staleness rule lives once, in `@caradvocate/shared`**: `mileageIsStale`, 90 days. Chosen
-  against what goes wrong — a typical car covers ~1,000 miles a month, so three months is ~3,000
-  miles of drift, most of the way through a 5,000-mile oil interval. The browser decides whether
-  to show the prompt and the API decides what to send it; two copies of that rule would drift.
-  **An unknown date counts as stale**, since treating "no idea when this was read" as fresh is
-  the exact failure the column exists to end.
-- **`MileageCheck` on My Car asks the owner**, as a card rather than a modal — it interrupts
-  nothing, and the honest answer to "how many miles?" is often "let me go and look", which a
-  modal punishes. The field is prefilled with an estimate (last reading + ~1,000 miles/month,
-  rounded to the nearest 100 so it reads as the approximation it is). **The estimate is never
-  stored unless the owner submits it.** Writing a guess into `mileage` would swap one invented
-  number for another and, worse, would stamp `mileage_updated_at` — turning the guess into
-  something the app then treats as a real reading and stops asking about. Dismissal lasts for the
-  tab, so it returns without becoming an obstacle.
-- **The value card now names the mileage its price was based on**, which it could not do before —
-  and only when that reading is stale, since on a fresh one it is noise on the number the owner
-  came for.
-
-Verified: 13 assertions over the shared rules (thresholds, unknown and malformed dates, the
-estimate's arithmetic and rounding) all pass, `npm run typecheck` and `npm run build` are clean,
-and the API starts and serves against the migrated schema.
-
-Two deliberate omissions, so neither reads as an oversight later. A mileage bump does not clear
-`market_value_checked_at`, so the car is not re-priced immediately — the nightly sweep picks it
-up within the month rather than spending a vendor call on every service log. And a mistyped
-reading moves the car's mileage rather than one history row; correcting the record will not walk
-it back, because the ratchet cannot tell a correction from an older reading. The owner fixes it
-in Account — and the PATCH path deliberately accepts a *lower* figure, unlike the ratchet, which
-is what makes that escape hatch work.
-
-**Not yet seen in the wild.** Every account on the shared database is younger than the 90-day
-threshold, so no real car is stale yet and the prompt has never rendered against live data. The
-rules are tested directly and the UI is built, but the first owner to cross 90 days is the first
-real exercise of it.
-
-The obvious thing to reach for instead is connected-car telematics (Smartcar and similar — OAuth
-into the owner's manufacturer account, read the odometer directly). It needs a 2016-or-newer car
-with a live connected-services subscription, close to the opposite of this app's audience, so it
-can be an opt-in extra but never the mechanism the app relies on.
-
-### State of the database (verified live, read-only, 9 August)
-
-- **29 tables.** 23 are defined by this branch's `schema.ts`; the other six come from a separate
-  migration line (below).
-- **Migrations `0019` and `0020` are applied**, along with everything before them —
-  `nhtsa_recall_campaigns` and `nhtsa_recall_models` both exist, and `model_feed_syncs` carries
-  `outcome`. Checked against `information_schema`, not drizzle's journal.
-- **The recall import has run against the shared database**: 26,482 campaigns and 169,240 model
-  rows.
-- **It is already earning its keep.** The 2014 Ford F-350 that NHTSA's API refused by name now
-  holds **6 recalls**, resolved through the mirror. The 1993 Chevrolet is correctly recorded as
-  `model_not_listed` — NHTSA answered, the name is not one they file under, and the mirror has
-  no match either. That is an honest "unknown", not an all-clear, and it no longer looks like an
-  outage.
-- **Migration `0018` (the Ask CA review log) is applied and working.** `ask_transcripts` holds
-  **5 rows, all `outcome = 'answered'`**, written on 8 August. This closes an open question: the
-  write path fails silently by design, so an empty log was ambiguous between "nobody asked" and
-  "every insert is failing". It is neither.
-- Row counts: 6 users, 6 vehicles, 10 service records, 4 assessments, 2 paywall intents.
+**Typecheck cannot see the database.** Drizzle's schema is TypeScript, so a column that exists in
+code but not in Postgres compiles fine and fails on a live request — which happened on 8 August
+(`column "outcome" does not exist` on My Car's recalls). Checking migrations against the live
+database is the only thing that catches this.
 
 ### A second migration line runs against the same database
 
 The shared database holds six tables this branch does not define — `vehicle_generations`,
-`factory_schedule_services`, `factory_schedule_items`, `schedule_review_queue`,
-`extraction_runs`, `schedule_requests` — plus two extra columns on `vehicles`
-(`factory_generation_id`, `factory_schedule_applied_at`). All six are **empty**.
+`factory_schedule_services`, `factory_schedule_items`, `schedule_review_queue`, `extraction_runs`,
+`schedule_requests` — plus `factory_generation_id` and `factory_schedule_applied_at` on `vehicles`.
+All six are **empty**. This is the factory-schedule pipeline on a separate `maintenance` branch; the
+only trace here is the untracked `scripts/maintenance-seed/cache/`.
 
-This is the factory-schedule pipeline: a separate `maintenance` branch that researches
-manufacturer service schedules and would eventually fill gap 3. It is not merged, its tables
-carry no data, and the only trace of it in this working tree is the untracked
-`scripts/maintenance-seed/cache/` output.
+**Why it is dangerous:** drizzle decides what to apply from a single number — the newest `created_at`
+in `__drizzle_migrations`, whichever line wrote it. **Hashes are never consulted.** So a migration
+the other line stamps later than one of ours that has not run yet does not defer ours; it skips it,
+permanently and silently, while `db:migrate` reports success. It has been close: the factory line's
+`0016_factory_schedules` applied at 16:29 on 6 August, and this branch's
+`0016_vehicle_zip_market_value` was generated at 21:19 the same day.
 
-**The drift is now identified exactly, and guarded — 9 August.** 23 migrations are applied
-against 22 defined here. Matching drizzle's own sha256 hashes against this branch's files names
-the odd one precisely: **`0016_factory_schedules.sql` from the `maintenance` branch**, applied
-2026-08-06T16:29:38.882Z. Every migration this branch defines is applied, and none is at risk
-right now.
+**`db/migrationPrecheck.ts` now refuses rather than skipping** — it hashes each local migration,
+computes which pending ones fall below the watermark, prints them with the fix (raise the `when` in
+`meta/_journal.json`) and exits non-zero. Verified both ways against the live database.
 
-**Why it is dangerous, read from drizzle's source rather than assumed.**
-`drizzle-orm/pg-core/dialect.js` decides what to apply like this:
+**This is a guardrail, not a fix.** The fix is one migration line per database. Both branches also
+define a file numbered `0016`, so a merge collides on the number too.
 
-```js
-select id, hash, created_at from __drizzle_migrations order by created_at desc limit 1
-if (!lastDbMigration || Number(lastDbMigration.created_at) < migration.folderMillis) { apply }
-```
+### The odometer
 
-One number — the newest `created_at` in the table, whichever line put it there — and **hashes are
-never consulted to make that decision**. So if the other line applies a migration stamped later
-than one of ours that has not run yet, ours is not deferred. It is skipped, permanently and
-silently, while `db:migrate` reports success. The table or column never appears and the first
-symptom is `column "..." does not exist` on a live request — which already happened once on 8
-August from a different cause, with exactly that signature.
+`vehicles.mileage` is read as current by three things — the maintenance due calculation, the price
+sent to MarketCheck, and My Car's masthead — and the first is the one that matters: a stale figure
+says a job is fine when it is overdue, the only failure in this app that costs an engine rather than
+an argument. How it stays current:
 
-**It has been closer than it looks.** The factory line's `0016_factory_schedules` was applied at
-16:29 on 6 August. This branch's own `0016_vehicle_zip_market_value` was generated at 21:19 the
-same day. Five hours the other way and `vehicles.zip` would have gone missing with no error.
+- **Service records feed it.** `services/odometer.ts` raises `vehicles.mileage` whenever a logged
+  service carries a higher reading. A one-way ratchet — an odometer is monotonic, so a higher reading
+  is necessarily the later one and no date comparison is needed.
+- **`vehicles.mileage_updated_at` records when the reading was TAKEN, not written.** `odometer.ts`
+  stamps the *service date*, so logging a 2019 receipt at 90,000 miles raises the mileage without
+  claiming the odometer was checked this morning. Onboarding and the Account PATCH stamp now, because
+  there the owner is reading the dial as they type.
+- **The staleness rule lives once, in `@caradvocate/shared`**: `mileageIsStale`, 90 days — about
+  3,000 miles of drift, most of the way through an oil interval. **An unknown date counts as stale.**
+- **`MileageCheck` on My Car asks the owner**, as a card rather than a modal. It prefills an estimate
+  (last reading + ~1,000/month, rounded to 100), and **never stores it unless the owner submits** —
+  writing a guess would stamp `mileage_updated_at` and turn it into something the app trusts.
+- **The value card names the mileage its price was based on**, but only when that reading is stale.
 
-**`db:migrate` now refuses rather than silently skipping.** `db/migrationPrecheck.ts` runs before
-anything is written: it hashes each local migration, compares against what is applied, and
-computes which pending ones fall below the watermark. If any would be skipped it prints them, the
-watermark, the reason, and the fix — raise the `when` in `meta/_journal.json` — and exits
-non-zero. It also reports how many applied migrations belong to the other line, so the situation
-is visible on every run rather than rediscovered. Verified both ways against the live database: a
-migration stamped before the watermark is caught, and the same migration re-stamped after it
-passes through as pending.
+Two deliberate omissions: a mileage bump does not clear `market_value_checked_at`, so the nightly
+sweep picks the car up within the month rather than spending a vendor call per service log. And a
+mistyped reading moves the car's mileage rather than one history row — the ratchet cannot tell a
+correction from an older reading, so the owner fixes it in Account, whose PATCH deliberately accepts
+a *lower* figure.
 
-**This is a guardrail, not a fix.** The fix is one migration line per database, and that is still
-a conversation with whoever owns the `maintenance` branch. Note also that both branches define a
-file numbered `0016`, so a merge would collide on the number as well as the journal.
+**Not yet seen in the wild.** Every account is younger than 90 days, so the prompt has never rendered
+against live data. Connected-car telematics (Smartcar and similar) is the obvious alternative but
+needs a 2016-or-newer car with a live subscription — close to the opposite of this audience. An
+opt-in extra, never the mechanism relied on.
 
-### Uncommitted right now
+### Known placeholders and dead columns
 
-The RLS script fixes (`fe7d650`), the odometer work (`223c763`, `4870f59`) and the paywall
-wording (`02c73be`) are committed. Still in the tree:
+- **The fair/overpriced verdict is deliberately simple** — quote against a price range, nothing else.
+  No regional labour rates, no per-shop history. It only flags quotes that are *too high*; a
+  suspiciously low quote is reported as fair.
+- **Quote upload stores the filename only.** No PDF or photo parsing; you type the total.
+  `assessments.quote_file_name` is written on create, never read, and is not in the shared domain
+  type. Drop it whenever someone is writing a migration anyway.
+- **`labor_rate_per_hour` is dead** — every real path writes null on purpose; only the demo seed puts
+  a number in (§2 gap 4).
 
-- **The migration precheck**: `db/migrationPrecheck.ts` (new), `db/migrate.ts`.
-- **The token verification harness**: `scripts/verifyToken.mts` (new), `package.json`.
-- **The sign-in cache fix** (§7): `lib/authConfig.ts`, `lib/supabaseClient.ts`, `lib/auth.tsx`.
-- **The Ask CA retention window**: `env.ts`, `services/askTranscripts.ts`,
-  `scripts/pruneAskTranscripts.mts` (new), `.github/workflows/prune-ask-transcripts.yml` (new),
-  `package.json`. Nothing to migrate — the window is a query, not a schema change.
-- `scripts/maintenance-seed/cache/` — untracked output from the other branch, above.
+### Two NHTSA data-quality gaps
 
-`npm run typecheck` passes across every workspace and `npm run build` succeeds.
+**1. The VIN decoder and the recall catalogue can name the same car differently — mitigated, not
+fixed.** A 1993 truck decodes to `"GMT-400"`, an internal chassis code, while NHTSA's recall and
+complaint APIs know it only as `"C/K"`, `"C10"`, `"C1500"`. Both feeds return zero, which on screen
+is indistinguishable from a clean car. The mirror does not rescue this — the name is absent from the
+bulk files too — but the answer is honest (`model_not_listed`). On top of that, `lib/vehicleAge.ts`
+flags any vehicle 20 model-years or older (a blunt, deliberately cheap stand-in) and
+`RecallsList`/`KnownIssuesList` show a caveat pointing at NHTSA's own VIN lookup.
 
-### Known placeholders
+**2. The recall API failing for one year of a current model — fixed by the mirror.** A 2014 F-350
+returned HTTP 400 for every spelling tried while neighbouring years worked. The cause was
+vocabulary, not missing data. That car now holds 6 recalls.
 
-- **The fair/overpriced verdict is deliberately simple.** It compares the quote to a price range
-  and nothing else — no regional labour rates, no history for the specific shop. It also only
-  flags quotes that are *too high*; a suspiciously low quote is reported as fair.
-- **Quote upload stores the filename only, and nothing reads it back.** There is no PDF or photo
-  parsing; you type the total. `assessments.quote_file_name` is written on create and never read
-  anywhere, and it is not in the shared domain type, so it never reaches the browser. A dead
-  column rather than a half-finished feature — drop it whenever someone is writing a migration
-  anyway.
-- **`labor_rate_per_hour` is dead too, for a different reason.** Every real code path writes
-  `null` on purpose (there is no vendor rate to write); only the demo seed puts a number in. So
-  the "Labor Rate … · Est. Time …" line in `LaborBaselineCard` **has never rendered for a real
-  car and never will**, until either a rate source appears or the card shows hours alone.
-
-### Two NHTSA data-quality gaps, and where they stand
-
-Both surfaced from real signups rather than from reading code.
-
-**1. NHTSA's VIN decoder and its recall catalogue can name the same car differently — mitigated,
-not fixed.** A 1993 truck decoded to model `"GMT-400"`, an internal chassis platform code, while
-NHTSA's recall and complaint APIs only know that truck as `"C/K"`, `"C10"`, `"C1500"` and
-similar. Queried with `GMT-400`, both feeds return zero results, which on screen is
-indistinguishable from a genuinely clean car. Confirmed directly against NHTSA's endpoints.
-
-The mirror does not rescue this one — the name is absent from the bulk files too — but the
-answer is now honest: `model_not_listed` rather than "could not be reached". On top of that,
-`lib/vehicleAge.ts` flags any vehicle 20 model-years or older (a blunt, deliberately cheap
-stand-in — detecting a specific name mismatch would cost a vendor call per car), and
-`RecallsList`/`KnownIssuesList` show a caveat beside the list, whether empty or not, pointing at
-NHTSA's own VIN lookup as a second check.
-
-**2. NHTSA's recall API failing for one year of a current model — now fixed by the mirror.** A
-2014 Ford F-350 returned `HTTP 400` with body `{"Message":"Results returned
-successfully","results":[]}` for every spelling tried. The same query for 2010, 2013 and 2018
-F-350s, and 2014 heavy trucks from three other manufacturers, all returned real data. The cause
-turned out to be vocabulary, not a hole in NHTSA's data: they file that truck as "F-350 SD" and
-"F-350 SUPER DUTY", names their own published model list does not offer. The mirror supplies
-them, and that car now holds 6 recalls (verified live).
-
-**Needs checking:** whether other year/model gaps like these exist. The mirror should catch most
-naming cases automatically now, but the only way one was found before was hitting it by chance
-on a real signup.
+Whether other year/model gaps exist is unknown. The mirror should catch most naming cases, but the
+only way one was found before was hitting it by chance on a real signup.
 
 ### Not built, and outside the agreed list
 
-Password reset, account deletion, quote-document parsing, and the "safe to drive" verdict (Ask
-CA returns an urgency band but no safe-to-drive answer). None are in the §3 feature list; they
-are noted because the README and the original spec mention them.
+Password reset, account deletion, quote-document parsing, and a "safe to drive" verdict (Ask CA
+returns an urgency band, not a safe-to-drive answer). Noted only because the README and the original
+spec mention them.
 
 ### Product risks worth naming
 
-- **Coverage is per car**, which gates the whole paid tier — see the end of §3.
-- **NHTSA's own data has confirmed gaps that read as "nothing's wrong" unless caveated.** One of
-  the two found so far is now fixed by the mirror; the other is caveated. A third, undiscovered
-  gap would show as a silent all-clear until someone hits it.
-- **The pricing supplier's call allowance is small enough to be the real limit.** Running out
-  shows an owner "we couldn't reach our pricing source" on a feature they paid for.
-- **Neither pricing vendor is settled** (§5). The paid feature rests on both, so a swap is likely
-  before any real launch, and the labour hours are estimates rather than licensed book times in
-  the meantime.
-- **Deleting an account deletes its paywall taps too.** Export that data before honouring a
-  deletion request or the experiment loses the result.
-- **Ask CA is throttled per owner**: one answer in flight at a time, 20 questions per five
-  minutes, because it is the only endpoint that spends money per request. The counters are in
-  memory, so they reset on restart and are per-process — a cost guard, not a security boundary.
-  A real deployment wants them in Postgres or Redis.
-- **An answer is abandoned after 45 seconds.** Measured answers land around 5 seconds and the
-  slowest observed was 17, so the ceiling only fires on a genuine hang; without it the SDK would
-  wait ten minutes and retry twice.
-- **The Ask CA log is the most sensitive table in the schema** (§4) — but it is now API-only,
-  sealed behind RLS, unreadable by the app itself, and pruned to a 90-day window nightly. The
-  residual risk is that the prune is a cron: if it fails silently for months the window quietly
-  stops applying. It exits non-zero on failure for exactly that reason, so the job goes red.
+- **Vendor coverage is per car**, which gates the whole paid tier (§2).
+- **NHTSA's own data has confirmed gaps that read as "nothing's wrong" unless caveated.** A third,
+  undiscovered gap would show as a silent all-clear until someone hit it.
+- **The pricing supplier's call allowance is small enough to be the real limit.** Running out shows
+  an owner "we couldn't reach our pricing source" on a feature they paid for.
+- **Neither pricing vendor is settled** (§4), so a swap is likely before any real launch.
+- **Deleting an account deletes its paywall taps too.** Export that data before honouring a deletion
+  request or the experiment loses its result.
+- **Ask CA is throttled per owner** — one answer in flight, 20 questions per five minutes, because it
+  is the only endpoint that spends money per request. The counters are in memory, so they reset on
+  restart and are per-process: a cost guard, not a security boundary. A real deployment wants them in
+  Postgres or Redis.
+- **An answer is abandoned after 45 seconds**, enforced by aborting the stream rather than the SDK's
+  own timeout, because that applies per attempt and the SDK retries twice.
 
-### Open questions, in one place
+### Open questions
 
-1. ~~Apply the RLS lockdown.~~ **Done 9 August** — 29 of 29 tables locked, zero public grants,
-   verified from outside. See above. What remains from it: keep an `enable row level security`
-   line in every migration that adds a table, and treat a table created through the Supabase
-   dashboard as exposed until checked.
-2. ~~Set a retention window for `ask_transcripts`.~~ **Done 9 August — 90 days**, enforced by
-   `prune-ask-transcripts.yml` nightly at 10:30 UTC. Verified against the live database: the
-   cutoff predicate selects correctly at every boundary tested and the real window currently
-   expires nothing, which is right — the log's oldest row is 23 hours old.
-3. ~~Set the two paywall prices.~~ **Settled 9 August** — $99/year Unlimited, $35/year + $50 per
-   lookup Per-Incident. The `env.ts` defaults are the chosen numbers; nothing to set (§8).
-4. **Is `MARKET_CHECK_API_KEY` in the repository's GitHub Actions secrets?** `DATABASE_URL` is
-   already there for the recall import, but the market-value sweep needs the vendor key too.
-   Without it the sweep exits early naming the cause — chosen over letting it run, because every
-   call would return `unavailable` and the log would look like a vendor outage. Until it is set,
-   the nightly job does nothing. (Could not be checked here; no `gh` CLI available.)
-5. **Has the market-value sweep ever made a real vendor call?** `npm run refresh:values --
-   --dry-run` is read-only and was run on 8 August: 6 vehicles, 0 due, a true negative (the
-   three eligible cars were priced on 7 August, so they are 29 days off). Re-running the rule
-   against future dates confirms the cadence — 0 due at +29 days, 3 at +31, still 3 at +40, and
-   the other three never become due because they lack a VIN or zip. But no run from inside the
-   workflow has happened. Use `workflow_dispatch` with a small `--limit` for the first one
-   rather than waiting for the cron to find out.
-6. ~~Has `db:pricing` been run since `0013` landed?~~ **Closed 9 August — the question was
-   wrong, not just unanswered.** `db:pricing` is a data script, not a migration; `0013` reshaped
-   the table and has been applied for days. The worry was that `0013`'s backfill left rows
-   labelled `Hand-written placeholder (superseded)`. Checked directly: **zero placeholder rows
-   remain.** All 44 benchmark rows carry real Vehicle Databases provenance across four models
-   (2019 Civic, 2011 Pathfinder, 2014 F-350, 2017 Golf), the 12-repair catalogue is intact, and
-   all 4 assessments recorded a real vendor source. `repairPricingSync.ts` re-prices a model on
-   demand, so real signups on four cars did the job the script would have. Running it now would
-   be harmless and pointless. The Civic's rows carry no Open Labor Project hours because they
-   synced before that vendor existed — cosmetic, and the next re-sync fixes it.
-7. **Talk to whoever owns the factory-schedule migration line.** Still the real fix — one
-   migration line per database. Generating a migration here is now SAFE, though: `db:migrate`
-   refuses rather than silently skipping (see "A second migration line"). The odd migration is
-   identified as `0016_factory_schedules` from the `maintenance` branch, and both branches
-   define a file numbered `0016`, so a merge collides on the number too.
-8. **Run `npm run verify:token` with a real token.** Mostly closed: signature enforcement and
-   issuer pinning are both proven by test, and the positive path is exercised by every signed-in
-   request. What remains is one command against a live token to confirm the claim fields
-   explicitly — the harness is built and smoke-tested, it just needs the credential (§7).
-9. **Re-check the Ask CA timings on more than one car** (§4), and watch `cacheRead`.
-10. **Exercise the Account screen by hand** since `user_features` was dropped (§8).
-11. **Price the licensed book-time options and trial a second pricing vendor** for coverage
-    against a real list of signup vehicles (§5).
+1. **Commit the assessment-context work.** Migration `0022` is applied to the shared database while
+   `schema.ts`, `0022_assessment_context.sql`, `ContextStep.tsx`, the shared types and the route are
+   still only in the working tree. Database ahead of the code is the wrong way round, and it is the
+   same skew that produced `column "outcome" does not exist` on a live request on 8 August.
+2. **Is `MARKET_CHECK_API_KEY` in the repository's GitHub Actions secrets?** Without it the nightly
+   sweep exits early naming the cause and does nothing.
+3. **Has the market-value sweep ever made a real vendor call?** `npm run refresh:values -- --dry-run`
+   confirmed the cadence (0 due today, 3 at +31 days, three cars never due for lack of VIN or zip),
+   but no run from inside the workflow has happened. Use `workflow_dispatch` with a small `--limit`.
+4. **Talk to whoever owns the factory-schedule migration line** — one line per database is the fix.
+5. **Run `npm run verify:token` with a real token** — the harness is built, it needs the credential.
+6. **Re-check the Ask CA timings on more than one car**, and watch `cacheRead` (§3).
+7. **Exercise the Account screen by hand** since `user_features` was dropped (§6).
+8. **Price the licensed book-time options and trial a second pricing vendor** against a real list of
+   signup vehicles (§4).
+9. **Decide the shape of the necessity verdict** (§2 gap 1). Inputs are collected and the supporting
+   data is loaded; what is left is how the band is produced.
+10. **Nothing asks an owner for a VIN after onboarding**, so a car without one silently gets no
+    valuation, no factory schedule and no interval signal (§4). One car of six is in this state.

@@ -68,6 +68,23 @@ export const newAssessmentSchema = z.object({
   /** Omitted when the user chose "No, not yet". */
   quoteAmount: moneySchema.positive().optional(),
   quoteFileName: z.string().trim().max(255).optional(),
+  /**
+   * REQUIRED, unlike everything else added here, and it is one tap on the form.
+   *
+   * The necessity check reads this; without it there is nothing to reason from but a repair name
+   * and a price, which is the position the feature has been stuck in. Making it optional would
+   * mean building the judgement on a field that is empty exactly when someone rushed the form --
+   * and a rushed form is not correlated with an easy case.
+   *
+   * Existing rows carry null and stay that way: they were never asked, which the API must keep
+   * able to say. Only new assessments are held to this.
+   */
+  promptedBy: z.enum(['symptom', 'warning_light', 'routine_service', 'shop_suggested', 'other'], {
+    errorMap: () => ({ message: 'Tell us what prompted this repair' }),
+  }),
+  /** What they notice, or what the shop said. Free text -- this is the part worth reading. */
+  symptomNotes: z.string().trim().max(1000).optional(),
+  symptomDuration: z.enum(['days', 'weeks', 'months', 'unsure']).optional(),
 });
 
 export const completeAssessmentSchema = z.object({

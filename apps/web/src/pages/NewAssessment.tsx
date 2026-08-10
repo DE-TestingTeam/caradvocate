@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { ContextStep } from '@/components/assessments/ContextStep';
 import { QuoteStep, type QuoteChoice } from '@/components/assessments/QuoteStep';
 import { RepairPicker } from '@/components/assessments/RepairPicker';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -9,6 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { createAssessment, getRepairCatalog } from '@/lib/api';
 import { ApiError } from '@/lib/http';
 import { invalidateAll, useApi } from '@/lib/useApi';
+import type { AssessmentPrompt, SymptomDuration } from '@caradvocate/shared';
 
 /**
  * Step one and two of the Repair Cost Checker.
@@ -42,13 +44,18 @@ export function NewAssessmentPage() {
       setRepairId(suggestedRepair);
     }
   }, [catalog.data, prefilled, suggestedRepair]);
+  const [prompt, setPrompt] = React.useState<AssessmentPrompt>();
+  const [notes, setNotes] = React.useState('');
+  const [duration, setDuration] = React.useState<SymptomDuration>();
   const [fileName, setFileName] = React.useState<string>();
   const [submitting, setSubmitting] = React.useState(false);
 
   const [error, setError] = React.useState<string>();
 
   const quoteReady = choice === 'no' || (choice === 'yes' && Number(amount) > 0);
-  const canSubmit = Boolean(repairId) && quoteReady && !submitting;
+  // `prompt` is required by the API, so it gates the button here too -- a 422 for a field the
+  // form did not insist on would read as a bug rather than a missing answer.
+  const canSubmit = Boolean(repairId) && prompt !== undefined && quoteReady && !submitting;
 
   async function handleSubmit() {
     if (!repairId || !canSubmit) return;
@@ -58,6 +65,11 @@ export function NewAssessmentPage() {
     try {
       const created = await createAssessment({
         repairId,
+        promptedBy: prompt,
+        // Trimmed to undefined rather than sent empty: "" would store as a note the owner wrote
+        // nothing in, which reads later as an answered question.
+        symptomNotes: notes.trim() || undefined,
+        symptomDuration: duration,
         quoteAmount: choice === 'yes' ? Number(amount) : undefined,
         quoteFileName: fileName,
       });
@@ -114,9 +126,28 @@ export function NewAssessmentPage() {
         )}
       </section>
 
+      {/*
+        Between the repair and the quote, deliberately. It reads as part of describing the problem
+        rather than part of pricing it, and an owner who has not thought about why they are here is
+        better asked before they have typed a number they are anchored to.
+      */}
       <section className="mt-8 space-y-3">
         <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-          Step 2: Have a quote from a shop?
+          Step 2: What brought this up?
+        </h2>
+        <ContextStep
+          prompt={prompt}
+          onPromptChange={setPrompt}
+          notes={notes}
+          onNotesChange={setNotes}
+          duration={duration}
+          onDurationChange={setDuration}
+        />
+      </section>
+
+      <section className="mt-8 space-y-3">
+        <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+          Step 3: Have a quote from a shop?
         </h2>
         <QuoteStep
           choice={choice}

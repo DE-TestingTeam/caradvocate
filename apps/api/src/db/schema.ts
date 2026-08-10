@@ -676,6 +676,25 @@ export const assessments = pgTable(
     repairName: text('repair_name').notNull(),
     mileageAtAssessment: integer('mileage_at_assessment').notNull(),
 
+    /**
+     * Why the owner is asking, captured at creation. See `AssessmentPrompt` in the shared
+     * package for the values and why this is a short list rather than free text.
+     *
+     * This is the input the necessity check has been missing: the assessment recorded which
+     * repair and what it cost, and nothing about why it came up, so "is this needed?" had
+     * nothing to reason from. Text rather than an enum type, matching `model_feed_syncs.feed`
+     * and `ask_transcripts.outcome` -- a new reason should not need a migration.
+     *
+     * Nullable with no backfill, and required by the API for new rows. Null means "never
+     * asked", which is not the same as "nothing to report" and must stay distinguishable: the
+     * four assessments predating this cannot be given an answer they were never given.
+     */
+    promptedBy: text('prompted_by'),
+    /** What the owner notices, or what the shop told them. The part worth reading. */
+    symptomNotes: text('symptom_notes'),
+    /** 'days' | 'weeks' | 'months' | 'unsure'. Only meaningful with a symptom or warning light. */
+    symptomDuration: text('symptom_duration'),
+
     recommendationHeadline: text('recommendation_headline').notNull(),
     recommendationBadge: text('recommendation_badge').notNull(),
     recommendationBody: text('recommendation_body').notNull(),

@@ -23,6 +23,13 @@ import { requireOwnVehicle, stringParam } from './helpers.js';
 
 export const assessmentsRouter = Router();
 
+/**
+ * The prompts a duration actually says something about. "Grinding for three weeks" is a fact
+ * about the car; "routine service for three weeks" is noise, and stored it would later read as a
+ * reported symptom to anything summarising the row.
+ */
+const SYMPTOM_IS_MEANINGFUL = new Set<string>(['symptom', 'warning_light']);
+
 const idParamSchema = z.object({ id: z.string().uuid('Not a valid assessment id') });
 
 /** The snapshotted parts and labour of one assessment, in the order the benchmark listed them. */
@@ -155,6 +162,16 @@ assessmentsRouter.post('/', validateBody(newAssessmentSchema), async (req, res) 
         repairId: repair.id,
         repairName: repair.name,
         mileageAtAssessment: vehicle.mileage,
+        // Why the owner is asking. Stored but not yet reasoned over -- the necessity check is
+        // still unbuilt (STATUS.md gap 1) -- and collected now because a judgement cannot be
+        // made retroactively about assessments that never recorded their own reason.
+        promptedBy: req.body.promptedBy,
+        symptomNotes: req.body.symptomNotes ?? null,
+        // Dropped unless it means something: a duration attached to "routine service" is an
+        // answer to a question that was not asked, and would read later as a reported symptom.
+        symptomDuration: SYMPTOM_IS_MEANINGFUL.has(req.body.promptedBy)
+          ? (req.body.symptomDuration ?? null)
+          : null,
         recommendationHeadline: benchmark.recommendationHeadline,
         recommendationBadge: benchmark.recommendationBadge,
         recommendationBody: benchmark.recommendationBody,
