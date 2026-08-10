@@ -109,4 +109,6 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 );
 Button.displayName = 'Button';
 
-export { Button };
+// `buttonVariants` is exported for the ported shadcn parts that render their own element and take
+// the button look as a class string rather than by wrapping <Button> -- see ui/questionnaire.tsx.
+export { Button, buttonVariants };

@@ -1,11 +1,18 @@
 import * as React from 'react';
-import { Plus } from 'lucide-react';
+import { ClipboardList, Plus } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { AssessmentCard } from '@/components/assessments/AssessmentCard';
 import { RepairCompletedDialog } from '@/components/assessments/RepairCompletedDialog';
 import { ErrorState } from '@/components/ErrorState';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from '@/components/ui/empty';
 import { Skeleton } from '@/components/ui/skeleton';
 import { listAssessments } from '@/lib/api';
 import { useApi } from '@/lib/useApi';
@@ -54,24 +61,35 @@ export function AssessmentsPage() {
       )}
 
       {/*
-        Styled as Ask CA's empty state, which is the other page in the app that can open with
-        nothing on it: centred on the page itself rather than in a panel, a short line in
-        foreground weight, then the explanation under it in muted. No card and no tint -- an
-        empty container is a thing to look at, and there is nothing in it.
+        shadcn's `Empty`, which is the same shape this page had hand-rolled -- centred column,
+        short line in foreground weight, explanation under it in muted -- with the icon slot and
+        the `text-balance` measure it did not have.
 
-        The two lines are two paragraphs rather than one split by a <br>, so the second can hold
-        the muted colour and the `max-w-sm` measure that stops it running the width of the page.
+        No `border`, so the wrapper's `border-dashed` stays inert: an empty container is a thing
+        to look at, and there is nothing in it.
+
+        The `min-h` is what puts the text in the middle of the empty area rather than at the top
+        of it. `Empty` already centres its own content vertically, so it only needs a height to
+        centre within -- and it cannot inherit one: the component's `flex-1` is inert here because
+        neither this page's column nor the shell's content wrapper is a flex parent. `20rem` is
+        roughly what the page header and the "Previous assessments" line take, so the block
+        reaches down to the bottom of the window and its contents land on that stretch's centre.
+        Padding cannot do this job -- a fixed `pt` is right at one window height and wrong at
+        every other.
       */}
       {data && data.length === 0 && (
-        <div className="flex flex-col items-center px-6 py-20 text-center">
-          {/* No button of its own: "Check a repair" is already in the header, a few inches up
-              and the only filled control on the page. A second copy of it made the same action
+        <Empty className="min-h-[calc(100vh-20rem)]">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <ClipboardList />
+            </EmptyMedia>
+            <EmptyTitle>Nothing here yet</EmptyTitle>
+            <EmptyDescription>Next time a shop quotes you, check it here first.</EmptyDescription>
+          </EmptyHeader>
+          {/* No `EmptyContent`: "Check a repair" is already in the header, a few inches up and
+              the only filled control on the page. A second copy of it made the same action
               appear twice on a screen with nothing else on it. */}
-          <p className="text-sm font-medium">Nothing here yet</p>
-          <p className="mt-2 max-w-sm text-sm text-muted-foreground">
-            Next time a shop quotes you, check it here first.
-          </p>
-        </div>
+        </Empty>
       )}
 
       {/*

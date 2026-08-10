@@ -1,4 +1,6 @@
 @import './assets/fonts/fonts.css';
+/* shadcn's own stylesheet for ui/questionnaire.tsx. See the file's header for why it is separate. */
+@import './styles/style-nova-questionnaire.css';
 
 @tailwind base;
 @tailwind components;
