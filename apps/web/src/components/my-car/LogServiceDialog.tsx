@@ -177,8 +177,8 @@ export function LogServiceDialog({
           )}
 
           {/*
-            Only Save is green. Two green buttons in a footer is no primary action at all, and a
-            green Delete reads as the safe choice, which is the opposite of what it does.
+            Only Save is solid. Two filled buttons in a footer is no primary action at all, and a
+            filled Delete reads as the one to press, which is the opposite of what it should say.
           */}
           <DialogFooter className="sm:justify-between">
             {isEditing ? (

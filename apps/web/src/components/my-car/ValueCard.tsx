@@ -3,14 +3,20 @@ import { Info } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { TREND_POINTS, ValueTrendChart, ValueTrendPlaceholder } from './ValueTrendChart';
 import { formatCurrency, formatMileage } from '@/lib/format';
+import { cn } from '@/lib/utils';
 import { daysSinceMileageReading, mileageIsStale, type Vehicle } from '@caradvocate/shared';
 
-export function ValueCard({ vehicle }: { vehicle: Vehicle }) {
+/**
+ * `className` is how the masthead hands this card its height -- see MyCar.tsx. The card passes
+ * that height down to the trend plot, which is the one part of it that can absorb the slack.
+ */
+export function ValueCard({ vehicle, className }: { vehicle: Vehicle; className?: string }) {
   // A car the user just added has no valuation yet, and no trend to draw.
   // Say so rather than showing a zero or a made-up figure.
   if (vehicle.estMarketValue === undefined) {
     return (
       <AwaitingValuation
+        className={className}
         missingVin={!vehicle.vin}
         missingZip={!vehicle.zip}
         unavailable={vehicle.valuationUnavailable ?? false}
@@ -22,26 +28,29 @@ export function ValueCard({ vehicle }: { vehicle: Vehicle }) {
   const hasTradeInRange = vehicle.tradeInLow !== undefined && vehicle.tradeInHigh !== undefined;
 
   return (
-    <Card className="bg-muted/40">
-      <CardContent className="space-y-4 p-4 sm:p-6">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <div className="text-4xl font-bold tracking-tight">{formatCurrency(vehicle.estMarketValue)}</div>
-            <div className="mt-1 text-xs font-medium uppercase tracking-widest text-muted-foreground">
-              Est. market value
-            </div>
-          </div>
-          {/* The slot is occupied either way, so the card does not change shape the month the
-              line first appears. */}
-          <div className="w-24 shrink-0 text-right">
-            {hasTrend ? (
-              <ValueTrendChart data={vehicle.valueTrend} compact />
-            ) : (
-              <ValueTrendPlaceholder collected={vehicle.valueTrend.length} compact />
-            )}
-            <div className="mt-1 text-[10px] font-medium uppercase tracking-widest text-muted-foreground">
-              {hasTrend ? '30d trend' : 'Trend building'}
-            </div>
+    <Card className={cn('bg-muted/40', className)}>
+      {/* `gap-4` in a flex column rather than `space-y-4`, so the trend panel below can take
+          `flex-1` and swallow whatever height is left over. */}
+      <CardContent className="flex h-full flex-col gap-4 p-4 sm:p-6">
+        {/*
+          No sparkline beside the figure. It was captioned "30d trend", and there is no such
+          thing here: values are checked once a MONTH, so a 30-day window is one reading and one
+          reading is not a trend. The panel below, over six monthly readings, is the only trend
+          this card can honestly draw.
+        */}
+        <div>
+          {/*
+            One step under the car's name, which is `text-h2`. It was `text-4xl` -- 36px against
+            the name's 30px -- so the price was the biggest thing in the masthead and the car it
+            belongs to came second. `text-h3` also puts it on the app's own fluid scale, so it
+            keeps that relationship at every width instead of only at the widest.
+
+            No `tracking-tight` on top: the h3 step already carries -0.0075em, and stacking the
+            utility's -0.025em on a row of figures closes the digits up.
+          */}
+          <div className="text-h3 font-bold">{formatCurrency(vehicle.estMarketValue)}</div>
+          <div className="mt-1 text-xs font-medium uppercase tracking-widest text-muted-foreground">
+            Est. market value
           </div>
         </div>
 
@@ -66,8 +75,11 @@ export function ValueCard({ vehicle }: { vehicle: Vehicle }) {
           </p>
         )}
 
-        <div className="space-y-2 rounded-md border border-dashed bg-background/60 p-3">
-          <div className="flex items-center justify-between gap-2">
+        {/* `min-h-0` is load-bearing: a flex item's floor is its content, so without it this
+            panel refuses to shrink below the plot's natural size and pushes the card past the
+            photo -- the exact thing the height is being derived to prevent. */}
+        <div className="flex min-h-0 flex-1 flex-col gap-2 rounded-md border border-dashed bg-background/60 p-3">
+          <div className="flex shrink-0 items-center justify-between gap-2">
             <div className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
               Value trend, last 6 mo
             </div>
@@ -75,11 +87,19 @@ export function ValueCard({ vehicle }: { vehicle: Vehicle }) {
                 reads once. It moves behind this control so the card stays a card. */}
             {!hasTrend && <TrendNote collected={vehicle.valueTrend.length} />}
           </div>
-          {hasTrend ? (
-            <ValueTrendChart data={vehicle.valueTrend} />
-          ) : (
-            <ValueTrendPlaceholder collected={vehicle.valueTrend.length} />
-          )}
+          {/*
+            `h-20` is the phone's answer and the fallback everywhere else. Stacked below `lg` the
+            column has no height to divide up, so `flex-1` would resolve against nothing and the
+            plot -- which is sized in percentages -- would collapse to zero and vanish. From `lg`
+            the derived height takes over.
+          */}
+          <div className="h-20 min-h-0 lg:h-auto lg:flex-1">
+            {hasTrend ? (
+              <ValueTrendChart data={vehicle.valueTrend} />
+            ) : (
+              <ValueTrendPlaceholder collected={vehicle.valueTrend.length} />
+            )}
+          </div>
         </div>
       </CardContent>
     </Card>
@@ -153,10 +173,12 @@ function readingsTaken(count: number): string {
 }
 
 function AwaitingValuation({
+  className,
   missingVin,
   missingZip,
   unavailable,
 }: {
+  className?: string;
   missingVin: boolean;
   missingZip: boolean;
   unavailable: boolean;
@@ -180,7 +202,7 @@ function AwaitingValuation({
       : "Not available yet. We're still pricing this car — check back shortly.";
 
   return (
-    <Card className="bg-muted/40">
+    <Card className={cn('bg-muted/40', className)}>
       <CardContent className="space-y-1 p-4 sm:p-6">
         <div className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
           Est. market value

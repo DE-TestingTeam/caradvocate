@@ -42,6 +42,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   React.useEffect(() => {
     let active = true;
+    /**
+     * Set once the listener exists. It has to live out here, because the subscription is created
+     * inside an async function and React only ever sees what the EFFECT returns -- a cleanup
+     * returned from the inner `async () => {}` becomes part of its promise and is never called.
+     * That is what used to happen here, so the auth listener was never torn down while looking
+     * like it was.
+     */
+    let unsubscribe: (() => void) | undefined;
 
     (async () => {
       const resolved = await getAuthConfig();
@@ -49,7 +57,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setConfig(resolved);
 
       const supabase = await getSupabase();
-      if (!active || !supabase) {
+      if (!active) return;
+      if (!supabase) {
+        // No credentials, so nobody can sign in -- but the app has finished trying, and leaving
+        // `loading` true would hold the whole tree on skeletons instead of showing the login form.
         setLoading(false);
         return;
       }
@@ -63,11 +74,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setSession(next);
       });
 
-      return () => subscription.subscription.unsubscribe();
+      // Unmounted while we were awaiting: nothing will call the cleanup below, so do it here.
+      if (!active) {
+        subscription.subscription.unsubscribe();
+        return;
+      }
+      unsubscribe = () => subscription.subscription.unsubscribe();
     })();
 
     return () => {
       active = false;
+      unsubscribe?.();
     };
   }, []);
 

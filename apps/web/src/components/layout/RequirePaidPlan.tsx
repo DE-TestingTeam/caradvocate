@@ -16,7 +16,6 @@ import { Outlet, useOutletContext } from 'react-router-dom';
 import { ErrorState } from '@/components/ErrorState';
 import { PaywallScreen } from '@/components/paywall/PaywallScreen';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
-import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/toast';
 import { getPaywall, unlockPaywall } from '@/lib/api';
 import { invalidateAll, useApi } from '@/lib/useApi';
@@ -46,25 +45,39 @@ export function RequirePaidPlan() {
 
   if (error) return <ErrorState message={error.message} />;
 
-  // First load only, before it is known whether to gate at all -- showing the page early would
-  // flash it unlocked for a moment if it turns out not to be. Later refetches keep the old
-  // status, so unlocking does not flash the paywall shut again on the way out.
-  if (!data) return <Skeleton className="mx-auto h-96 w-full max-w-md rounded-lg" />;
-
+  /*
+   * The page goes straight through, including while `getPaywall` is still in flight.
+   *
+   * This used to hold it back behind `<Skeleton className="h-96 max-w-md" />` -- one large
+   * centred box, which is nothing like the shape of any page behind this gate. On Repairs it
+   * meant a single grey slab, then the page's own three-card skeleton, then the cards: two
+   * different skeletons for one load.
+   *
+   * What that wait was protecting is already protected. The reason given for it was that
+   * showing the page early would flash it unlocked -- but the assessment endpoints are gated
+   * server-side too (app.ts mounts `requirePaid` on /api/assessments), so a locked account's
+   * requests fail regardless of what this component draws. There is no unlocked state to flash
+   * into: the page underneath is the empty preview the comment below already describes.
+   *
+   * The dialog stays shut until the answer actually arrives, so an unlocked account never sees
+   * the paywall blink open on the way past.
+   */
   return (
     <>
       <Outlet context={inherited} />
 
-      <Dialog open={!data.unlocked}>
-        <DialogContent
-          hideClose
-          onEscapeKeyDown={(event) => event.preventDefault()}
-          onPointerDownOutside={(event) => event.preventDefault()}
-          onInteractOutside={(event) => event.preventDefault()}
-        >
-          <PaywallScreen status={data} onUnlock={handleUnlock} unlocking={unlocking} />
-        </DialogContent>
-      </Dialog>
+      {data && (
+        <Dialog open={!data.unlocked}>
+          <DialogContent
+            hideClose
+            onEscapeKeyDown={(event) => event.preventDefault()}
+            onPointerDownOutside={(event) => event.preventDefault()}
+            onInteractOutside={(event) => event.preventDefault()}
+          >
+            <PaywallScreen status={data} onUnlock={handleUnlock} unlocking={unlocking} />
+          </DialogContent>
+        </Dialog>
+      )}
     </>
   );
 }

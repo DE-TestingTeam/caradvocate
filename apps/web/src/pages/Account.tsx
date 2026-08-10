@@ -5,13 +5,14 @@ import { EditProfileDialog } from '@/components/account/EditProfileDialog';
 import { EditVehicleDialog } from '@/components/account/EditVehicleDialog';
 import { FieldRow } from '@/components/account/FieldRow';
 import { PageHeader } from '@/components/layout/PageHeader';
+import { useVehicle } from '@/components/layout/RequireVehicle';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/toast';
-import { getAccount, getPaywall, getVehicle, unlockPaywall } from '@/lib/api';
+import { getAccount, getPaywall, unlockPaywall } from '@/lib/api';
 import { formatMileage, formatPrice, maskVinTail, vehicleName } from '@/lib/format';
 import { invalidateAll, useApi } from '@/lib/useApi';
 import { cn } from '@/lib/utils';
@@ -79,21 +80,21 @@ function UnlockButton() {
 
 export function AccountPage() {
   const { data: account, error: accountError } = useApi(getAccount);
-  const { data: vehicle, error: vehicleError } = useApi(getVehicle);
+  // From RequireVehicle, rather than a second `GET /vehicle` of this page's own: the guard has
+  // already waited for that answer to decide whether to render this page at all.
+  const vehicle = useVehicle();
   const { hash } = useLocation();
 
   /**
-   * Honours `#vehicle`, which My Car's "Edit car details" links to.
-   *
-   * React Router does not scroll to a hash by itself, and even if it did, the card is a
-   * skeleton on first paint -- scrolling before the real content lands would aim at a position
-   * that is about to move. Waiting on `vehicle` means this runs once the card is its final size.
+   * Honours `#vehicle`, which My Car's "Edit car details" links to. React Router does not scroll
+   * to a hash by itself. The card is at its final size on first paint -- the vehicle arrives with
+   * the page now -- so there is nothing to wait for before aiming at it.
    */
   React.useEffect(() => {
-    if (!hash || !vehicle) return;
+    if (!hash) return;
     const target = document.getElementById(hash.slice(1));
     target?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
-  }, [hash, vehicle]);
+  }, [hash]);
 
   return (
     <div>
@@ -131,21 +132,13 @@ export function AccountPage() {
         {/* Vehicle. `scroll-mt-6` keeps it clear of the top edge when linked to by hash. */}
         <Card id="vehicle" className="scroll-mt-6">
           <CardContent className="space-y-4 p-4 sm:p-6">
-            {vehicleError ? (
-              <ErrorState message={vehicleError.message} />
-            ) : vehicle ? (
-              <>
-                <h2 className="text-lg font-semibold tracking-tight">Your vehicle</h2>
-                <div>
-                  <FieldRow label="Vehicle" value={vehicleName(vehicle)} />
-                  <FieldRow label="VIN" value={vehicle.vin ? maskVinTail(vehicle.vin) : 'Not added'} />
-                  <FieldRow label="Mileage" value={formatMileage(vehicle.mileage)} />
-                </div>
-                <EditVehicleDialog vehicle={vehicle} />
-              </>
-            ) : (
-              <CardSkeleton />
-            )}
+            <h2 className="text-body-lg font-semibold tracking-tight">Your vehicle</h2>
+            <div>
+              <FieldRow label="Vehicle" value={vehicleName(vehicle)} />
+              <FieldRow label="VIN" value={vehicle.vin ? maskVinTail(vehicle.vin) : 'Not added'} />
+              <FieldRow label="Mileage" value={formatMileage(vehicle.mileage)} />
+            </div>
+            <EditVehicleDialog vehicle={vehicle} />
           </CardContent>
         </Card>
 
@@ -155,7 +148,7 @@ export function AccountPage() {
             {account ? (
               <>
                 <div className="flex items-start justify-between gap-3">
-                  <h2 className="text-lg font-semibold tracking-tight">Subscription</h2>
+                  <h2 className="text-body-lg font-semibold tracking-tight">Subscription</h2>
                   <Badge variant="outline" className="shrink-0">
                     {account.plan === 'paid' && account.pricingModel
                       ? `Paid — ${PRICING_MODEL_NAME[account.pricingModel]}`

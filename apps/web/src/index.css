@@ -25,14 +25,14 @@
     /**
      * Consumer Reports green, #00803E. 5.05:1 against white, so white text on it is legible.
      *
-     * It carries primary actions -- `--primary` points here, so every solid button is green --
-     * as well as identity: the logo, the focus ring, the active nav row.
+     * It carries identity and state, NOT actions: the logo, the focus ring, the active nav row,
+     * the selected plan, a filled progress step. Solid buttons are ink -- see `button.tsx`.
      *
-     * The cost to watch: a saturated house colour on every button competes with status colour
-     * for attention, and a red recall badge needs something quieter to be louder than. What
-     * keeps that working is that green is the ONLY saturated thing in the chrome -- badges,
-     * panels, borders and text all stay in the warm greyscale below. Adding a second bright
-     * colour to the furniture is what would actually break it.
+     * Keeping it off the buttons is what stops it competing. A red recall badge needs something
+     * quieter to be louder than, and green appearing only where the app is pointing at itself
+     * (rather than on every call to action) leaves that room. The other half of the trick is that
+     * green is the ONLY saturated thing in the chrome -- badges, panels, borders and text all stay
+     * in the warm greyscale below. Adding a second bright colour to the furniture would break it.
      */
     --brand: 149 100% 25.1%;
 
@@ -73,7 +73,7 @@
     --popover: 0 0% 100%;
     --popover-foreground: var(--grey-ink);
 
-    /** The brand green carries primary actions. See the note on `--brand` above. */
+    /** The brand green marks identity and selection, not actions. See the note on `--brand`. */
     --primary: var(--brand);
     --primary-foreground: 0 0% 100%;
 

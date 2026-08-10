@@ -126,6 +126,22 @@ export function vehicleName(v: { year: number; make: string; model: string; trim
   return [v.year, v.make, v.model, redundant ? undefined : trim].filter(Boolean).join(' ');
 }
 
+/**
+ * "2019 Honda Civic" -- the same name with the trim dropped. For headings.
+ *
+ * The trim is not reliably a trim. It is whatever VIN decoding put there, and NHTSA falls back
+ * to its `Series` field, which carries body-style descriptions as often as it carries "EX" or
+ * "Limited" -- a dually F-350 decodes with trim "Single Rear Wheel", so the page title read
+ * "2019 Ford F-350 Single Rear Wheel". A heading is the one place that cannot afford to be
+ * padded with a phrase the owner did not ask for and may not recognise as their own car.
+ *
+ * The full name keeps the trim and is still what Account and the assessment subline use, where
+ * the extra words are detail rather than noise.
+ */
+export function vehicleShortName(v: { year: number; make: string; model: string }): string {
+  return [v.year, v.make, v.model].filter(Boolean).join(' ');
+}
+
 /** Today as an ISO date string (no time component). */
 export function todayIso(): string {
   return new Date().toISOString().slice(0, 10);

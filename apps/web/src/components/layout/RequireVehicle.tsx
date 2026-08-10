@@ -1,4 +1,4 @@
-import { Navigate, Outlet, useOutletContext } from 'react-router-dom';
+import { Navigate, Outlet, useLocation, useOutletContext } from 'react-router-dom';
 import type { Vehicle } from '@caradvocate/shared';
 import { Section } from '@/components/my-car/Section';
 import { ListSkeleton } from '@/components/my-car/ListSkeleton';
@@ -15,6 +15,7 @@ interface VehicleContext {
 
 export function RequireVehicle() {
   const { data, error } = useApi(getVehicle);
+  const { pathname } = useLocation();
 
   if (error) {
     const missingVehicle = error instanceof ApiError && error.status === 404;
@@ -22,9 +23,33 @@ export function RequireVehicle() {
     return <ErrorState message={error.message} />;
   }
 
-  if (!data) return <MyCarSkeleton />;
+  /*
+   * This guard fronts My Car, Ask CA and the whole Repair Cost Checker, and it used to draw
+   * MyCarSkeleton for all of them -- so opening Repairs began with a mocked-up My Car, recall
+   * and maintenance headings included, before the actual Repairs skeleton replaced it.
+   *
+   * Each page now gets the shape of the page it is actually waiting for. My Car keeps its full
+   * mirror, which it needs: `GET /vehicle` waits on a market-value call and can run several
+   * seconds right after onboarding. Everything else opens with a PageHeader, so that is what
+   * stands in -- the header lands in its final position and only the body below it swaps.
+   */
+  if (!data) return pathname === '/my-car' ? <MyCarSkeleton /> : <PageSkeleton />;
 
   return <Outlet context={{ vehicle: data } satisfies VehicleContext} />;
+}
+
+/**
+ * The header every page behind this guard opens with, bar My Car: a title, a line of subtitle,
+ * and nothing claimed about the body underneath. Matches PageHeader's own metrics -- `mb-8`,
+ * `space-y-1` between the two lines -- so the real header does not shift when it arrives.
+ */
+function PageSkeleton() {
+  return (
+    <div className="mb-8 space-y-1">
+      <Skeleton className="h-9 w-64 max-w-full" />
+      <Skeleton className="h-5 w-96 max-w-full" />
+    </div>
+  );
 }
 
 export function useVehicle(): Vehicle {

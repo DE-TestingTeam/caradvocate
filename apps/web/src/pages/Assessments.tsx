@@ -18,7 +18,10 @@ export function AssessmentsPage() {
   return (
     <div>
       {/*
-        Solid and `lg`: this is the action the page exists for, and there is only one of it.
+        Solid: this is the action the page exists for, and there is only one of it. Being the
+        only filled button on the page is what marks it out -- it does not also need to be a
+        size nothing else in the app uses.
+
         Full width below `sm` so it is a thumb-sized target on a phone, then inline with the
         title and only as wide as it needs to be.
       */}
@@ -26,7 +29,7 @@ export function AssessmentsPage() {
         title="Repairs"
         subtitle="Find out whether a repair is actually necessary, and what a fair price looks like."
         action={
-          <Button asChild size="lg" className="w-full sm:w-auto">
+          <Button asChild className="w-full sm:w-auto">
             <Link to="/assessments/new">
               <Plus className="h-4 w-4" />
               Check a repair
@@ -43,8 +46,9 @@ export function AssessmentsPage() {
 
       {loading && !data && !error && (
         <div className="space-y-3">
+          {/* `h-20` matches a one-row card: 32px of padding plus the name and date. */}
           {Array.from({ length: 3 }).map((_, i) => (
-            <Skeleton key={i} className="h-32 w-full rounded-lg" />
+            <Skeleton key={i} className="h-20 w-full rounded-lg" />
           ))}
         </div>
       )}
@@ -69,8 +73,17 @@ export function AssessmentsPage() {
         </div>
       )}
 
+      {/*
+        One card per row at every width, each spanning the column. The grid packed two or three
+        across on a wide screen, which made a list of four repairs read as a gallery to scan
+        rather than a history to run down -- and it left the cards narrow enough that a repair
+        name like "Brake Pad Replacement" crowded the badge beside it. Stacked, the title, date
+        and "Mark repair as complete" line up down the page and the newest is unambiguously first.
+
+        Also what the loading skeletons above already show: `space-y-3`, full width.
+      */}
       {data && data.length > 0 && (
-        <div className="space-y-3 sm:grid sm:grid-cols-2 sm:gap-3 sm:space-y-0 lg:grid-cols-3">
+        <div className="space-y-3">
           {data.map((assessment) => (
             <AssessmentCard key={assessment.id} assessment={assessment} onMarkComplete={setCompleting} />
           ))}

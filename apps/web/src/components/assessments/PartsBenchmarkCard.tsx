@@ -25,7 +25,11 @@ export function PartsBenchmarkCard({ assessment }: { assessment: Assessment }) {
       <CardContent className="p-4 sm:p-6">
         <Accordion type="single" collapsible defaultValue="parts">
           <AccordionItem value="parts">
-            <AccordionTrigger className="border-b-0 pt-0">
+            {/* `text-body-lg` overrides the trigger's own `text-h3`. The trigger is sized for a
+                top-level accordion; used as a card title it rendered this heading up to 24px
+                while "Quote Evaluation" and "Fair Total Estimate" -- cards stacked directly
+                above and below it on the same page -- sat at 18px. */}
+            <AccordionTrigger className="border-b-0 pt-0 text-body-lg">
               Parts Price Benchmark
             </AccordionTrigger>
             <AccordionContent className="space-y-4 pt-2">

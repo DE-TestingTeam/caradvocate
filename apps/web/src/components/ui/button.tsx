@@ -29,10 +29,11 @@ import { cn } from '@/lib/utils';
  * all. `destructive` is the one exception, and it earns it by meaning something the other
  * variants cannot say.
  *
- * Solid is the brand green, via `--primary`. Note what that costs: green now means both "this is
- * the action" and "this is us" (logo, focus ring, active nav), so a green thing that is NOT
- * pressable is a mixed signal. That is what the pill radius is for -- it, not the colour, is what
- * says pressable.
+ * Solid is ink -- `bg-foreground`, the same near-black as body text -- not the brand green. Green
+ * stays with identity: the logo, the focus ring, the active nav row, the selected plan. Keeping the
+ * house colour off the buttons means a green thing on the page says "this is us / this is where you
+ * are" and never has to also say "press me". What says pressable is the pill radius, which nothing
+ * else in the app uses.
  */
 const OUTLINED =
   'border border-border bg-transparent text-foreground hover:bg-accent hover:text-accent-foreground';
@@ -42,7 +43,7 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: 'bg-primary text-primary-foreground hover:bg-primary/90',
+        default: 'bg-foreground text-background hover:bg-foreground/90',
         destructive: 'bg-destructive text-destructive-foreground hover:bg-destructive/90',
         /**
          * The same treatment, under both of the names the codebase already uses for it. Sharing
@@ -65,17 +66,21 @@ const buttonVariants = cva(
       },
       size: {
         /**
-         * A three-step ladder, and the steps are close together on purpose. The previous `lg`
-         * was 56px, which is a native-app hero button; at that size a full-width CTA dominates
-         * a page rather than sitting on it. 48px is still unmistakably the largest thing on the
-         * screen without being the only thing.
+         * There is ONE size for a labelled button: `default`, 44px. Every solid button in the
+         * app is that height, so "this is the action" is said by the fill alone and never by
+         * scale -- a hero-sized CTA on one page and a standard one on the next read as two
+         * different components when they are the same button.
          *
-         * `default` is 44px because that is the iOS touch-target minimum, so the same button
-         * that looks right with a mouse is the one that is actually hittable with a thumb.
+         * 44px because that is the iOS touch-target minimum, so the same button that looks
+         * right with a mouse is the one that is actually hittable with a thumb.
+         *
+         * `sm` is for a button riding a section header rather than a page ("Log a service",
+         * "Add an upkeep job") -- always outlined, never the page's primary action. The `lg`
+         * step (48px) was deleted with nothing but the Repairs CTA on it; a size used once is
+         * a size that drifts.
          */
         sm: 'h-9 px-4',
         default: 'h-11 px-5 py-2',
-        lg: 'h-12 px-7 text-base',
         /** Square, so the pill radius resolves to a circle. */
         icon: 'h-11 w-11',
         /**

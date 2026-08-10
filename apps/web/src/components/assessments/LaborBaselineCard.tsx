@@ -36,7 +36,9 @@ export function LaborBaselineCard({ assessment }: { assessment: Assessment }) {
       <CardContent className="p-4 sm:p-6">
         <Accordion type="single" collapsible defaultValue="labor">
           <AccordionItem value="labor">
-            <AccordionTrigger className="border-b-0 pt-0">Labor Baseline</AccordionTrigger>
+            {/* `text-body-lg` for the reason spelled out in PartsBenchmarkCard: the trigger's
+                default `text-h3` is a section size, not a card-title one. */}
+            <AccordionTrigger className="border-b-0 pt-0 text-body-lg">Labor Baseline</AccordionTrigger>
             <AccordionContent className="space-y-3 pt-2">
               {(ratePerHour !== undefined || estHours !== undefined) && (
                 <div className="space-y-1">

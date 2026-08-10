@@ -9,7 +9,7 @@ export function RecommendationCard({ assessment }: { assessment: Assessment }) {
     <Card>
       <CardContent className="space-y-2 p-4 sm:p-6">
         <div className="flex items-start justify-between gap-3">
-          <h2 className="text-lg font-semibold tracking-tight">
+          <h2 className="text-body-lg font-semibold tracking-tight">
             {recommendation.headline}
           </h2>
           <Badge className="shrink-0">{recommendation.badge}</Badge>

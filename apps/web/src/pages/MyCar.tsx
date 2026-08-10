@@ -23,7 +23,7 @@ import {
   getServiceHistory,
   setRecallRepaired,
 } from '@/lib/api';
-import { formatMileage, maskVin, vehicleName } from '@/lib/format';
+import { formatMileage, maskVin, vehicleShortName } from '@/lib/format';
 import { invalidateAll, useApi } from '@/lib/useApi';
 import type { MaintenanceItem, ServiceRecord } from '@caradvocate/shared';
 
@@ -70,10 +70,25 @@ export function MyCarPage() {
       <section className="grid gap-6 lg:grid-cols-2 lg:items-start">
         <VehicleImage vehicle={vehicle} />
 
-        <div className="min-w-0 space-y-4">
+        {/*
+          `lg:aspect-[3/2]` is what makes this column end level with the photo, and it is exact
+          rather than tuned. Both columns are the same width -- one `grid-cols-2`, one gap -- and
+          the photo's frame is `aspect-[3/2]` of that width, so the same ratio on this column
+          resolves to the same pixel height at every window size.
+
+          It replaced a hardcoded height on the trend plot, which could not work: the photo's
+          height moves with the window while the card's does not, so any single number was right
+          at one width and wrong at every other.
+
+          The card takes `flex-1` and the plot inside it takes the slack, so the column absorbs
+          the difference in the one place that has height to spare.
+        */}
+        <div className="flex min-w-0 flex-col gap-4 lg:aspect-[3/2]">
           <div>
             {/* The one h1 on the page. Everything below is a signpost within it. */}
-            <h1 className="text-h1 font-bold">{vehicleName(vehicle)}</h1>
+            {/* Short name: year, make, model and nothing else. The trim is still on the Account
+                page, where it is one field among several rather than the car's title. */}
+            <h1 className="text-h2 font-bold">{vehicleShortName(vehicle)}</h1>
             <p className="mt-2 text-body text-muted-foreground">
               {formatMileage(vehicle.mileage)}
               {/* No VIN is a normal state for a car added without one. */}
@@ -81,7 +96,7 @@ export function MyCarPage() {
             </p>
           </div>
 
-          <ValueCard vehicle={vehicle} />
+          <ValueCard vehicle={vehicle} className="lg:min-h-0 lg:flex-1" />
         </div>
       </section>
 

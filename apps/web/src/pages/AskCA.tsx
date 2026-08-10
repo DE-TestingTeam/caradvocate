@@ -4,7 +4,7 @@ import { MessageBubble, PreviewBubble, TypingBubble } from '@/components/ask/Mes
 import { useVehicle } from '@/components/layout/RequireVehicle';
 import { sendChatMessage } from '@/lib/api';
 import { loadTranscript, saveTranscript } from '@/lib/chatTranscript';
-import { vehicleName } from '@/lib/format';
+import { vehicleShortName } from '@/lib/format';
 import type { ChatMessage } from '@caradvocate/shared';
 
 /**
@@ -74,9 +74,9 @@ export function AskCAPage() {
     // and takes width instead, so that allowance would now just leave a gap under the composer.
     <div className="flex h-[calc(100dvh-5.5rem)] flex-col">
       <div className="shrink-0 border-b pb-4">
-        <h1 className="text-h1 font-bold">Ask CA</h1>
+        <h1 className="text-h2 font-bold">Ask CA</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          {`Ask anything about your ${vehicleName(vehicle)}`}
+          {`Ask anything about your ${vehicleShortName(vehicle)}`}
         </p>
       </div>
 

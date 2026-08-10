@@ -60,7 +60,11 @@ export function MaintenanceList({
               </div>
 
               <div className="flex shrink-0 items-center gap-2">
-                <Badge variant={meta.variant}>{meta.label}</Badge>
+                {/* `shrink-0` to match the recall and known-issue badges: without it "Up to date"
+                    wraps to two lines next to a long job name instead of holding its width. */}
+                <Badge variant={meta.variant} className="shrink-0">
+                  {meta.label}
+                </Badge>
                 <button
                   type="button"
                   onClick={() => onEdit(item)}

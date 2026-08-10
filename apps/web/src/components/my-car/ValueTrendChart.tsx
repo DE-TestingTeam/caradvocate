@@ -9,6 +9,21 @@ import { cn } from '@/lib/utils';
 export const TREND_POINTS = 6;
 
 /**
+ * THE PLOT HAS NO HEIGHT OF ITS OWN. It fills whatever its container gives it, which on My Car
+ * is the space left over once the value card has been sized against the photo beside it.
+ *
+ * This used to be a fixed pixel height, picked so the card's bottom edge landed level with the
+ * photo's. That could never work: the photo is `aspect-[3/2]`, so its height is two thirds of
+ * the column width and moves with the window, while the card's height is near enough constant.
+ * A single number can only be right at one window size, and was wrong at every other. See the
+ * masthead in pages/MyCar.tsx for how the height is derived now.
+ *
+ * `h-full` therefore, and the caller owns the box. The one thing to preserve: the chart and the
+ * placeholder must resolve to the SAME height, or the card changes shape the month the line
+ * first appears.
+ */
+
+/**
  * Stands in for the trend line before there is one to draw.
  *
  * A car's value is checked once a month and the trend is built forward from the first check
@@ -24,20 +39,16 @@ export const TREND_POINTS = 6;
  * `aria-hidden` because it carries no information the caption beside it does not already state
  * in words; a screen reader announcing six bullets would be noise.
  */
-export function ValueTrendPlaceholder({ collected, compact = false }: { collected: number; compact?: boolean }) {
+export function ValueTrendPlaceholder({ collected }: { collected: number }) {
   return (
-    <div
-      aria-hidden="true"
-      className={cn('relative flex items-center justify-between', compact ? 'h-8' : 'h-[120px]')}
-    >
+    <div aria-hidden="true" className="relative flex h-full items-center justify-between">
       {/* The baseline the dots will eventually sit on, dashed to read as provisional. */}
       <div className="absolute inset-x-0 top-1/2 border-t border-dashed border-border" />
       {Array.from({ length: TREND_POINTS }, (_, index) => (
         <span
           key={index}
           className={cn(
-            'relative rounded-full',
-            compact ? 'h-1.5 w-1.5' : 'h-2 w-2',
+            'relative h-2 w-2 rounded-full',
             index < collected ? 'bg-foreground' : 'bg-border',
           )}
         />
@@ -48,31 +59,16 @@ export function ValueTrendPlaceholder({ collected, compact = false }: { collecte
 
 interface ValueTrendChartProps {
   data: { month: string; value: number }[];
-  /** Sparkline mode: no axes, fixed small height. */
-  compact?: boolean;
 }
 
-export function ValueTrendChart({ data, compact = false }: ValueTrendChartProps) {
-  if (compact) {
-    return (
-      <ResponsiveContainer width="100%" height={32}>
-        <LineChart data={data} margin={{ top: 4, right: 2, bottom: 4, left: 2 }}>
-          <YAxis hide domain={['dataMin - 200', 'dataMax + 200']} />
-          <Line
-            type="monotone"
-            dataKey="value"
-            stroke="hsl(var(--foreground))"
-            strokeWidth={1.5}
-            dot={false}
-            isAnimationActive={false}
-          />
-        </LineChart>
-      </ResponsiveContainer>
-    );
-  }
-
+/**
+ * One size, with month labels. The `compact` sparkline mode went with the "30d trend" slot in the
+ * card header -- an axis-less line 32px tall could show a direction but not over what period, and
+ * the period was the part that was wrong.
+ */
+export function ValueTrendChart({ data }: ValueTrendChartProps) {
   return (
-    <ResponsiveContainer width="100%" height={120}>
+    <ResponsiveContainer width="100%" height="100%">
       <LineChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
         <XAxis
           dataKey="month"

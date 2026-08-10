@@ -16,7 +16,7 @@ import { useToast } from '@/components/ui/toast';
 import { useVehicle } from '@/components/layout/RequireVehicle';
 import { getAssessment } from '@/lib/api';
 import { isCompleted } from '@/lib/assessment';
-import { formatCurrency, formatMileage, vehicleName } from '@/lib/format';
+import { formatCurrency, formatMileage, vehicleShortName } from '@/lib/format';
 import { useApi } from '@/lib/useApi';
 
 /**
@@ -55,7 +55,7 @@ export function AssessmentDetailPage() {
     );
   }
 
-  const vehicleLabel = vehicleName(vehicle);
+  const vehicleLabel = vehicleShortName(vehicle);
   const mileage = formatMileage(assessment.mileageAtAssessment);
   const subtitle = assessment.quote
     ? `Quote: ${formatCurrency(assessment.quote.amount)} · ${vehicleLabel} · ${mileage}`
@@ -90,7 +90,7 @@ export function AssessmentDetailPage() {
       </div>
 
       <div className="mt-6 space-y-3">
-        <Button size="lg" className="w-full" onClick={() => toast('Assessment saved.')}>
+        <Button className="w-full" onClick={() => toast('Assessment saved.')}>
           Save assessment
         </Button>
 
@@ -100,7 +100,7 @@ export function AssessmentDetailPage() {
             Repair completed
           </div>
         ) : (
-          <Button size="lg" variant="secondary" className="w-full" onClick={() => setCompleting(true)}>
+          <Button variant="secondary" className="w-full" onClick={() => setCompleting(true)}>
             Mark repair as completed
           </Button>
         )}

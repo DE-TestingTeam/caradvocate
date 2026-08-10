@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
 import { Eye, EyeOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -37,8 +37,7 @@ function humanizeAuthError(message: string): string {
 }
 
 export function LoginPage() {
-  const { signIn, signUp, signInWithGoogle } = useAuth();
-  const navigate = useNavigate();
+  const { signIn, signUp, authenticated, loading } = useAuth();
   const location = useLocation();
 
   const [mode, setMode] = React.useState<Mode>('signin');
@@ -99,8 +98,12 @@ export function LoginPage() {
 
     try {
       if (mode === 'signin') {
+        // No navigate here on purpose -- leaving the page is the redirect below, driven by the
+        // session actually arriving. `signIn` resolves when Supabase accepts the password, which
+        // is BEFORE `onAuthStateChange` has told this provider about it, so navigating here raced
+        // the session: AuthGate would still see `authenticated: false`, bounce straight back to
+        // /login, and nothing then moved anyone off it. That was the "login does not redirect" bug.
         await signIn(email.trim(), password);
-        navigate(from, { replace: true });
       } else {
         await signUp(email.trim(), password);
         // Depending on the project's settings this may require confirming an
@@ -114,6 +117,19 @@ export function LoginPage() {
       setBusy(false);
     }
   }
+
+  /**
+   * Signed in? Leave. Declarative rather than a `navigate()` call after the password is accepted,
+   * because the thing that decides whether the app will let you in is this same `authenticated`
+   * flag -- so the redirect has to be driven by it, not by a moment that merely precedes it.
+   *
+   * It also covers a case the old imperative navigate never did: opening /login directly while
+   * already signed in, which used to render a sign-in form to someone who was already signed in.
+   *
+   * Guarded on `loading` so the form is not flashed away and back while the initial
+   * `getSession()` is still in flight.
+   */
+  if (!loading && authenticated) return <Navigate to={from} replace />;
 
   const passwordHintId = mode === 'signup' ? 'password-hint' : undefined;
   const passwordDescribedBy =
@@ -227,35 +243,16 @@ export function LoginPage() {
             <p className="rounded-md border bg-muted p-3 text-sm text-muted-foreground">{notice}</p>
           )}
 
-          {/* Disabled only while a request is in flight, which is the one case where the
-              reason is self-evident from the label. */}
-          <Button type="submit" className="w-full" disabled={busy}>
-            {busy ? 'Working…' : mode === 'signin' ? 'Sign in' : 'Create account'}
-          </Button>
+          {/* The extra gap is padding on a wrapper rather than a margin on the button, because
+              the form's `space-y-4` rule outranks a `mt-*` class on its own children. */}
+          <div className="pt-2">
+            {/* Disabled only while a request is in flight, which is the one case where the
+                reason is self-evident from the label. */}
+            <Button type="submit" className="w-full" disabled={busy}>
+              {busy ? 'Working…' : mode === 'signin' ? 'Sign in' : 'Create account'}
+            </Button>
+          </div>
         </form>
-
-        <div className="my-4 flex items-center gap-3">
-          <div className="h-px flex-1 bg-border" />
-          <span className="text-xs uppercase tracking-widest text-muted-foreground">or</span>
-          <div className="h-px flex-1 bg-border" />
-        </div>
-
-        {/*
-          Stays neutral. Google's sign-in branding expects a white or grey button, and putting
-          our own colour on someone else's identity provider misrepresents whose it is.
-        */}
-        <Button
-          type="button"
-          variant="outline"
-          className="w-full"
-          disabled={busy}
-          onClick={() => {
-            setError(undefined);
-            signInWithGoogle().catch((cause: Error) => setError(humanizeAuthError(cause.message)));
-          }}
-        >
-          Continue with Google
-        </Button>
       </div>
 
       <Button

@@ -1,6 +1,7 @@
 import { AlertTriangle, ShieldCheck } from 'lucide-react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Badge } from '@/components/ui/badge';
+import { Card } from '@/components/ui/card';
 import { formatLongDate, formatRecallComponent, formatNhtsaProse } from '@/lib/format';
 import { nhtsaVinRecallUrl } from '@/lib/nhtsa';
 import { cn } from '@/lib/utils';
@@ -78,58 +79,65 @@ export function RecallsList({
     <ul className="space-y-2">
       {report.recalls.map((recall) => (
         // A recall the owner has had done recedes but stays listed -- they may be misremembering.
-        <li key={recall.id} className={cn('rounded-lg border p-3', recall.repaired && 'opacity-60')}>
-          <div className="flex items-start justify-between gap-3">
-            <span className="flex min-w-0 items-center gap-2">
+        //
+        // `Card` rather than the same classes written out by hand. The hand-rolled version was
+        // `rounded-lg border` and nothing else, so it was missing `bg-card` -- these rows sat
+        // transparent on the off-white page while the maintenance and known-issue rows below
+        // them were white. Same list, same page, two different fills.
+        <li key={recall.id}>
+          <Card className={cn('p-3', recall.repaired && 'opacity-60')}>
+            <div className="flex items-start justify-between gap-3">
+              <span className="flex min-w-0 items-center gap-2">
+                {recall.repaired ? (
+                  <ShieldCheck className="h-4 w-4 shrink-0 text-muted-foreground" />
+                ) : (
+                  /* warning-strong, not warning: the fill amber measures 2.14:1 on
+                     white and all but disappears at this size. */
+                  <AlertTriangle
+                    className={`h-4 w-4 shrink-0 ${recall.parkIt ? 'text-destructive' : 'text-warning-strong'}`}
+                  />
+                )}
+                <span className="min-w-0 font-medium">{formatRecallComponent(recall.component)}</span>
+              </span>
               {recall.repaired ? (
-                <ShieldCheck className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <Badge variant="outline" className="shrink-0">
+                  Done
+                </Badge>
               ) : (
-                /* warning-strong, not warning: the fill amber measures 2.14:1 on
-                   white and all but disappears at this size. */
-                <AlertTriangle
-                  className={`h-4 w-4 shrink-0 ${recall.parkIt ? 'text-destructive' : 'text-warning-strong'}`}
-                />
+                <UrgencyBadge recall={recall} />
               )}
-              <span className="min-w-0 font-medium">{formatRecallComponent(recall.component)}</span>
-            </span>
-            {recall.repaired ? (
-              <Badge variant="outline" className="shrink-0">
-                Done
-              </Badge>
-            ) : (
-              <UrgencyBadge recall={recall} />
+            </div>
+
+            {/* The risk is never collapsed. It is the reason to act, and someone
+                scanning this list is deciding whether to drive tomorrow. */}
+            {recall.consequence && <p className="mt-2 text-sm">{formatNhtsaProse(recall.consequence)}</p>}
+
+            <p className="mt-2 text-xs text-muted-foreground">
+              {/* The campaign number is what a dealer needs to look the recall up. */}
+              NHTSA campaign {recall.campaignNumber}
+              {recall.reportedOn && ` · reported ${formatLongDate(recall.reportedOn)}`}
+            </p>
+
+            {(recall.summary || recall.remedy) && (
+              <Accordion type="single" collapsible>
+                <AccordionItem value="detail" className="border-0">
+                  {/*
+                    `border-b-0` for the same reason the benchmark cards pass it: the trigger's
+                    own rule is meant for a top-level accordion, and here the "Had this done?"
+                    row below opens with a border-t. Collapsed, the content between them is
+                    zero-height, so the two rules landed 8px apart and read as a double line.
+                  */}
+                  <AccordionTrigger className="border-b-0 py-2 text-sm">What to do about it</AccordionTrigger>
+                  <AccordionContent className="space-y-3 pb-1 text-sm">
+                    {recall.summary && <Detail label="What is wrong">{formatNhtsaProse(recall.summary)}</Detail>}
+                    {recall.remedy && <Detail label="Remedy">{formatNhtsaProse(recall.remedy)}</Detail>}
+                  </AccordionContent>
+                </AccordionItem>
+              </Accordion>
             )}
-          </div>
 
-          {/* The risk is never collapsed. It is the reason to act, and someone
-              scanning this list is deciding whether to drive tomorrow. */}
-          {recall.consequence && <p className="mt-2 text-sm">{formatNhtsaProse(recall.consequence)}</p>}
-
-          <p className="mt-2 text-xs text-muted-foreground">
-            {/* The campaign number is what a dealer needs to look the recall up. */}
-            NHTSA campaign {recall.campaignNumber}
-            {recall.reportedOn && ` · reported ${formatLongDate(recall.reportedOn)}`}
-          </p>
-
-          {(recall.summary || recall.remedy) && (
-            <Accordion type="single" collapsible>
-              <AccordionItem value="detail" className="border-0">
-                {/*
-                  `border-b-0` for the same reason the benchmark cards pass it: the trigger's
-                  own rule is meant for a top-level accordion, and here the "Had this done?"
-                  row below opens with a border-t. Collapsed, the content between them is
-                  zero-height, so the two rules landed 8px apart and read as a double line.
-                */}
-                <AccordionTrigger className="border-b-0 py-2 text-sm">What to do about it</AccordionTrigger>
-                <AccordionContent className="space-y-3 pb-1 text-sm">
-                  {recall.summary && <Detail label="What is wrong">{formatNhtsaProse(recall.summary)}</Detail>}
-                  {recall.remedy && <Detail label="Remedy">{formatNhtsaProse(recall.remedy)}</Detail>}
-                </AccordionContent>
-              </AccordionItem>
-            </Accordion>
-          )}
-
-          <RepairStatus recall={recall} onChange={onStatusChange} />
+            <RepairStatus recall={recall} onChange={onStatusChange} />
+          </Card>
         </li>
       ))}
 

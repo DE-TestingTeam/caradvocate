@@ -6,7 +6,9 @@ export function FairTotalCard({ assessment }: { assessment: Assessment }) {
   return (
     <Card>
       <CardContent className="space-y-2 p-4 sm:p-6">
-        <h2 className="text-lg font-semibold tracking-tight">
+        {/* `text-body-lg`, the app's own scale, rather than a flat `text-lg`. Every card title
+            in the app is this size and weight -- see the note in AssessmentDetail. */}
+        <h2 className="text-body-lg font-semibold tracking-tight">
           Fair Total Estimate
         </h2>
         <p className="text-4xl font-bold tracking-tight">

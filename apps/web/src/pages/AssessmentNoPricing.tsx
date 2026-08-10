@@ -6,7 +6,7 @@ import { Card } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { getRepairCatalog } from '@/lib/api';
-import { vehicleName } from '@/lib/format';
+import { vehicleShortName } from '@/lib/format';
 import { useApi } from '@/lib/useApi';
 
 /**
@@ -29,7 +29,7 @@ export function AssessmentNoPricingPage() {
   const catalog = useApi(getRepairCatalog);
 
   const repair = catalog.data?.repairs.find((item) => item.id === repairId);
-  const car = vehicleName(vehicle);
+  const car = vehicleShortName(vehicle);
 
   if (!catalog.data) {
     return (
@@ -78,11 +78,11 @@ export function AssessmentNoPricingPage() {
       </Card>
 
       <div className="mt-6 space-y-3">
-        <Button asChild size="lg" className="w-full">
+        <Button asChild className="w-full">
           <Link to="/assessments/new">Pick a different repair</Link>
         </Button>
         {/* The way out, beneath the way forward: outlined, so only one of the two is filled. */}
-        <Button asChild size="lg" variant="secondary" className="w-full">
+        <Button asChild variant="secondary" className="w-full">
           <Link to="/assessments">Back to Repair Assessment</Link>
         </Button>
       </div>

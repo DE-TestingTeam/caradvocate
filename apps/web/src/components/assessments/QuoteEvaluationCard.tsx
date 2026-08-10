@@ -17,7 +17,7 @@ export function QuoteEvaluationCard({
     <Card className="border-2 bg-muted/60">
       <CardContent className="space-y-3 p-4 sm:p-6">
         <div className="flex items-start justify-between gap-3">
-          <h2 className="text-lg font-semibold tracking-tight">
+          <h2 className="text-body-lg font-semibold tracking-tight">
             Quote Evaluation
           </h2>
           {badge && (

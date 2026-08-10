@@ -165,7 +165,7 @@ export function NewAssessmentPage() {
         </p>
       )}
 
-      <Button size="lg" className="mt-8 w-full" disabled={!canSubmit} onClick={handleSubmit}>
+      <Button className="mt-8 w-full" disabled={!canSubmit} onClick={handleSubmit}>
         {submitting ? 'Starting…' : 'Start assessment'}
       </Button>
     </div>

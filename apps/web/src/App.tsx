@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { AppShell } from '@/components/layout/AppShell';
 import { AuthGate } from '@/components/layout/AuthGate';
+import { OnboardingGate } from '@/components/layout/OnboardingGate';
 import { RequirePaidPlan } from '@/components/layout/RequirePaidPlan';
 import { RequireVehicle } from '@/components/layout/RequireVehicle';
 import { AccountPage } from '@/pages/Account';
@@ -21,19 +22,26 @@ export default function App() {
       <Route element={<AppShell chrome={false} />}>
         <Route path="/login" element={<LoginPage />} />
         <Route element={<AuthGate />}>
-          <Route path="/onboarding" element={<OnboardingPage />} />
+          {/* Gated in the other direction: onboarding is for people who have not finished it. */}
+          <Route element={<OnboardingGate />}>
+            <Route path="/onboarding" element={<OnboardingPage />} />
+          </Route>
         </Route>
       </Route>
 
       <Route element={<AppShell />}>
         <Route element={<AuthGate />}>
-          {/* Account works without a vehicle, so it sits outside RequireVehicle. */}
-          <Route path="/account" element={<AccountPage />} />
-
+          {/*
+            Every signed-in page sits behind RequireVehicle, Account included. It used to sit
+            outside, on the grounds that it reads without a car -- but "renders without a car"
+            is not the same as "is somewhere a new signup should be able to reach", and it was
+            the one door into the app that onboarding did not stand in front of.
+          */}
           <Route element={<RequireVehicle />}>
             <Route path="/" element={<Navigate to="/my-car" replace />} />
             <Route path="/my-car" element={<MyCarPage />} />
             <Route path="/ask" element={<AskCAPage />} />
+            <Route path="/account" element={<AccountPage />} />
             {/* The Repair Cost Checker: the only paid surface in v1. */}
             <Route element={<RequirePaidPlan />}>
               <Route path="/assessments" element={<AssessmentsPage />} />

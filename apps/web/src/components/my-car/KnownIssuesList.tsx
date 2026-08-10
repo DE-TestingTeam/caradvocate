@@ -85,7 +85,11 @@ export function KnownIssuesList({ report, vehicle }: { report: KnownIssueReport;
       <ul className="space-y-2">
         {report.issues.map((issue) => (
           <li key={issue.id}>
-            <Card className="flex items-center justify-between gap-3 p-3">
+            {/* `items-start`, as in MaintenanceList and RecallsList. An owner-report row is two
+                lines -- the component, then the counts -- and centring floated the badge against
+                the middle of that block, so the badges down this list sat at a different height
+                to the ones in the two lists either side of it. */}
+            <Card className="flex items-start justify-between gap-3 p-3">
               <div className="min-w-0">
                 <span>{issue.source === 'owner_reports' ? formatRecallComponent(issue.label) : issue.label}</span>
                 {issue.source === 'owner_reports' && <ReportDetail issue={issue} />}

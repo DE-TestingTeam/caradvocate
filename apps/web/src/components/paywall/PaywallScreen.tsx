@@ -121,7 +121,7 @@ export function PaywallScreen({
           ))}
         </div>
 
-        <Button size="lg" className="w-full" onClick={() => onUnlock(selected)} disabled={unlocking}>
+        <Button className="w-full" onClick={() => onUnlock(selected)} disabled={unlocking}>
           {unlocking ? 'Unlocking…' : `Unlock for ${price}/${chosen.interval}`}
         </Button>
 

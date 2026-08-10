@@ -32,10 +32,11 @@ export function PageHeader({
         {/* Title and subtitle are one unit, tighter than the gap to the back link above them --
             hence the nested `space-y-1` rather than one `space-y` doing both jobs. */}
         <div className="space-y-1">
-          {/* `text-h1` carries its own line-height and tracking, so there is no `tracking-tight`
-              here -- the negative tracking a 40px heading needs is part of the size, not a choice
-              made per heading. */}
-          <h1 className="text-h1 font-bold">{title}</h1>
+          {/* `text-h2` carries its own line-height and tracking, so there is no `tracking-tight`
+              here -- the negative tracking a 30px heading needs is part of the size, not a choice
+              made per heading. Every page title in the app is on this step: this one, "Ask CA",
+              the two onboarding steps, and the car name on My Car. */}
+          <h1 className="text-h2 font-bold">{title}</h1>
           {/*
             `text-sm`, matching the subtitle under "Ask CA". A subtitle is orientation, not
             reading matter: at `body-lg` it competed with the h1 for the first look, and every

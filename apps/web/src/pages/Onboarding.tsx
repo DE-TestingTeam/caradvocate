@@ -86,7 +86,7 @@ function ProfileStep({
 
   return (
     <>
-      <h1 className="mt-4 text-h1 font-bold">Welcome to CarAdvocate</h1>
+      <h1 className="mt-4 text-h2 font-bold">Welcome to CarAdvocate</h1>
       <p className="mt-1 text-muted-foreground">A couple of details, then let's add your car.</p>
 
       <Card className="mt-6">
@@ -130,7 +130,7 @@ function ProfileStep({
               </p>
             )}
 
-            <Button type="submit" size="lg" className="w-full" disabled={!canContinue || saving}>
+            <Button type="submit" className="w-full" disabled={!canContinue || saving}>
               {saving ? 'Saving…' : 'Continue'}
             </Button>
           </form>
@@ -227,7 +227,7 @@ function VehicleStep({ onBack, zip }: { onBack: () => void; zip: string }) {
         Back
       </button>
 
-      <h1 className="mt-2 text-h1 font-bold">Add your car</h1>
+      <h1 className="mt-2 text-h2 font-bold">Add your car</h1>
       <p className="mt-1 text-muted-foreground">
         This is what everything else is built around — your history, recalls, and repair pricing.
       </p>
@@ -311,7 +311,7 @@ function VehicleStep({ onBack, zip }: { onBack: () => void; zip: string }) {
               </p>
             )}
 
-            <Button type="submit" size="lg" className="w-full" disabled={!canSave || saving}>
+            <Button type="submit" className="w-full" disabled={!canSave || saving}>
               {saving ? 'Saving…' : 'Add vehicle'}
             </Button>
           </form>
