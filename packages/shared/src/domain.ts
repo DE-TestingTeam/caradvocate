@@ -32,7 +32,10 @@ export interface Vehicle {
   make: string;
   model: string;
   trim?: string;
-  /** Absent when the owner skipped it during onboarding. */
+  /**
+   * Required at onboarding, but still optional here: cars added before that rule have no VIN
+   * on file and nothing backfills them, so every reader must keep handling the absent case.
+   */
   vin?: string;
   mileage: number;
   /** Absent when the owner skipped it. Needed to localize a market value estimate. */

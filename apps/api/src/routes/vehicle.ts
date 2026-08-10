@@ -114,8 +114,9 @@ vehicleRouter.post('/', validateBody(newVehicleSchema), async (req, res) => {
       make: req.body.make,
       model: req.body.model,
       trim: req.body.trim ?? null,
-      // Left null when skipped. The owner can add it later from Account.
-      vin: req.body.vin ?? null,
+      // Required by newVehicleSchema, so this is always a real VIN. The column stays nullable
+      // for cars added before that rule -- see the Vehicle contract in shared/domain.ts.
+      vin: req.body.vin,
       mileage: req.body.mileage,
       // The owner is reading their own odometer as they type this, so today is the truth. The
       // column defaults to null and null means stale, which would put a confirmation prompt on

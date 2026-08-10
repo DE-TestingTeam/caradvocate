@@ -94,8 +94,9 @@ what we know?", with three bands including an explicit *not enough to say*.
 
 **2. Value + trend line — working, with three limits.**
 
-- **Both a VIN and a zip must be on file.** Onboarding lets an owner skip either; a car missing one
-  shows "not available yet". Live: 3 of 6 cars have both.
+- **Both a VIN and a zip must be on file.** Onboarding now requires the VIN and still lets an owner
+  skip the zip; a car missing either shows "not available yet". Live: 3 of 6 cars have both, and the
+  cars that predate the VIN rule are not backfilled.
 - **The trend cannot be backfilled.** MarketCheck's predict endpoint takes no as-of date, and its
   history endpoint returns *listing* records — a different quantity, usually empty. Joining them
   would draw a trend that never happened. The line builds forward, one point per month. Live: the
@@ -278,8 +279,8 @@ table — the single place that answers it, so the two cannot drift.
   this car* (GMT-400, 0); never asked because there is no VIN (Golf, 0); and seeded demo values that
   are not the manufacturer's (Civic 5, RAV4 1). **Only the first may produce a "due / not due"
   signal** — an empty interval list is not evidence that nothing is due. The other three degrade to
-  *not enough to say*. Two are recoverable: a VIN would fix the Golf, and **nothing in the app ever
-  asks for one**.
+  *not enough to say*. Two are recoverable: a VIN would fix the Golf, and while onboarding now
+  requires one, **nothing asks the cars that predate that rule**.
 - **Open Labor Project allows 10 calls per day** on the free tier, then 429. A sync makes at most one
   call per model per week, so the limit caps how many *different* cars can be primed in a day. Paid
   tier is $49/mo for 1,000/day.
@@ -584,22 +585,19 @@ spec mention them.
 
 ### Open questions
 
-1. **Commit the assessment-context work.** Migration `0022` is applied to the shared database while
-   `schema.ts`, `0022_assessment_context.sql`, `ContextStep.tsx`, the shared types and the route are
-   still only in the working tree. Database ahead of the code is the wrong way round, and it is the
-   same skew that produced `column "outcome" does not exist` on a live request on 8 August.
-2. **Is `MARKET_CHECK_API_KEY` in the repository's GitHub Actions secrets?** Without it the nightly
+1. **Is `MARKET_CHECK_API_KEY` in the repository's GitHub Actions secrets?** Without it the nightly
    sweep exits early naming the cause and does nothing.
-3. **Has the market-value sweep ever made a real vendor call?** `npm run refresh:values -- --dry-run`
+2. **Has the market-value sweep ever made a real vendor call?** `npm run refresh:values -- --dry-run`
    confirmed the cadence (0 due today, 3 at +31 days, three cars never due for lack of VIN or zip),
    but no run from inside the workflow has happened. Use `workflow_dispatch` with a small `--limit`.
-4. **Talk to whoever owns the factory-schedule migration line** — one line per database is the fix.
-5. **Run `npm run verify:token` with a real token** — the harness is built, it needs the credential.
-6. **Re-check the Ask CA timings on more than one car**, and watch `cacheRead` (§3).
-7. **Exercise the Account screen by hand** since `user_features` was dropped (§6).
-8. **Price the licensed book-time options and trial a second pricing vendor** against a real list of
+3. **Talk to whoever owns the factory-schedule migration line** — one line per database is the fix.
+4. **Run `npm run verify:token` with a real token** — the harness is built, it needs the credential.
+5. **Re-check the Ask CA timings on more than one car**, and watch `cacheRead` (§3).
+6. **Exercise the Account screen by hand** since `user_features` was dropped (§6).
+7. **Price the licensed book-time options and trial a second pricing vendor** against a real list of
    signup vehicles (§4).
-9. **Decide the shape of the necessity verdict** (§2 gap 1). Inputs are collected and the supporting
+8. **Decide the shape of the necessity verdict** (§2 gap 1). Inputs are collected and the supporting
    data is loaded; what is left is how the band is produced.
-10. **Nothing asks an owner for a VIN after onboarding**, so a car without one silently gets no
-    valuation, no factory schedule and no interval signal (§4). One car of six is in this state.
+9. **The one existing car with no VIN still has none.** Onboarding now requires a VIN, so no new car
+   can reach that state, but nothing backfills the cars already in it and nothing asks their owners
+   (§4). Every reader still has to handle an absent VIN.

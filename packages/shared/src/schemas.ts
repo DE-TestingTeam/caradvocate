@@ -127,8 +127,12 @@ export const newVehicleSchema = z.object({
   make: z.string().trim().min(1, 'Make is required').max(60),
   model: z.string().trim().min(1, 'Model is required').max(80),
   trim: z.string().trim().max(80).optional(),
-  /** Optional: plenty of owners cannot find their VIN on the spot. */
-  vin: vinSchema.optional(),
+  /**
+   * Required. Valuation, the factory maintenance schedule and the interval signal are all
+   * keyed by VIN, so a car added without one silently gets none of them, and nothing in the
+   * app ever asks again. Better to hold onboarding for the 17 characters on the dashboard.
+   */
+  vin: vinSchema,
   mileage: z.number().int().min(0).max(2_000_000),
   /** Optional: needed to price the car, but nobody should be blocked on it at onboarding. */
   zip: zipSchema.optional(),

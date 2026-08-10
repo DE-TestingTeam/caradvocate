@@ -158,8 +158,15 @@ function VehicleStep({ onBack, zip }: { onBack: () => void; zip: string }) {
 
   const vinLooksComplete = vin.trim().length === 17;
   const zipLooksComplete = /^\d{5}$/.test(zip.trim());
+  // The VIN is part of this, not just the lookup shortcut it used to be: valuation, the factory
+  // schedule and the interval signal are all keyed by it, and nothing asks again afterwards.
   const canSave =
-    Number(year) >= 1900 && make.trim().length > 0 && model.trim().length > 0 && mileage !== '' && Number(mileage) >= 0;
+    vinLooksComplete &&
+    Number(year) >= 1900 &&
+    make.trim().length > 0 &&
+    model.trim().length > 0 &&
+    mileage !== '' &&
+    Number(mileage) >= 0;
 
   async function handleDecode() {
     setDecoding(true);
@@ -174,7 +181,9 @@ function VehicleStep({ onBack, zip }: { onBack: () => void; zip: string }) {
       if (decoded.trim) setTrim(decoded.trim);
       setDecodeNote('Found it. Check the details below and add your mileage.');
     } catch {
-      setDecodeNote("Could not look that VIN up. Fill in the details below instead — it works just as well.");
+      // The VIN is kept either way -- only the prefill failed, and the rest of the app still
+      // needs it. Saying "fill it in instead" here would read as permission to clear the field.
+      setDecodeNote('Could not look that VIN up. Keep it as typed and fill in the details below yourself.');
     } finally {
       setDecoding(false);
     }
@@ -193,7 +202,7 @@ function VehicleStep({ onBack, zip }: { onBack: () => void; zip: string }) {
         make: make.trim(),
         model: model.trim(),
         trim: trim.trim() || undefined,
-        vin: vinLooksComplete ? vin.trim().toUpperCase() : undefined,
+        vin: vin.trim().toUpperCase(),
         mileage: Number(mileage),
         zip: zipLooksComplete ? zip.trim() : undefined,
       });
@@ -226,9 +235,10 @@ function VehicleStep({ onBack, zip }: { onBack: () => void; zip: string }) {
       <Card className="mt-6">
         <CardContent className="space-y-4 p-4 sm:p-6">
           <div className="space-y-2">
-            <Label htmlFor="vin">VIN (optional)</Label>
+            <Label htmlFor="vin">VIN</Label>
             <p className="text-sm text-muted-foreground">
-              17 characters, on the driver's side dashboard or door frame. We use it to fill in the rest.
+              17 characters, on the driver's side dashboard or door frame. It is what your car's value,
+              service schedule and recalls are looked up by, so we need it to be right.
             </p>
             <div className="flex gap-2">
               <div className="relative flex-1">
