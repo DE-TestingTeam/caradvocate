@@ -3,14 +3,31 @@ import { Link } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { isCompleted, quoteStatusLabel, verdictBadge } from '@/lib/assessment';
-import { formatLongDate } from '@/lib/format';
+import { isCompleted, verdictBadge } from '@/lib/assessment';
+import { formatCurrency, formatCurrencyRange, formatLongDate } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { Assessment } from '@caradvocate/shared';
 
 interface AssessmentCardProps {
   assessment: Assessment;
   onMarkComplete: (assessment: Assessment) => void;
+}
+
+/**
+ * The figures, replacing the old "Quote Evaluated" / "No Quote" labels -- which said whether a
+ * field was filled in, not what anyone learned. What a scan of this list wants is the money:
+ * what was quoted, what fair looked like, and -- once it is done -- what was actually paid.
+ */
+function moneyLine(assessment: Assessment): string {
+  const fair = formatCurrencyRange(assessment.fairTotalLow, assessment.fairTotalHigh);
+
+  if (isCompleted(assessment) && assessment.completedCost !== undefined) {
+    return `Done for ${formatCurrency(assessment.completedCost)} · fair range was ${fair}`;
+  }
+  if (assessment.quote) {
+    return `Quoted ${formatCurrency(assessment.quote.amount)} · fair range ${fair}`;
+  }
+  return `Fair range ${fair}`;
 }
 
 export function AssessmentCard({
@@ -54,7 +71,7 @@ export function AssessmentCard({
         <div className="min-w-0 basis-full sm:flex-1 sm:basis-auto">
           <h3 className="font-semibold leading-snug">{assessment.repairName}</h3>
           <p className="mt-1 text-sm text-muted-foreground">
-            {formatLongDate(assessment.createdAt)} · {quoteStatusLabel(assessment)}
+            {formatLongDate(assessment.createdAt)} · {moneyLine(assessment)}
           </p>
         </div>
 

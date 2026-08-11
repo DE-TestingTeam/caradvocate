@@ -1,7 +1,10 @@
 import * as React from 'react';
+import { MessageSquarePlus } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
 import { Composer } from '@/components/ask/Composer';
 import { MessageBubble, PreviewBubble, TypingBubble } from '@/components/ask/MessageBubble';
 import { useVehicle } from '@/components/layout/RequireVehicle';
+import { Button } from '@/components/ui/button';
 import { sendChatMessage } from '@/lib/api';
 import { loadTranscript, saveTranscript } from '@/lib/chatTranscript';
 import { vehicleShortName } from '@/lib/format';
@@ -15,6 +18,13 @@ import type { ChatMessage } from '@caradvocate/shared';
  * so stepping over to My Car to check a recall and coming back does not throw the thread away.
  * Closing the tab does. The subtitle says exactly that, because an owner who assumes either more
  * or less persistence than they get would be badly served by the surprise.
+ *
+ * `?q=` ARRIVES IN THE COMPOSER, NOT IN THE THREAD. My Car's model-watch row sends people here
+ * with a question about what owners report on their model, and it lands as a draft: on screen,
+ * editable, waiting on the send button. Nothing is sent for the owner. That is the same rule
+ * `?repair=` follows on the Repair Cost Checker, and it matters more here -- a thread that
+ * opened with a question they did not write, already answered, would be the first thing they
+ * read, and it would have spent a model call to get there.
  */
 export function AskCAPage() {
   const vehicle = useVehicle();
@@ -24,8 +34,17 @@ export function AskCAPage() {
   const [pending, setPending] = React.useState(false);
   const [preview, setPreview] = React.useState('');
   const [sendError, setSendError] = React.useState<string>();
-  const [draft, setDraft] = React.useState('');
   const bottomRef = React.useRef<HTMLDivElement>(null);
+
+  /*
+   * An INITIAL value, read once. Held in state from here on, so editing it, sending it, or
+   * having a failed send hand it back all work on the owner's text rather than re-reading a URL
+   * that has not changed. The param stays in the address bar rather than being cleared, so a
+   * refresh still arrives with the question -- as it does on the Repair Cost Checker.
+   */
+  const [params] = useSearchParams();
+  const prefill = params.get('q') ?? '';
+  const [draft, setDraft] = React.useState(prefill);
 
   React.useEffect(() => {
     // Guarded: scrollIntoView is missing in some non-browser test environments.
@@ -37,6 +56,34 @@ export function AskCAPage() {
   React.useEffect(() => {
     saveTranscript(vehicle.id, messages);
   }, [vehicle.id, messages]);
+
+  /**
+   * Start over.
+   *
+   * WHY THERE IS A CONTROL AT ALL. Until now the only routes to a clean slate were closing the
+   * tab or signing out, so an owner moving from a steering complaint to a brake quote carried
+   * the previous turns along as context whether they helped or not -- the API sends the last 10
+   * messages with every question. This is the owner saying "that topic is finished", which is
+   * a thing only they know.
+   *
+   * NO CONFIRMATION STEP, deliberately. `LogServiceDialog` deletes a persisted service record
+   * on one click with no second prompt; a tab-scoped transcript that was never stored anywhere
+   * is strictly less destructive than that, and guarding it harder than the app guards its own
+   * database rows would be the wrong way round. Re-asking costs a model call and about six
+   * seconds, which is the whole of the downside.
+   *
+   * THE DRAFT SURVIVES. This clears what was SAID, not what is being typed. Someone who has a
+   * half-written question in the box and wants the history gone should not lose the sentence
+   * they are in the middle of -- the same instinct as `handleSend`'s failure path, which hands
+   * the text back rather than swallowing it.
+   *
+   * `saveTranscript` turns an empty list into a `removeItem`, so this clears storage too rather
+   * than parking an empty array there.
+   */
+  function handleNewConversation() {
+    setMessages([]);
+    setSendError(undefined);
+  }
 
   async function handleSend(text: string) {
     const optimistic: ChatMessage = { id: `local_${Date.now()}`, role: 'user', text };
@@ -73,11 +120,34 @@ export function AskCAPage() {
     // (pt-6 + pb-16). It was 9rem when a 3.5rem top bar sat above; the nav moved to the side
     // and takes width instead, so that allowance would now just leave a gap under the composer.
     <div className="flex h-[calc(100dvh-5.5rem)] flex-col">
-      <div className="shrink-0 border-b pb-4">
-        <h1 className="text-h2 font-bold">Ask CA</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {`Ask anything about your ${vehicleShortName(vehicle)}`}
-        </p>
+      <div className="flex shrink-0 items-start justify-between gap-4 border-b pb-4">
+        <div className="min-w-0">
+          <h1 className="text-h2 font-bold">Ask CA</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {`Ask anything about your ${vehicleShortName(vehicle)}`}
+          </p>
+        </div>
+
+        {/*
+          Only once there is something to clear -- on an empty chat this is a button whose only
+          possible effect is nothing, sitting next to the sentence inviting the first question.
+
+          Disabled mid-answer, and that is a correctness guard rather than politeness: `handleSend`
+          appends the finished turn to whatever `messages` holds when the stream lands, so clearing
+          under a request in flight would empty the thread and then drop a lone reply into it.
+        */}
+        {messages.length > 0 && (
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={pending}
+            onClick={handleNewConversation}
+            className="shrink-0"
+          >
+            <MessageSquarePlus className="h-4 w-4" />
+            New conversation
+          </Button>
+        )}
       </div>
 
       {/* NOTE: aria-live so a screen reader announces the answer -- there is no other cue that
@@ -115,7 +185,17 @@ export function AskCAPage() {
       </div>
 
       <div className="shrink-0">
-        <Composer value={draft} onChange={setDraft} onSend={handleSend} disabled={pending} />
+        {/* Focused only when something was prefilled. An empty composer that grabs focus on
+            arrival opens the keyboard over half the screen on a phone, for someone who has not
+            said they want to type yet; a composer holding a question they did not write needs
+            the caret in it, or editing that question starts with hunting for where to click. */}
+        <Composer
+          value={draft}
+          onChange={setDraft}
+          onSend={handleSend}
+          disabled={pending}
+          autoFocus={prefill !== ''}
+        />
       </div>
     </div>
   );

@@ -9,6 +9,9 @@ import type {
   AssessmentPrompt,
   KnownIssue,
   MileageAtFailure,
+  NecessityBand,
+  NecessityShortfall,
+  NecessitySignal,
   Recall,
   RepairCatalogItem,
   ServiceRecord,
@@ -161,6 +164,19 @@ export function toAssessment(
       badge: row.recommendationBadge,
       body: row.recommendationBody,
     },
+    // Absent as a whole when the row was never judged -- created before the check existed --
+    // which the browser must not show as `not_enough`. Same rule as `context` below.
+    ...(row.necessityBand
+      ? {
+          necessity: {
+            band: row.necessityBand as NecessityBand,
+            signals: readSignals(row.necessitySignals),
+            ...(row.necessityShortfall
+              ? { shortfall: row.necessityShortfall as NecessityShortfall }
+              : {}),
+          },
+        }
+      : {}),
     // Absent as a whole when `promptedBy` is null -- an assessment created before the question
     // existed. A partial object would imply we asked and got nothing back.
     ...(row.promptedBy
@@ -217,6 +233,29 @@ export function toAssessment(
   }
 
   return assessment;
+}
+
+/**
+ * The stored signals, minus the rule id that produced each one.
+ *
+ * The id is kept in the column and dropped here on purpose: it is for reading the table later --
+ * which rules actually fire, and on how many cars -- and `failure_pattern_at_mileage` tells an
+ * owner nothing the sentence beside it does not.
+ *
+ * Defensive about the column's shape because jsonb is whatever was written, including by a hand
+ * fixing a row. A malformed entry is dropped rather than rendered: the verdict stands on the
+ * band, and half a sentence under it would read as a bug in the evidence.
+ */
+function readSignals(stored: unknown): NecessitySignal[] {
+  if (!Array.isArray(stored)) return [];
+
+  return stored.flatMap((entry) => {
+    if (!entry || typeof entry !== 'object') return [];
+    const { stance, detail } = entry as { stance?: unknown; detail?: unknown };
+    if (stance !== 'supports' && stance !== 'questions' && stance !== 'neutral') return [];
+    if (typeof detail !== 'string' || detail.trim() === '') return [];
+    return [{ stance, detail }];
+  });
 }
 
 export function toAccount(row: Row<typeof t.users>): Account {

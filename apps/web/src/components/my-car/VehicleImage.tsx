@@ -21,7 +21,16 @@ import { useApi } from '@/lib/useApi';
 import { cn } from '@/lib/utils';
 import type { Vehicle } from '@caradvocate/shared';
 
-export function VehicleImage({ vehicle }: { vehicle: Vehicle }) {
+export function VehicleImage({
+  vehicle,
+  compact = false,
+}: {
+  vehicle: Vehicle;
+  /** For thumbnail-sized frames: the no-photo placeholder drops its caption and the photo its
+      "i" disclaimer -- at thumbnail size the button covered a quarter of the car, and a
+      thumbnail invites less "that is my car" than the full-bleed photo did. */
+  compact?: boolean;
+}) {
   const photo = useApi(getVehicleImage, [vehicle.id]);
 
   // First load only. `useApi` keeps previous data through a refetch, and every mutation on
@@ -35,7 +44,7 @@ export function VehicleImage({ vehicle }: { vehicle: Vehicle }) {
   }
 
   const url = photo.data?.imageUrl;
-  if (!url) return <Unavailable />;
+  if (!url) return <Unavailable compact={compact} />;
 
   return (
     <figure className="relative">
@@ -50,7 +59,7 @@ export function VehicleImage({ vehicle }: { vehicle: Vehicle }) {
         />
       </Frame>
       {/* Outside Frame, which clips its own overflow -- the panel would be cut off inside it. */}
-      <PhotoDisclaimer />
+      {!compact && <PhotoDisclaimer />}
     </figure>
   );
 }
@@ -111,13 +120,17 @@ function Frame({ className, children }: { className?: string; children: React.Re
 }
 
 /** What My Car shows when CarImages has nothing, or is not configured at all. */
-function Unavailable() {
+function Unavailable({ compact = false }: { compact?: boolean }) {
   return (
     <Frame className="flex flex-col items-center justify-center gap-3 border-2 border-dashed bg-muted/40">
       <ImageOff className="h-8 w-8 text-muted-foreground" strokeWidth={1.5} />
-      <span className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
-        No photo for this model
-      </span>
+      {/* The caption stays wherever it fits -- `compact` is the thumbnail case, where the
+          frame is smaller than the sentence and the icon has to say it alone. */}
+      {!compact && (
+        <span className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
+          No photo for this model
+        </span>
+      )}
     </Frame>
   );
 }

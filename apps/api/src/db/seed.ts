@@ -13,6 +13,8 @@ import * as t from './schema.js';
 import { writeReferencePricing } from './referencePricing.js';
 import { SNAPSHOT_MODEL } from '../services/repairPricingSync.js';
 import { evaluateQuote } from '../services/quoteEvaluation.js';
+import { loadNecessityFinding, type NecessityTarget } from '../services/necessity.js';
+import { composeBody, necessityVerdict } from '../services/necessityProse.js';
 
 export async function seed(db: Database): Promise<void> {
   await assertNoRealAccounts(db);
@@ -173,13 +175,21 @@ async function seedAlexRivera(db: Database, repairIdBySlug: Map<string, string>)
   // Referenced so the unused-binding check does not flag a deliberately unlinked job.
   void brakeFluid;
 
-  await seedAssessments(db, user.id, vehicle.id, repairIdBySlug);
+  await seedAssessments(
+    db,
+    user.id,
+    // The necessity check needs the car, not just its id: the model keys the failure record and
+    // `maintenanceScheduleCheckedAt` decides whether the intervals above may speak as the
+    // manufacturer's. They are the seed's own generic figures, so it stays null and they do not.
+    { id: vehicle.id, year: 2019, make: 'Honda', model: 'Civic', mileage: 68400, maintenanceScheduleCheckedAt: null },
+    repairIdBySlug,
+  );
 }
 
 async function seedAssessments(
   db: Database,
   userId: string,
-  vehicleId: string,
+  vehicle: NecessityTarget['vehicle'],
   repairIdBySlug: Map<string, string>,
 ): Promise<void> {
   /*
@@ -190,13 +200,27 @@ async function seedAssessments(
    * $1,680 for the compressor is deliberately kept: it was overpriced against the old
    * invented range and is *fair* against the real one ($1,485-$1,842).
    */
-  const specs = [
+  /*
+   * `context` is why each repair came up, and it is the input the necessity check turns on. The
+   * wordings are the ones the old hand-typed fixture bodies described -- "with reported
+   * grinding", "with no cold air at idle" -- moved from the answer, where they were invented, to
+   * the question, where they are something an owner actually told us.
+   */
+  const specs: {
+    slug: string;
+    createdAt: Date;
+    mileage: number;
+    quoteAmount: number | undefined;
+    completed: { at: string; cost: number } | undefined;
+    context: NecessityTarget['context'];
+  }[] = [
     {
       slug: 'brake-pad-replacement',
       createdAt: new Date('2025-01-15T12:00:00Z'),
       mileage: 68400,
       quoteAmount: 320,
       completed: undefined,
+      context: { promptedBy: 'symptom', notes: 'Grinding noise when braking', duration: 'weeks' },
     },
     {
       slug: 'ac-compressor-replacement',
@@ -204,6 +228,7 @@ async function seedAssessments(
       mileage: 66100,
       quoteAmount: 1680,
       completed: undefined,
+      context: { promptedBy: 'symptom', notes: 'No cold air at idle', duration: 'days' },
     },
     {
       // Was timing-belt-inspection, which carries no pricing. Repointed so the demo
@@ -213,6 +238,7 @@ async function seedAssessments(
       mileage: 64800,
       quoteAmount: undefined,
       completed: { at: '2024-10-04', cost: 165 },
+      context: { promptedBy: 'routine_service' },
     },
   ];
 
@@ -237,17 +263,27 @@ async function seedAssessments(
             fairTotalHigh: benchmark.fairTotalHigh,
           });
 
+    // The same code the API runs, against the rows the seed has already written.
+    const necessity = await seededNecessity(db, {
+      vehicle,
+      repairSlug: spec.slug,
+      repairName: benchmark.repair.name,
+      mileageAtAssessment: spec.mileage,
+      context: spec.context,
+    });
+
     const [assessment] = await db
       .insert(t.assessments)
       .values({
         userId,
-        vehicleId,
+        vehicleId: vehicle.id,
         repairId,
         repairName: benchmark.repair.name,
         mileageAtAssessment: spec.mileage,
-        recommendationHeadline: benchmark.recommendationHeadline,
-        recommendationBadge: benchmark.recommendationBadge,
-        recommendationBody: benchmark.recommendationBody,
+        promptedBy: spec.context?.promptedBy ?? null,
+        symptomNotes: spec.context?.notes ?? null,
+        symptomDuration: spec.context?.duration ?? null,
+        ...necessity,
         partsTotal: benchmark.partsTotal,
         partsLow: benchmark.partsLow,
         partsHigh: benchmark.partsHigh,
@@ -357,6 +393,22 @@ async function seedSecondUser(db: Database, repairIdBySlug: Map<string, string>)
   });
   if (!benchmark) throw new Error('Missing benchmark for brake-pad-replacement');
 
+  const necessity = await seededNecessity(db, {
+    vehicle: {
+      id: vehicle.id,
+      year: 2021,
+      make: 'Toyota',
+      model: 'RAV4',
+      mileage: 31200,
+      maintenanceScheduleCheckedAt: null,
+    },
+    repairSlug: 'brake-pad-replacement',
+    // Deliberately not the catalogue name, so the history match cannot accidentally fire on it.
+    repairName: 'Dana private brake job',
+    mileageAtAssessment: 31200,
+    context: { promptedBy: 'shop_suggested' },
+  });
+
   const [assessment] = await db
     .insert(t.assessments)
     .values({
@@ -365,9 +417,8 @@ async function seedSecondUser(db: Database, repairIdBySlug: Map<string, string>)
       repairId,
       repairName: 'Dana private brake job',
       mileageAtAssessment: 31200,
-      recommendationHeadline: benchmark.recommendationHeadline,
-      recommendationBadge: benchmark.recommendationBadge,
-      recommendationBody: benchmark.recommendationBody,
+      promptedBy: 'shop_suggested',
+      ...necessity,
       partsTotal: benchmark.partsTotal,
       partsLow: benchmark.partsLow,
       partsHigh: benchmark.partsHigh,
@@ -386,6 +437,37 @@ async function seedSecondUser(db: Database, repairIdBySlug: Map<string, string>)
       .sort((a, b) => a.position - b.position)
       .map((task, position) => ({ assessmentId: assessment.id, name: task.name, hours: task.hours, position })),
   );
+}
+
+/**
+ * The necessity verdict for one seeded assessment, worked out by the real code against the real
+ * seeded rows -- the same principle as `evaluateQuote` above: the demo account must not disagree
+ * with the product.
+ *
+ * NO MODEL CALL. Seeding is offline and deterministic (db/fixtures.ts), so this composes the body
+ * from the signals rather than asking Claude to rewrite it. The composed body is the answer
+ * anyway; the rewrite only phrases it (services/necessityProse.ts).
+ *
+ * EXPECT `not_enough` ON EVERY SEEDED CAR, and do not "fix" it by typing a verdict in. Neither
+ * demo car has a factory schedule (the seed's intervals are generic, and
+ * `maintenance_schedule_checked_at` stays null, which is what tells them apart), and
+ * `model_owner_reports` is filled by an NHTSA sync that seeding does not run. So there is
+ * genuinely nothing to check these repairs against, and the old fixture text that read
+ * "At 68,400 miles with reported grinding..." was a hand-typed answer to a question the app
+ * could not yet answer. Run the recall/complaint syncs against a demo car to see a real verdict.
+ */
+async function seededNecessity(db: Database, target: NecessityTarget) {
+  const finding = await loadNecessityFinding(db, target);
+  const { headline, badge } = necessityVerdict(finding.band);
+
+  return {
+    necessityBand: finding.band,
+    necessityShortfall: finding.shortfall ?? null,
+    necessitySignals: finding.signals,
+    recommendationHeadline: headline,
+    recommendationBadge: badge,
+    recommendationBody: composeBody(finding),
+  };
 }
 
 /** Allow `npm run db:seed` while keeping seed() importable by tests. */

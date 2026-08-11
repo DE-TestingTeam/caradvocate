@@ -23,10 +23,6 @@ export function quoteVerdictBadge(assessment: Assessment): { label: string; vari
     : { label: 'Overpriced', variant: 'destructive' };
 }
 
-export function quoteStatusLabel(assessment: Assessment): string {
-  return assessment.quote ? 'Quote Evaluated' : 'No Quote';
-}
-
 export function isCompleted(assessment: Assessment): boolean {
   return Boolean(assessment.completedAt);
 }

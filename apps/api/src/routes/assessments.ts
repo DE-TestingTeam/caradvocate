@@ -15,6 +15,8 @@ import { HttpError } from '../lib/httpError.js';
 import { toAssessment } from '../mappers.js';
 import { userIdOf } from '../middleware/currentUser.js';
 import { validateBody, validateParams } from '../middleware/validate.js';
+import { loadNecessityFinding } from '../services/necessity.js';
+import { writeNecessityProse } from '../services/necessityProse.js';
 import { evaluateQuote } from '../services/quoteEvaluation.js';
 import { ensureRepairPricing, findBenchmark } from '../services/repairPricingSync.js';
 import type { ModelKey } from '../services/modelFeed.js';
@@ -153,6 +155,39 @@ assessmentsRouter.post('/', validateBody(newAssessmentSchema), async (req, res) 
         })
       : undefined;
 
+  /**
+   * The necessity verdict, worked out now and frozen onto the row with the prices.
+   *
+   * The duration rule below applies here too: a duration is only handed to the check when it
+   * describes a symptom, so "routine service, three weeks" cannot be read as a complaint that
+   * has been going on for three weeks. Passing `req.body` straight through would do exactly
+   * that, since the sanitising happens on the way into the insert.
+   */
+  const finding = await loadNecessityFinding(req.db, {
+    vehicle: {
+      id: vehicle.id,
+      year: vehicle.year,
+      make: vehicle.make,
+      model: vehicle.model,
+      mileage: vehicle.mileage,
+      maintenanceScheduleCheckedAt: vehicle.maintenanceScheduleCheckedAt,
+    },
+    repairSlug: repair.slug,
+    repairName: repair.name,
+    mileageAtAssessment: vehicle.mileage,
+    context: {
+      promptedBy: req.body.promptedBy,
+      ...(req.body.symptomNotes ? { notes: req.body.symptomNotes } : {}),
+      ...(SYMPTOM_IS_MEANINGFUL.has(req.body.promptedBy) && req.body.symptomDuration
+        ? { duration: req.body.symptomDuration }
+        : {}),
+    },
+  });
+
+  // Never throws: a model that is unreachable, unconfigured or slow leaves the composed body,
+  // which is a complete answer rather than a placeholder. See services/necessityProse.ts.
+  const recommendation = await writeNecessityProse(finding);
+
   const created = await req.db.transaction(async (tx) => {
     const [row] = await tx
       .insert(assessments)
@@ -162,9 +197,8 @@ assessmentsRouter.post('/', validateBody(newAssessmentSchema), async (req, res) 
         repairId: repair.id,
         repairName: repair.name,
         mileageAtAssessment: vehicle.mileage,
-        // Why the owner is asking. Stored but not yet reasoned over -- the necessity check is
-        // still unbuilt (STATUS.md gap 1) -- and collected now because a judgement cannot be
-        // made retroactively about assessments that never recorded their own reason.
+        // Why the owner is asking -- the input the necessity check above turns on, kept on the
+        // row so a verdict can be re-read against what it was actually given.
         promptedBy: req.body.promptedBy,
         symptomNotes: req.body.symptomNotes ?? null,
         // Dropped unless it means something: a duration attached to "routine service" is an
@@ -172,9 +206,14 @@ assessmentsRouter.post('/', validateBody(newAssessmentSchema), async (req, res) 
         symptomDuration: SYMPTOM_IS_MEANINGFUL.has(req.body.promptedBy)
           ? (req.body.symptomDuration ?? null)
           : null,
-        recommendationHeadline: benchmark.recommendationHeadline,
-        recommendationBadge: benchmark.recommendationBadge,
-        recommendationBody: benchmark.recommendationBody,
+        // The verdict and its working, frozen together. Previously these three were copied off
+        // the benchmark, which carried one fixed string for every repair on every car.
+        necessityBand: finding.band,
+        necessityShortfall: finding.shortfall ?? null,
+        necessitySignals: finding.signals,
+        recommendationHeadline: recommendation.headline,
+        recommendationBadge: recommendation.badge,
+        recommendationBody: recommendation.body,
         partsTotal: benchmark.partsTotal,
         partsLow: benchmark.partsLow,
         partsHigh: benchmark.partsHigh,

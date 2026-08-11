@@ -11,10 +11,13 @@
  * it is the vehicle; these are signposts within it.
  */
 export function Section({
+  id,
   title,
   action,
   children,
 }: {
+  /** Anchor for the at-a-glance tiles to scroll to. `scroll-mt` keeps it clear of the top edge. */
+  id?: string;
   title: string;
   /**
    * The one thing you can DO to this section, sitting on the heading rule at the right --
@@ -29,7 +32,7 @@ export function Section({
   children: React.ReactNode;
 }) {
   return (
-    <section className="space-y-4">
+    <section id={id} className="scroll-mt-6 space-y-4">
       {/* `items-end` so the button sits ON the rule with the heading's baseline, rather than
           centred against a heading that is taller than it. `min-h` keeps the rule in the same
           place whether or not a section has an action. */}

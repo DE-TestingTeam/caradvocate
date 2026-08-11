@@ -12,6 +12,14 @@ interface ComposerProps {
   onChange: (value: string) => void;
   onSend: (text: string) => void;
   disabled?: boolean;
+  /**
+   * Focus the box on mount, caret at the end.
+   *
+   * For arriving with `value` already filled in -- a question handed over from another screen
+   * has to be editable without hunting for where to click. Read once: refocusing whenever this
+   * flipped would take the cursor back off the owner mid-sentence.
+   */
+  autoFocus?: boolean;
 }
 
 /** Beyond this the box stops growing and scrolls, so the transcript never gets squeezed out. */
@@ -42,9 +50,32 @@ const MAX_HEIGHT_PX = MAX_ROWS * LINE_HEIGHT_PX + VERTICAL_CHROME_PX;
  * trained people on. The placeholder says so, because the opposite convention exists too and
  * guessing wrong means accidentally sending half a question.
  */
-export function Composer({ value, onChange, onSend, disabled = false }: ComposerProps) {
+export function Composer({
+  value,
+  onChange,
+  onSend,
+  disabled = false,
+  autoFocus = false,
+}: ComposerProps) {
   const trimmed = value.trim();
   const ref = React.useRef<HTMLTextAreaElement>(null);
+
+  /*
+   * Mount only, and the caret goes to the END rather than the start. A prefilled question is
+   * usually something to add to ("...and it only happens when cold"), and `focus()` alone leaves
+   * the cursor at position 0, where the first keystroke types in front of the question instead
+   * of after it.
+   *
+   * Not React's own `autoFocus` attribute: it fires before the layout effect below has sized the
+   * box, so a prefill long enough to wrap scrolls its own first line out of view on arrival.
+   */
+  React.useEffect(() => {
+    if (!autoFocus) return;
+    const el = ref.current;
+    if (!el) return;
+    el.focus();
+    el.setSelectionRange(el.value.length, el.value.length);
+  }, [autoFocus]);
 
   // Measured from the content rather than counted from newlines, so a long wrapped line grows
   // the box too. Reset to `auto` first or scrollHeight only ever ratchets upwards.

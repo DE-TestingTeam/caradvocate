@@ -1,14 +1,13 @@
-import * as React from 'react';
-import { Info } from 'lucide-react';
+import { InfoPopover } from '@/components/InfoPopover';
 import { Card, CardContent } from '@/components/ui/card';
 import { TREND_POINTS, ValueTrendChart, ValueTrendPlaceholder } from './ValueTrendChart';
 import { formatCurrency, formatMileage } from '@/lib/format';
-import { cn } from '@/lib/utils';
 import { daysSinceMileageReading, mileageIsStale, type Vehicle } from '@caradvocate/shared';
 
 /**
- * `className` is how the masthead hands this card its height -- see MyCar.tsx. The card passes
- * that height down to the trend plot, which is the one part of it that can absorb the slack.
+ * Sizes to its own content. It used to be handed a height derived from the vehicle photo
+ * beside it; the photo left the page in the dashboard restyle, so the trend plot below
+ * carries a fixed height again and `className` is just placement.
  */
 export function ValueCard({ vehicle, className }: { vehicle: Vehicle; className?: string }) {
   // A car the user just added has no valuation yet, and no trend to draw.
@@ -26,36 +25,52 @@ export function ValueCard({ vehicle, className }: { vehicle: Vehicle; className?
 
   const hasTrend = vehicle.valueTrend.length > 1;
   const hasTradeInRange = vehicle.tradeInLow !== undefined && vehicle.tradeInHigh !== undefined;
+  const caption = trendCaption(vehicle.valueTrend);
 
   return (
-    <Card className={cn('bg-muted/40', className)}>
-      {/* `gap-4` in a flex column rather than `space-y-4`, so the trend panel below can take
-          `flex-1` and swallow whatever height is left over. */}
-      <CardContent className="flex h-full flex-col gap-4 p-4 sm:p-6">
-        {/*
-          No sparkline beside the figure. It was captioned "30d trend", and there is no such
-          thing here: values are checked once a MONTH, so a 30-day window is one reading and one
-          reading is not a trend. The panel below, over six monthly readings, is the only trend
-          this card can honestly draw.
-        */}
-        <div>
-          {/*
-            One step under the car's name, which is `text-h2`. It was `text-4xl` -- 36px against
-            the name's 30px -- so the price was the biggest thing in the masthead and the car it
-            belongs to came second. `text-h3` also puts it on the app's own fluid scale, so it
-            keeps that relationship at every width instead of only at the widest.
-
-            No `tracking-tight` on top: the h3 step already carries -0.0075em, and stacking the
-            utility's -0.025em on a row of figures closes the digits up.
-          */}
-          <div className="text-h3 font-bold">{formatCurrency(vehicle.estMarketValue)}</div>
-          <div className="mt-1 text-xs font-medium uppercase tracking-widest text-muted-foreground">
-            Est. market value
+    // Plain white, like the Known Issues card below it -- the sidebar reads as one column of
+    // cards, and the muted tint made this one look disabled next to its neighbours.
+    <Card className={className}>
+      <CardContent className="p-4 sm:p-6">
+        <div className="flex items-start justify-between gap-2">
+          <div className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
+            Value over time
           </div>
+          {/* The explanation of the empty chart is worth having, but it is a paragraph an owner
+              reads once. It lives behind this control so the card stays a card. */}
+          {!hasTrend && <TrendNote collected={vehicle.valueTrend.length} />}
         </div>
 
+        {/*
+          One step under the car's name, which is `text-h2` -- the price must not outrank the
+          car it belongs to. No `tracking-tight` on top: the h3 step already carries -0.0075em,
+          and stacking the utility's -0.025em on a row of figures closes the digits up.
+        */}
+        <div className="mt-1 text-h3 font-bold">{formatCurrency(vehicle.estMarketValue)}</div>
+
+        {/*
+          The plot runs edge to edge with no frame or axis of its own -- the eyebrow above
+          says what it is and the caption below says what it does, so a box and tick labels
+          around four inches of line were furniture. Hover still names each monthly reading.
+          Fixed height: the plot is sized in percentages and would collapse in an auto-height
+          box, and the placeholder resolves to this same height so the card never changes
+          shape the month the line first appears.
+        */}
+        <div className="mt-2 h-28">
+          {hasTrend ? (
+            <ValueTrendChart data={vehicle.valueTrend} />
+          ) : (
+            <ValueTrendPlaceholder collected={vehicle.valueTrend.length} />
+          )}
+        </div>
+
+        {/* What the line adds up to, in words -- computed from the same readings, so the two
+            cannot disagree. Never a comparison to "the average compact SUV": there is no
+            segment-average data here to compare against, however good that sentence sounds. */}
+        {caption && <p className="mt-2 text-sm text-muted-foreground">{caption}</p>}
+
         {hasTradeInRange && (
-          <p className="text-sm text-muted-foreground">
+          <p className="mt-1 text-sm text-muted-foreground">
             Trade in range {formatCurrency(vehicle.tradeInLow!)}–{formatCurrency(vehicle.tradeInHigh!)}
           </p>
         )}
@@ -69,83 +84,49 @@ export function ValueCard({ vehicle, className }: { vehicle: Vehicle; className?
           it. Silent on a fresh reading, because then it is just noise on the number they came for.
         */}
         {mileageIsStale(vehicle) && (
-          <p className="text-sm text-muted-foreground">
+          <p className="mt-1 text-sm text-muted-foreground">
             Based on {formatMileage(vehicle.mileage)}
             {agedNote(vehicle)}
           </p>
         )}
-
-        {/* `min-h-0` is load-bearing: a flex item's floor is its content, so without it this
-            panel refuses to shrink below the plot's natural size and pushes the card past the
-            photo -- the exact thing the height is being derived to prevent. */}
-        <div className="flex min-h-0 flex-1 flex-col gap-2 rounded-md border border-dashed bg-background/60 p-3">
-          <div className="flex shrink-0 items-center justify-between gap-2">
-            <div className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
-              Value trend, last 6 mo
-            </div>
-            {/* The explanation of the empty chart is worth having, but it is a paragraph an owner
-                reads once. It moves behind this control so the card stays a card. */}
-            {!hasTrend && <TrendNote collected={vehicle.valueTrend.length} />}
-          </div>
-          {/*
-            `h-20` is the phone's answer and the fallback everywhere else. Stacked below `lg` the
-            column has no height to divide up, so `flex-1` would resolve against nothing and the
-            plot -- which is sized in percentages -- would collapse to zero and vanish. From `lg`
-            the derived height takes over.
-          */}
-          <div className="h-20 min-h-0 lg:h-auto lg:flex-1">
-            {hasTrend ? (
-              <ValueTrendChart data={vehicle.valueTrend} />
-            ) : (
-              <ValueTrendPlaceholder collected={vehicle.valueTrend.length} />
-            )}
-          </div>
-        </div>
       </CardContent>
     </Card>
   );
 }
 
 /**
- * Why the chart is empty, revealed on demand.
- *
- * Hover shows it to a pointer, focus shows it to a keyboard, and it is a real button so a tap
- * works on a touch screen -- where hover never fires at all, and an icon that only responds to a
- * mouse would be dead weight on the device most owners are holding.
- *
- * The panel is positioned rather than in flow: opening it must not push the placeholder chart
- * down, or the card jumps every time the pointer crosses the icon.
+ * "Down 3.3% over the last 5 months." from the monthly readings, or nothing before there are
+ * two to compare. The window is however many readings exist -- a car three readings in gets
+ * "2 months", not a pretend six.
+ */
+function trendCaption(trend: Vehicle['valueTrend']): string | undefined {
+  if (trend.length < 2) return undefined;
+
+  const first = trend[0].value;
+  const last = trend[trend.length - 1].value;
+  if (first <= 0) return undefined;
+
+  const pct = ((last - first) / first) * 100;
+  const months = trend.length - 1;
+  const span = `over the last ${months === 1 ? 'month' : `${months} months`}`;
+
+  if (Math.abs(pct) < 0.5) return `Holding steady ${span}.`;
+  return `${pct < 0 ? 'Down' : 'Up'} ${Math.abs(pct).toFixed(1)}% ${span}.`;
+}
+
+/**
+ * Why the chart is empty, revealed on demand. Says plainly that the history does not exist
+ * rather than implying it is loading: an owner who is told "no data" assumes something is
+ * broken; one who is told the readings are monthly and counts the empty dots knows to come
+ * back. The hover/focus/tap mechanics live in InfoPopover, shared with the stat strip.
  */
 function TrendNote({ collected }: { collected: number }) {
-  const [open, setOpen] = React.useState(false);
-
   return (
-    <div className="relative" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={() => setOpen((was) => !was)}
-        onFocus={() => setOpen(true)}
-        onBlur={() => setOpen(false)}
-        className="flex h-6 w-6 items-center justify-center rounded-pill text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-      >
-        <Info className="h-4 w-4" aria-hidden="true" />
-        <span className="sr-only">Why this chart is empty</span>
-      </button>
-
-      {open && (
-        /*
-          Says plainly that the history does not exist rather than implying it is loading. An owner
-          who is told "no data" assumes something is broken; one who is told the readings are
-          monthly and counts the empty dots knows to come back.
-        */
-        <div className="absolute right-0 top-7 z-10 w-64 max-w-[calc(100vw-4rem)] rounded-md border bg-background p-3 text-sm text-muted-foreground shadow-md">
-          We check this car's value once a month and chart it from there. {readingsTaken(collected)} — the line
-          appears after the next check. There is no earlier history to fill in: a valuation is priced as of the
-          day it is taken.
-        </div>
-      )}
-    </div>
+    <InfoPopover label="Why this chart is empty" align="end">
+      We check this car's value once a month and chart it from there. {readingsTaken(collected)} — the line
+      appears after the next check. There is no earlier history to fill in: a valuation is priced as of the
+      day it is taken.
+    </InfoPopover>
   );
 }
 
@@ -202,7 +183,7 @@ function AwaitingValuation({
       : "Not available yet. We're still pricing this car — check back shortly.";
 
   return (
-    <Card className={cn('bg-muted/40', className)}>
+    <Card className={className}>
       <CardContent className="space-y-1 p-4 sm:p-6">
         <div className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
           Est. market value

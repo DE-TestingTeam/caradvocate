@@ -1,7 +1,7 @@
 # CarAdvocate — what exists today
 
-The app as the code currently stands. Last reviewed 9 August 2026 against the working tree and a
-read-only pass over the shared database.
+The app as the code currently stands. Last reviewed 10 August 2026 against the working tree, and 9 August
+against the shared database in a read-only pass.
 
 Where a number appears — table counts, coverage, row counts — it was measured against the live
 database on that date rather than inferred from the code.
@@ -50,7 +50,7 @@ Four invariants:
 | Free | Maintenance schedule | ✅ Factory intervals from Vehicle Databases, VIN required |
 | Free | Model known issues | ✅ |
 | Free | Ask CA Q&A + banded severity | ✅ |
-| Paid | Necessity check | ❌ Inputs now collected, judgement unwritten |
+| Paid | Necessity check | ⚠️ Built 10 August; verdict quality is gated on the complaint mirror |
 | Paid | Parts benchmark | ⚠️ Total only, no itemisation |
 | Paid | Labor baseline | ⚠️ Dollars and hours shown; no rate, and no vendor publishes one |
 | Paid | Past assessments · "Repair complete" writeback | ✅ |
@@ -58,39 +58,61 @@ Four invariants:
 
 ### The four gaps
 
-**1. Necessity check — the paid tier's headline promise, and it is not there.** The recommendation
-fields render, but nothing works them out. `services/repairPricingSync.ts` writes the same fixed
-text for every repair on every car: *"Priced for your car"*, badge *ASSESSED*, and a body about
-comparing quotes to a range. That is a pricing statement, not a judgement about whether the repair
-is needed. The demo Civic reads better only because `db/fixtures.ts` has the answer typed in by
-hand. Nothing reads symptoms, mileage, service history or complaint patterns.
+**1. Necessity check — built on 10 August, and its quality now depends on data coverage rather
+than on code.** `services/necessity.ts` computes a band from four inputs and
+`services/necessityProse.ts` writes it up. Three bands: *holds up*, *worth questioning*, and
+**not enough to say**, which is the honest majority case and not a fallback.
 
-This is the one place the product claim and the code genuinely disagree, and it is what the paywall
-sells.
+The claim was reframed on the way in. "Is this repair necessary?" is a diagnosis the app cannot
+make and forbids Ask CA from attempting; what it answers is whether the repair holds up against
+what we hold about this car. Three rules decide it, in order: no recorded reason is `not_enough`
+whatever else we have; anything questioning the repair beats anything supporting it; and it takes
+one *independent* supporting signal to reach `holds_up`, so silence is never approval.
 
-**The blocker was never the technique — it was the input.** The assessment recorded which repair and
-what it cost, and nothing about why it came up. A shop proposing brake pads to someone reporting
-grinding and a shop proposing them to someone in for an oil change are different questions, and the
-app could not tell them apart. Three prerequisites were closed on 9 August:
+**The owner's own report is the question, not the evidence.** "I hear grinding" is why we are
+looking and cannot also be the corroboration — otherwise every symptom an owner reported would
+confirm whatever the shop proposed for it, which is the failure the feature exists to catch. Owner
+facts are carried as neutral signals: shown, never counted. Only the complaint record and the
+factory schedule move a band, and both are independent of the owner *and* the shop.
 
-- **The assessment asks why.** Migration `0022` adds `prompted_by` (symptom · warning light · shop
-  suggested · routine upkeep · other), `symptom_notes` and `symptom_duration`. `ContextStep` collects
-  them as step 2 — between the repair and the quote, so it reads as describing the problem rather
-  than pricing it, and is asked before the owner anchors on a number. `prompted_by` is required for
-  new rows; the four existing ones stay null, meaning *never asked*, which must stay distinct from
-  *nothing to report*. A duration is stored only for a symptom or warning light — on routine upkeep
-  it would later read as a reported symptom.
-- **Complaint mileage is loaded.** `npm run ingest:mileage` had never run, so all 81 owner-report
-  groups had counts and no mileage-at-failure. Now **28 of 81** carry one — 2019 Civic service brakes
-  at a median 11,800 mi (n=15), 2021 RAV4 air bags at 30,000 (n=21). The other 51 have fewer than
-  four odometer samples and are skipped by design, not missing.
-- **Interval availability is settled** — see the factory-schedule note in §4.
+**The band is computed in code and the model never touches it.** Claude rewrites the signal
+sentences and is given nothing else — no car data, no prices, no band. Unconfigured, slow or
+failing, the composed body ships instead, and it is a complete answer rather than a placeholder,
+so nothing announces which one an owner got. The signals travel to the browser beside the prose,
+so a verdict can be checked against its own working.
 
-**What remains is the shape of the judgement.** Recommended: compute the evidence deterministically
-in code and let Claude write the prose from those signals only, never the band — the same split that
-makes Ask CA's "Based on" line trustworthy. And reframe the claim from "is this necessary?" — a
-diagnosis the app cannot make, and forbids Ask CA from attempting — to "does this hold up against
-what we know?", with three bands including an explicit *not enough to say*.
+Three guards are load-bearing and each is a way this could have quietly lied:
+
+- **A bare complaint count corroborates nothing.** Every popular model has brake complaints. Only
+  the mileage those failures cluster at makes it about this car, so the count alone is neutral and
+  the match needs the four-sample floor `ingestComplaintMileage.mts` already enforces.
+- **Wear jobs never read the complaint record.** "This model has 24 engine complaints" says nothing
+  about whether your spark plugs are due, or it would corroborate every scheduled service on every
+  model owners complain about.
+- **"Not due" only questions a repair with no reported symptom.** Coolant at 8,000 of a
+  30,000-mile interval to someone in for an oil change is the upsell case; the same interval
+  against a climbing temperature gauge would be the app talking an owner out of a real fault.
+
+**Three catalogue repairs are deliberately unmapped** and should stay that way: both AC jobs, since
+NHTSA files no air-conditioning component and those complaints land in the bucket `complaints.ts`
+drops; and wheel alignment, whose obvious label — STEERING — is 80 power-steering reports on a
+2019 Civic. They reach `not_enough` honestly rather than borrowing unrelated evidence.
+
+**What now limits it is coverage, not logic.** A band needs either a complaint group with four
+odometer samples (28 of 81 live) or a factory schedule (two cars). Neither demo car has a factory
+schedule, and `model_owner_reports` is filled by a sync the seed does not run, so **every seeded
+assessment lands on `not_enough`** — correct, and a change from the fixture text that read "At
+68,400 miles with reported grinding..." as a hand-typed answer to a question the app could not yet
+answer. Verdicts get better as the mirror fills, not as the rules change.
+
+`npm run check:necessity` runs the rules over 14 hand-built cases offline and asserts each band,
+and prints the composed body for every one, since a case in the right band saying something an
+owner would not follow is still broken.
+
+**One hole is documented rather than closed.** `scheduleIsFactory` is derived from
+`vehicles.maintenance_schedule_checked_at`, which is set both when real intervals arrive and when
+the vendor says it has none — so a car in the second state that still holds seeded intervals would
+read as authoritative. A separate column on the sync would close it.
 
 **2. Value + trend line — working, with three limits.**
 
@@ -133,8 +155,8 @@ sync writes a single row reading "All parts for this repair". Minor.
   number invites the wrong argument: an owner who reads "1 hr" and was billed for three has not
   been shown overbilling.
 
-Gap 1 needs a product decision; gap 4 now needs only a licensed book-time source, the decision
-about showing hours having been made; gap 3 is minor.
+Gap 1 is built and now waits on data coverage; gap 4 needs only a licensed book-time source, the
+decision about showing hours having been made; gap 3 is minor.
 
 **A coverage limit gates the whole paid tier.** If the pricing vendor has nothing for the owner's
 car, the Repair Cost Checker offers **no repairs at all** — deliberate, because another vehicle's

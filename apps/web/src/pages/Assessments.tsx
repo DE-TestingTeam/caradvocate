@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/empty';
 import { Skeleton } from '@/components/ui/skeleton';
 import { listAssessments } from '@/lib/api';
+import { isCompleted } from '@/lib/assessment';
 import { useApi } from '@/lib/useApi';
 import type { Assessment } from '@caradvocate/shared';
 
@@ -100,13 +101,37 @@ export function AssessmentsPage() {
         and "Mark repair as complete" line up down the page and the newest is unambiguously first.
 
         Also what the loading skeletons above already show: `space-y-3`, full width.
+
+        Completed repairs sink below the open ones, under their own heading rather than by a
+        silent reordering: a repair that is done is settled history, and an open one is a
+        decision still in play -- the split is only legible if the page says where it is.
+        Within each group the server's newest-first order holds.
       */}
       {data && data.length > 0 && (
-        <div className="space-y-3">
-          {data.map((assessment) => (
-            <AssessmentCard key={assessment.id} assessment={assessment} onMarkComplete={setCompleting} />
-          ))}
-        </div>
+        <>
+          {data.some((assessment) => !isCompleted(assessment)) && (
+            <div className="space-y-3">
+              {data
+                .filter((assessment) => !isCompleted(assessment))
+                .map((assessment) => (
+                  <AssessmentCard key={assessment.id} assessment={assessment} onMarkComplete={setCompleting} />
+                ))}
+            </div>
+          )}
+
+          {data.some(isCompleted) && (
+            <>
+              <h2 className="mb-3 mt-8 text-label font-semibold uppercase tracking-widest text-muted-foreground">
+                Completed
+              </h2>
+              <div className="space-y-3">
+                {data.filter(isCompleted).map((assessment) => (
+                  <AssessmentCard key={assessment.id} assessment={assessment} onMarkComplete={setCompleting} />
+                ))}
+              </div>
+            </>
+          )}
+        </>
       )}
 
       <RepairCompletedDialog

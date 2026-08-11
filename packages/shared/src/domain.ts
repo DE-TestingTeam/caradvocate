@@ -426,13 +426,68 @@ export interface AssessmentContext {
   duration?: SymptomDuration;
 }
 
+/**
+ * Whether a proposed repair holds up against what we know about this car.
+ *
+ * NOT "is it necessary?" -- that is a diagnosis, and the app cannot make one; it has never seen
+ * the car and Ask CA is forbidden from trying. This is the weaker claim it can actually stand
+ * behind: the repair set beside the owner's stated reason, the model's failure record, and this
+ * car's factory schedule and service history, and whether those agree.
+ *
+ * `not_enough` is the honest majority case, not a failure. Most repairs on most cars have
+ * nothing independent to check them against, and the band says so rather than rounding to
+ * approval -- an app that answers "looks fine" when it does not know is worse than one that
+ * says nothing. See apps/api/src/services/necessity.ts for the rules.
+ */
+export type NecessityBand = 'holds_up' | 'worth_questioning' | 'not_enough';
+
+/**
+ * What one fact does to the band. `neutral` facts are shown and change nothing -- every
+ * owner-side fact is one, because the owner's own report is the question being asked and cannot
+ * also be the evidence answering it.
+ */
+export type NecessityStance = 'supports' | 'questions' | 'neutral';
+
+/** One fact behind a band, as a finished sentence naming where it came from. */
+export interface NecessitySignal {
+  stance: NecessityStance;
+  detail: string;
+}
+
+/** Why a band came out `not_enough` -- three states an owner should not be told the same thing about. */
+export type NecessityShortfall = 'never_asked' | 'nothing_to_check_against' | 'nothing_spoke_either_way';
+
+/**
+ * The verdict and everything it rests on, snapshotted with the assessment.
+ *
+ * The signals travel to the browser for the reason Ask CA's "Based on" line does: a verdict an
+ * owner cannot see the working of is one they cannot take to a shop. They are also the only
+ * input the prose was written from, so the two can never disagree.
+ */
+export interface AssessmentNecessity {
+  band: NecessityBand;
+  signals: NecessitySignal[];
+  shortfall?: NecessityShortfall;
+}
+
 export interface Assessment {
   id: string;
   repairName: string;
   vehicleId: string;
   mileageAtAssessment: number;
   createdAt: string;
+  /**
+   * The necessity verdict in words. Written from `necessity.signals` and nothing else -- by
+   * Claude where it is configured, by apps/api/src/services/necessityProse.ts otherwise, and the
+   * fallback is a real answer rather than a canned one, so the two are interchangeable.
+   */
   recommendation: { headline: string; badge: string; body: string };
+  /**
+   * Absent on assessments created before the check existed, which is NOT the same as
+   * `not_enough`: one was never judged, the other was judged and came up short. A consumer that
+   * conflates them tells four owners we looked when we did not.
+   */
+  necessity?: AssessmentNecessity;
   parts: { items: PartBenchmark[]; total: number; low: number; high: number };
   /**
    * `estHours` is present wherever the hours vendor knows the job; `ratePerHour` is always

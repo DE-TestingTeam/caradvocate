@@ -1,4 +1,5 @@
-import { Line, LineChart, ResponsiveContainer, XAxis, YAxis } from 'recharts';
+import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { formatCurrency } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
 /**
@@ -9,18 +10,10 @@ import { cn } from '@/lib/utils';
 export const TREND_POINTS = 6;
 
 /**
- * THE PLOT HAS NO HEIGHT OF ITS OWN. It fills whatever its container gives it, which on My Car
- * is the space left over once the value card has been sized against the photo beside it.
- *
- * This used to be a fixed pixel height, picked so the card's bottom edge landed level with the
- * photo's. That could never work: the photo is `aspect-[3/2]`, so its height is two thirds of
- * the column width and moves with the window, while the card's height is near enough constant.
- * A single number can only be right at one window size, and was wrong at every other. See the
- * masthead in pages/MyCar.tsx for how the height is derived now.
- *
- * `h-full` therefore, and the caller owns the box. The one thing to preserve: the chart and the
- * placeholder must resolve to the SAME height, or the card changes shape the month the line
- * first appears.
+ * THE PLOT HAS NO HEIGHT OF ITS OWN. It fills whatever its container gives it -- on My Car
+ * that is a fixed-height box inside the value card (see ValueCard). The one thing to
+ * preserve: the chart and the placeholder must resolve to the SAME height, or the card
+ * changes shape the month the line first appears.
  */
 
 /**
@@ -49,7 +42,9 @@ export function ValueTrendPlaceholder({ collected }: { collected: number }) {
           key={index}
           className={cn(
             'relative h-2 w-2 rounded-full',
-            index < collected ? 'bg-foreground' : 'bg-border',
+            // Taken readings wear the same green as the drawn line's recent stretch and
+            // endpoint dot, so the placeholder reads as the chart it will become.
+            index < collected ? 'bg-brand' : 'bg-border',
           )}
         />
       ))}
@@ -62,31 +57,120 @@ interface ValueTrendChartProps {
 }
 
 /**
- * One size, with month labels. The `compact` sparkline mode went with the "30d trend" slot in the
- * card header -- an axis-less line 32px tall could show a direction but not over what period, and
- * the period was the part that was wrong.
+ * How many of the trailing readings draw in colour. Two INTERVALS -- i.e. the last two months
+ * of movement -- which on a full six-point chart is the same share the mock highlighted.
+ */
+const RECENT_SEGMENTS = 2;
+
+/** The line's two voices: history recedes in grey, the recent stretch carries the colour --
+ *  the brand green, matching the active nav row rather than the semantic success token. */
+const HISTORY_STROKE = 'hsl(var(--grey-muted))';
+const RECENT_STROKE = 'hsl(var(--brand))';
+
+/**
+ * A bare two-tone sparkline: no frame, no axis, no tick labels. The card around it names the
+ * thing ("Value over time"), states the current figure and captions the direction, so the plot
+ * only has to carry the shape -- and each monthly reading is still there on hover.
+ *
+ * Split into two overlapping series rather than one: recharts draws one stroke per Line, and
+ * the boundary point belongs to both so the grey and coloured strokes meet instead of gapping.
  */
 export function ValueTrendChart({ data }: ValueTrendChartProps) {
+  const recentFrom = Math.max(0, data.length - 1 - RECENT_SEGMENTS);
+  const rows = data.map((point, index) => ({
+    month: point.month,
+    history: index <= recentFrom ? point.value : null,
+    recent: index >= recentFrom ? point.value : null,
+  }));
+
   return (
     <ResponsiveContainer width="100%" height="100%">
-      <LineChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
-        <XAxis
-          dataKey="month"
-          tickLine={false}
-          axisLine={false}
-          tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }}
-          dy={4}
-        />
+      {/* `right: 12`, so the endpoint dot is not clipped by the plot edge. */}
+      <LineChart data={rows} margin={{ top: 8, right: 12, bottom: 8, left: 8 }}>
+        <XAxis dataKey="month" hide />
         <YAxis hide domain={['dataMin - 400', 'dataMax + 400']} />
+        {/*
+          The hover layer: a vertical crosshair plus "Jun · $22,280". The line alone says the
+          shape; the readings themselves were invisible before this, and six monthly figures
+          are exactly the kind of thing an owner wants to point at.
+        */}
+        <Tooltip
+          content={<TrendTooltip />}
+          cursor={{ stroke: 'hsl(var(--border))' }}
+          isAnimationActive={false}
+        />
         <Line
           type="monotone"
-          dataKey="value"
-          stroke="hsl(var(--foreground))"
+          dataKey="history"
+          stroke={HISTORY_STROKE}
           strokeWidth={2}
           dot={false}
+          // No hover dot on the grey stretch: the boundary reading lives in both series, and
+          // two stacked dots in two colours on one point read as a glitch. The crosshair and
+          // tooltip still answer the hover.
+          activeDot={false}
+          isAnimationActive={false}
+        />
+        <Line
+          type="monotone"
+          dataKey="recent"
+          stroke={RECENT_STROKE}
+          strokeWidth={2}
+          // Only the endpoint gets a resting dot: it is the reading the headline figure above
+          // the chart states, so the mark ties the two together. A dot on every point would
+          // just re-say the line.
+          dot={<EndpointDot lastIndex={data.length - 1} />}
+          activeDot={{ r: 4, fill: RECENT_STROKE, stroke: 'hsl(var(--background))', strokeWidth: 2 }}
           isAnimationActive={false}
         />
       </LineChart>
     </ResponsiveContainer>
+  );
+}
+
+/**
+ * Recharts calls this once per point and requires an element back, so the points that draw
+ * nothing return an invisible circle rather than null.
+ */
+function EndpointDot({
+  lastIndex,
+  cx,
+  cy,
+  index,
+}: {
+  lastIndex: number;
+  /** Injected by recharts. */
+  cx?: number;
+  cy?: number;
+  index?: number;
+}) {
+  if (index !== lastIndex || cx === undefined || cy === undefined) {
+    return <circle key={index} r={0} />;
+  }
+  return <circle key={index} cx={cx} cy={cy} r={4} fill={RECENT_STROKE} />;
+}
+
+/**
+ * "Jun · $22,280" in the app's own popover clothes. Recharts' default tooltip carries its own
+ * white box and blue text, which would be the only element on the page not wearing the theme.
+ */
+function TrendTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: { value?: number | string }[];
+  label?: string;
+}) {
+  // Two series share the boundary point, so take whichever entry actually holds a number.
+  const value = payload?.map((entry) => entry.value).find((v) => typeof v === 'number');
+  if (!active || typeof value !== 'number') return null;
+
+  return (
+    <div className="rounded-md border bg-popover px-2.5 py-1.5 text-xs shadow-md">
+      <span className="text-muted-foreground">{label}</span>{' '}
+      <span className="font-medium tabular-nums">{formatCurrency(value)}</span>
+    </div>
   );
 }

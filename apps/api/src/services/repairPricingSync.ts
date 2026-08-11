@@ -288,6 +288,12 @@ function describeSource(
  * Recommendation copy for a freshly-priced repair. Insert only -- the upsert above leaves
  * an existing row's copy alone. Deliberately mileage-free: the authored wireframe copy
  * names a specific odometer reading, and a synced row has no owner to speak about.
+ *
+ * NO LONGER REACHES AN OWNER. Until 10 August 2026 an assessment copied these three columns
+ * onto itself, which is how every repair on every car came to carry one fixed sentence where a
+ * judgement should have been. Assessments now write their own from services/necessityProse.ts,
+ * and nothing reads the benchmark's copy. Kept because the columns are `not null` and dropping
+ * them is its own migration -- but do not wire anything back to them.
  */
 function recommendationFor(benchmark: FetchedRepairBenchmark) {
   return {

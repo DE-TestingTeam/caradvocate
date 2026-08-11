@@ -24,6 +24,7 @@ import {
   boolean,
   index,
   integer,
+  jsonb,
   numeric,
   pgEnum,
   pgTable,
@@ -696,6 +697,40 @@ export const assessments = pgTable(
     /** 'days' | 'weeks' | 'months' | 'unsure'. Only meaningful with a symptom or warning light. */
     symptomDuration: text('symptom_duration'),
 
+    /**
+     * The necessity verdict, snapshotted like every other figure on this row. 'holds_up' |
+     * 'worth_questioning' | 'not_enough'; see services/necessity.ts for the rules.
+     *
+     * SNAPSHOTTED RATHER THAN RECOMPUTED ON READ, unlike maintenance status, and for the reason
+     * the rest of this table is: the inputs move. The owner logs the service afterwards, the
+     * complaint mileage ingest runs, the factory schedule finally arrives -- and a verdict that
+     * silently changed under an owner who had already taken it to a shop would be worse than no
+     * verdict. What they were shown is what this row keeps saying.
+     *
+     * NULL MEANS NEVER JUDGED -- created before the check existed -- which is not `not_enough`.
+     * That distinction is the same one `prompted_by` draws and matters for the same reason: one
+     * is us not looking, the other is us looking and finding nothing.
+     */
+    necessityBand: text('necessity_band'),
+    /** Why a `not_enough` came out that way. Null on every other band. */
+    necessityShortfall: text('necessity_shortfall'),
+    /**
+     * The facts behind the band, as finished sentences with their sources: `[{stance, detail}]`.
+     *
+     * Stored rather than rebuilt because they ARE the snapshot -- the prose was written from
+     * these and nothing else, so a body kept beside signals that have since changed would be a
+     * verdict quoting evidence that no longer says what it said. jsonb rather than a child
+     * table: they are read and written whole, never queried into, and a table would invite a
+     * join that recomputes what this column exists to freeze.
+     */
+    necessitySignals: jsonb('necessity_signals'),
+
+    /**
+     * The verdict in words. Written from `necessity_signals` and nothing else -- see
+     * services/necessityProse.ts. Until 9 August 2026 these three carried a fixed string copied
+     * off the benchmark ("Priced for your car" / ASSESSED) that was identical on every repair
+     * for every car, which is why they say something now.
+     */
     recommendationHeadline: text('recommendation_headline').notNull(),
     recommendationBadge: text('recommendation_badge').notNull(),
     recommendationBody: text('recommendation_body').notNull(),

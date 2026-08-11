@@ -67,30 +67,49 @@ export function useVehicle(): Vehicle {
 function MyCarSkeleton() {
   return (
     <div className="space-y-10">
-      <section className="grid gap-6 lg:grid-cols-2 lg:items-start">
-        <Skeleton className="aspect-[3/2] w-full rounded-lg" />
+      {/* Masthead: photo thumbnail, then eyebrow, name, subline. The Update mileage button is
+          deliberately absent -- a control that appears before the data it acts on is a control
+          someone can press too early -- and the header's own height keeps the layout from
+          shifting when it arrives. */}
+      <div className="flex items-center gap-5">
+        <Skeleton className="aspect-[3/2] w-28 shrink-0 rounded-lg sm:w-44" />
+        <div className="min-w-0 flex-1 space-y-2">
+          <Skeleton className="h-3 w-16" />
+          <Skeleton className="h-10 w-72 max-w-full" />
+          <Skeleton className="h-4 w-56 max-w-full" />
+        </div>
+      </div>
 
-        <div className="min-w-0 space-y-4">
-          <div className="space-y-2">
-            <Skeleton className="h-9 w-3/4" />
-            <Skeleton className="h-4 w-1/2" />
+      {/* The stat strip: same borders, four placeholder figures. */}
+      <div className="grid grid-cols-2 gap-6 border-y py-5 lg:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} className="space-y-2">
+            <Skeleton className="h-8 w-24" />
+            <Skeleton className="h-3 w-32 max-w-full" />
           </div>
+        ))}
+      </div>
 
-          {/* The value card now sits in the hero rather than below it, so the skeleton has to
-              as well -- this block is only worth having if it mirrors the real page exactly. */}
-          <Card className="bg-muted/40">
+      <div className="grid gap-10 lg:grid-cols-3 lg:gap-8">
+        <div className="space-y-10 lg:col-span-2">
+          <Section title="What needs attention">
+            <ListSkeleton rows={2} />
+          </Section>
+          <Section title="Service history">
+            <ListSkeleton rows={4} />
+          </Section>
+        </div>
+        <div className="space-y-6">
+          <Card>
             <CardContent className="space-y-2 p-4 sm:p-6">
               <Skeleton className="h-10 w-36" />
               <Skeleton className="h-3 w-28" />
             </CardContent>
           </Card>
+          <Skeleton className="h-32 w-full rounded-lg" />
         </div>
-      </section>
+      </div>
 
-      {/* The action buttons are deliberately absent. They are static copy, so drawing them
-          here would look right -- but a control that appears before the data it acts on is a
-          control someone can press too early. The `min-h` on Section's header keeps the rule
-          in the same place either way, so nothing shifts when they arrive. */}
       <Section title="Recalls for this model">
         <ListSkeleton rows={2} />
       </Section>
@@ -99,9 +118,6 @@ function MyCarSkeleton() {
       </Section>
       <Section title="Known issues for your model">
         <ListSkeleton rows={3} />
-      </Section>
-      <Section title="Service history">
-        <ListSkeleton rows={5} />
       </Section>
     </div>
   );
