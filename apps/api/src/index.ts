@@ -3,7 +3,8 @@ import { assertAuthConfigured } from './auth/config.js';
 import { askIsConfigured } from './services/askClaude.js';
 import { carImagesIsConfigured } from './services/carImages.js';
 import { describePrice } from './services/paywall.js';
-import { assertSchemaPresent, closeDb, describeTarget, getDb } from './db/index.js';
+import { feedHealth } from './services/modelFeed.js';
+import { assertSchemaPresent, closeDb, describeTarget, getDb, type Database } from './db/index.js';
 import { env } from './env.js';
 
 // Sign-in is required, so an API that cannot verify a token can serve nobody.
@@ -14,7 +15,7 @@ try {
   process.exit(1);
 }
 
-let db;
+let db: Database;
 try {
   db = getDb();
 } catch (error) {
@@ -60,6 +61,10 @@ const server = app.listen(env.PORT, () => {
   // that something is unset -- the defaults in env.ts are the chosen prices.
   console.log(`Paywall: ${describePrice()} -- nobody is charged, taps are recorded`);
   console.log('  Override PAYWALL_ALL_YOU_CAN_EAT_* / PAYWALL_PER_INCIDENT_* to run a different cohort.');
+
+  // Last, and awaited after the server is already listening: a slow database must delay a line
+  // of orientation, never the port opening. See feedHealth for why this is printed at all.
+  void reportFeedHealth();
 });
 
 /**
@@ -100,4 +105,32 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
 
 for (const signal of ['SIGTERM', 'SIGINT'] as const) {
   process.on(signal, () => void shutdown(signal));
+}
+
+
+/**
+ * The outside feeds, on one line each. Failures first, because a feed answering nothing is the
+ * only thing here anyone needs to act on -- see feedHealth in services/modelFeed.ts.
+ *
+ * Swallows its own errors. This is a courtesy line; a database that will not answer it has
+ * bigger problems, all of which surface elsewhere, and none of which are worth a crashed boot.
+ */
+async function reportFeedHealth(): Promise<void> {
+  try {
+    const feeds = await feedHealth(db);
+    if (feeds.length === 0) return;
+
+    const failing = feeds.filter((feed) => feed.failed > 0);
+    console.log(
+      `Outside feeds: ${feeds.map((f) => `${f.feed} ${f.ok} ok/${f.failed} failed`).join(', ')}`,
+    );
+    if (failing.length > 0) {
+      console.log(
+        `  ${failing.map((f) => f.feed).join(' and ')} did not answer for some models. ` +
+          'A spent call allowance answers 403 to everything -- check the vendor dashboard.',
+      );
+    }
+  } catch {
+    // Deliberately silent; see the header.
+  }
 }

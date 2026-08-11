@@ -1,0 +1,17 @@
+-- Which vendor priced this car.
+--
+-- A second valuation source arrives with this migration: Vehicle Databases' market-value
+-- endpoint, which answers for cars MarketCheck refuses outright (a VIN absent from their listing
+-- data returns 400 "Failed to decode VIN" forever) and which carries a trade-in figure the base
+-- MarketCheck tier has never had.
+--
+-- WHY PROVENANCE IS WORTH A COLUMN. The two disagree, and not always by a little. On one 2012
+-- Camaro, MarketCheck decoded a 1SS and Vehicle Databases a 1LT -- a V8 and a V6, roughly $16k
+-- against $9k -- and each figure is right for the car its vendor believed it was pricing. Without
+-- this column a stored value is a number with no origin, and "where did that come from?" is
+-- unanswerable at exactly the moment somebody asks it.
+--
+-- NULLABLE, no backfill. Existing rows were priced when there was only one source, and writing
+-- 'marketcheck' across them would be a guess dressed as a record -- some were seeded by hand.
+-- Null means "priced before this was tracked", which is the truth about those rows.
+ALTER TABLE "vehicles" ADD COLUMN "valuation_source" text;

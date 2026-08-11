@@ -180,6 +180,31 @@ export const vehicles = pgTable(
      */
     marketValueCheckedAt: timestamp('market_value_checked_at', { withTimezone: true }),
     /**
+     * True once the valuation vendor has told us it cannot price this car at all -- distinct from
+     * "not priced yet", which is what `est_market_value` being null means on its own.
+     *
+     * Without it the two are indistinguishable and the card says "coming soon" forever. Live
+     * example: a 2018 Cadillac CTS whose VIN NHTSA decodes cleanly and MarketCheck answers 422
+     * "unable to decode" for -- a real car simply absent from their data. It was re-asked on every
+     * nightly sweep and failed identically every time.
+     *
+     * NOT NULLABLE. There is no third state to hold: `false` means no conclusive refusal is on
+     * file, which covers both "priced" and "not asked yet" -- and `market_value_checked_at`
+     * already distinguishes those two.
+     */
+    valuationUnavailable: boolean('valuation_unavailable').notNull().default(false),
+    /**
+     * Which vendor produced the figures on this row: 'marketcheck' | 'vehicle_databases'.
+     *
+     * Two sources price these cars and they do not always agree -- on one 2012 Camaro they
+     * decoded a 1SS and a 1LT respectively, roughly $16k against $9k, each right for the car it
+     * thought it had. Without this column a value is a number with no provenance, and the first
+     * question anyone asks of a surprising one ("where did that come from?") is unanswerable.
+     *
+     * Null on rows priced before there was a second source.
+     */
+    valuationSource: text('valuation_source'),
+    /**
      * When the manufacturer's service schedule was fetched for THIS car, or null for never.
      * Set on a conclusive answer only -- real intervals, or the vendor saying it has none --
      * so a timeout is retried rather than remembered as a verdict.

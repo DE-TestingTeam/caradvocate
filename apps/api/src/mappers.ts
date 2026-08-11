@@ -43,8 +43,17 @@ export function toVehicle(
     estMarketValue: row.estMarketValue ?? undefined,
     tradeInLow: row.tradeInLow ?? undefined,
     tradeInHigh: row.tradeInHigh ?? undefined,
-    // Conclusive absence: checked at least once, and still no price. See marketValueSync.ts.
-    valuationUnavailable: row.estMarketValue == null && row.marketValueCheckedAt != null,
+    /*
+     * The vendor's own "we cannot price this car", now that there is a column holding it.
+     *
+     * The second clause is the rule this used to be entirely -- checked at least once and still
+     * no price -- kept because it is still true and still the only thing rows written before the
+     * column existed can say. It was never wrong; it was just unreachable in the case that
+     * mattered, since a decode failure set no marker at all and the car read as "not asked yet"
+     * forever. See services/marketValueSync.ts.
+     */
+    valuationUnavailable:
+      row.valuationUnavailable || (row.estMarketValue == null && row.marketValueCheckedAt != null),
     valueTrend: [...valuePoints]
       .sort((a, b) => a.position - b.position)
       .map((point) => ({ month: point.monthLabel, value: point.value })),

@@ -33,7 +33,7 @@ import { getOwnerReports } from '../services/complaintSync.js';
 import { loadMaintenanceItems, toMaintenanceItem } from '../services/maintenanceDue.js';
 import { ensureMaintenanceSchedule } from '../services/maintenanceScheduleSync.js';
 import { ensureMarketValue } from '../services/marketValueSync.js';
-import { modelMatches, type ModelKey } from '../services/modelFeed.js';
+import { modelMatches, readSyncState, type ModelKey, type SyncState } from '../services/modelFeed.js';
 import { getModelRecalls } from '../services/recallSync.js';
 import { decodeVin } from '../services/vinDecode.js';
 import { HttpError } from '../lib/httpError.js';
@@ -68,6 +68,41 @@ vehicleRouter.get('/', async (req, res) => {
 vehicleRouter.patch('/', validateBody(updateVehicleSchema), async (req, res) => {
   const vehicle = await requireOwnVehicle(req);
 
+  /*
+   * A CHANGED VIN MAKES EVERY VIN-KEYED VERDICT ABOUT A DIFFERENT CAR, so they are thrown away
+   * and asked again. Both markers below are deliberately sticky -- a valuation is not re-asked
+   * for a month, and a factory schedule is fetched once per car and never again -- which is right
+   * while the VIN is right and wrong the moment it changes.
+   *
+   * The case is not hypothetical: someone mistypes a VIN at onboarding, the vendors answer about
+   * a car that is not theirs (or refuse to answer at all), and correcting it leaves both verdicts
+   * frozen. The valuation card would go on saying "we can't value this car" for thirty days about
+   * a VIN no longer on file, and the upkeep list would go on showing another vehicle's factory
+   * intervals forever.
+   *
+   * The trend points go too: they price the old VIN, and a chart that carries them across is
+   * drawing one car's history under another car's name.
+   *
+   * NOT the maintenance ITEMS. `service_records.maintenance_item_id` points at those rows, so
+   * deleting them would cut an owner's logged history loose -- the sync updates known labels in
+   * place and appends the rest, which is the same merge it does on any refetch.
+   */
+  const vinChanged = req.body.vin !== undefined && req.body.vin !== vehicle.vin;
+  const resetForNewVin = vinChanged
+    ? {
+        estMarketValue: null,
+        tradeInLow: null,
+        tradeInHigh: null,
+        marketValueCheckedAt: null,
+        valuationUnavailable: false,
+        maintenanceScheduleCheckedAt: null,
+      }
+    : {};
+
+  if (vinChanged) {
+    await req.db.delete(vehicleValuePoints).where(eq(vehicleValuePoints.vehicleId, vehicle.id));
+  }
+
   let [updated] = await req.db
     .update(vehicles)
     // A mileage in the body is the owner telling us the odometer as of now -- from Account, or
@@ -78,7 +113,10 @@ vehicleRouter.patch('/', validateBody(updateVehicleSchema), async (req, res) => 
     // Unlike the ratchet in services/odometer.ts this accepts a LOWER figure. It has to: an
     // owner correcting a mistyped 1,210,000 back to 121,000 has nowhere else to do it, and that
     // is the documented escape hatch for the ratchet's one sharp edge.
-    .set(req.body.mileage == null ? req.body : { ...req.body, mileageUpdatedAt: new Date() })
+    .set({
+      ...(req.body.mileage == null ? req.body : { ...req.body, mileageUpdatedAt: new Date() }),
+      ...resetForNewVin,
+    })
     .where(eq(vehicles.id, vehicle.id))
     .returning();
 
@@ -165,7 +203,21 @@ vehicleRouter.get('/maintenance', async (req, res) => {
   const checked = await requireOwnVehicle(req);
   const items = await loadMaintenanceItems(req.db, checked);
 
-  res.json({ items, status: maintenanceStatus(checked, items.length) } satisfies MaintenanceReport);
+  /*
+   * Only asked when the list is empty, and only then does it cost a query: an empty list is the
+   * one case that has to explain itself, and "the vendor did not answer" is an explanation the
+   * car row alone cannot give -- it records conclusive answers and stays null for everything else.
+   */
+  const sync =
+    items.length === 0
+      ? await readSyncState(req.db, 'maintenance_schedule', {
+          year: checked.year,
+          make: checked.make,
+          model: checked.model,
+        })
+      : undefined;
+
+  res.json({ items, status: maintenanceStatus(checked, items.length, sync) } satisfies MaintenanceReport);
 });
 
 /**
@@ -178,6 +230,7 @@ vehicleRouter.get('/maintenance', async (req, res) => {
 function maintenanceStatus(
   vehicle: { vin: string | null; maintenanceScheduleCheckedAt: Date | null },
   itemCount: number,
+  sync: SyncState | undefined,
 ): MaintenanceCheckStatus {
   if (itemCount > 0) return 'ok';
   // Checked first: the lookup is VIN-keyed, so without one it is never even attempted.
@@ -185,6 +238,13 @@ function maintenanceStatus(
   // Marked means the vendor gave a conclusive answer, and an empty list with one can only mean
   // it had no schedule for this vehicle. The car is never asked again, so nothing is coming.
   if (vehicle.maintenanceScheduleCheckedAt) return 'none_published';
+  /*
+   * Asked, and nobody answered. This used to fall through to `pending`, which tells the owner it
+   * "should fill in on a later visit" -- a promise nothing is working towards when the vendor is
+   * answering 403 to every call until the monthly allowance resets. A tried-and-failed sync with
+   * the car still unmarked can only be that: a conclusive answer would have marked the car.
+   */
+  if (sync && !sync.succeededAt) return 'unreachable';
   return 'pending';
 }
 

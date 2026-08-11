@@ -38,6 +38,14 @@ export interface MarketValueLookup {
 export type MarketCheckResult =
   | { outcome: 'ok'; price: number }
   | { outcome: 'no_record' }
+  /**
+   * MarketCheck could not decode the VIN. NOT resolved here, because this file cannot tell the
+   * two causes apart and they demand opposite responses: one car missing from their data is a
+   * fact about that car, while a key without the decode entitlement fails this way on EVERY car
+   * and marking them all unpriceable would be a disaster. Only the caller can see whether other
+   * cars are pricing -- see services/marketValueSync.ts.
+   */
+  | { outcome: 'decode_failed' }
   | { outcome: 'unavailable' };
 
 /** One GET against MarketCheck's base-tier predict endpoint. Never throws. */
@@ -109,12 +117,11 @@ const DECODE_FAILURE = /failed to decode vin/i;
 function failure(status: number, detail: string): MarketCheckResult {
   if (status === 400) {
     if (DECODE_FAILURE.test(detail)) {
-      console.warn(
-        'MarketCheck could not decode a VIN for pricing (400). If this is happening for every ' +
-          'vehicle, the key lacks the VIN decode entitlement that the predict endpoint depends ' +
-          'on -- check /v2/decode/car/{vin}/specs, which answers 401 in that case.',
-      );
-      return { outcome: 'unavailable' };
+      // Handed up undecided. Reading it as transient here is what left a real car being re-asked
+      // nightly, forever, with the same answer every time; reading it as conclusive would blank
+      // every car the day the key lost its decode entitlement. The caller has the context to
+      // choose -- check /v2/decode/car/{vin}/specs if you need to tell them apart by hand.
+      return { outcome: 'decode_failed' };
     }
     // A 400 we cannot read is not evidence of anything. An empty or non-JSON body happens on
     // gateway errors and truncated responses, and turning that into `no_record` would be the

@@ -312,6 +312,20 @@ const CASES: Case[] = [
     expect: 'worth_questioning',
   },
   {
+    name: 'the supplier never answered',
+    because: 'a spent call allowance must not be served as a considered "not enough to say"',
+    input: {
+      repairSlug: 'coolant-flush',
+      repairName: 'Coolant Flush',
+      mileageAtAssessment: 100_000,
+      context: { promptedBy: 'shop_suggested' },
+      scheduleIsFactory: false,
+      sourceUnavailable: true,
+    },
+    expect: 'not_enough',
+    expectShortfall: 'source_unavailable',
+  },
+  {
     name: 'a repair no longer in the catalogue',
     because: 'a retired repairId must degrade, not throw',
     input: {
@@ -356,7 +370,7 @@ for (const testCase of CASES) {
 
   // What the owner actually reads when Claude is unconfigured or slow. Printed because it is a
   // shipping answer and not a placeholder -- if it reads badly here, it reads badly in the app.
-  const verdict = necessityVerdict(finding.band);
+  const verdict = necessityVerdict(finding.band, finding.shortfall);
   console.log(`      card: ${verdict.headline} [${verdict.badge}]`);
   console.log(`      body: ${composeBody(finding)}`);
 }

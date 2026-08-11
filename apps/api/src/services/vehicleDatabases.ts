@@ -20,6 +20,33 @@ const BASE = 'https://api.vehicledatabases.com';
  */
 const TIMEOUT_MS = 8000;
 
+/**
+ * How long a vendor-wide refusal is honoured before one call is let through to test it.
+ *
+ * WHY THIS EXISTS. A 401 or a 403 is not about the vehicle being asked for -- a rejected key and
+ * a spent call allowance both answer the same way to EVERY call until somebody acts. The retry
+ * gates upstream are per model, so on 11 August 2026 six models sat on their own 15-minute and
+ * hourly clocks, each independently rediscovering the same fact: roughly twenty-four guaranteed
+ * 403s an hour while anyone was using the app.
+ *
+ * services/modelFeed.ts reasons that this is harmless, on the grounds that "a rejected call is
+ * not a billed call". That is an assumption about someone else's billing, and if it is wrong the
+ * allowance is being spent on being told the allowance is spent -- a spiral that cannot end while
+ * the app is in use. This costs nothing to be right about either way.
+ *
+ * AN HOUR, not a day. The refusal we are actually recovering from ends on a monthly reset that we
+ * cannot see, so the probe interval decides how long the app stays dark after the vendor comes
+ * back. An hour caps that at an hour and costs at most ~24 calls a month; a day would cost one
+ * and could leave the paid feature empty for a day after it had no reason to be.
+ *
+ * IN MEMORY, not a column. Losing it on restart costs exactly one extra probe, and a table would
+ * make an operator's "clear it and try now" a migration rather than a restart.
+ */
+const REFUSAL_PROBE_MS = 60 * 60 * 1000;
+
+/** When the vendor last refused everything, or undefined if it is not currently refusing. */
+let refusedAt: Date | undefined;
+
 export type VdbResult =
   | { outcome: 'ok'; body: unknown }
   | { outcome: 'no_record' }
@@ -37,6 +64,10 @@ export async function requestVehicleDatabases(
   // Not configured is a deployment state, not an error.
   if (!key) return { outcome: 'unavailable' };
 
+  // Known to be refusing everything. Indistinguishable to the caller from the vendor being
+  // unreachable, which is exactly what it is -- see REFUSAL_PROBE_MS.
+  if (refusalInForce(new Date())) return { outcome: 'unavailable' };
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -46,7 +77,12 @@ export async function requestVehicleDatabases(
       headers: { 'x-authkey': key, Accept: 'application/json' },
     });
 
-    if (!response.ok) return failure(response.status, path);
+    // The body is read only for a 400, and only to be logged: that is the one status whose
+    // meaning callers cache as a fact about the vehicle. See `failure`.
+    if (!response.ok) {
+      const detail = response.status === 400 ? await readBodyText(response) : '';
+      return failure(response.status, path, detail);
+    }
 
     const body = (await response.json()) as unknown;
     if (!isSuccessEnvelope(body)) return { outcome: 'unavailable' };
@@ -65,20 +101,78 @@ export async function requestVehicleDatabases(
  * both are operator problems that otherwise present as missing data rather than as
  * something somebody has to go and fix.
  */
-function failure(status: number, path: string): VdbResult {
+function failure(status: number, path: string, detail = ''): VdbResult {
   if (status === 400) {
-    // VDB's shape for "Record(s) were not found". We build every path here, so a 400
-    // is about the vehicle rather than the request.
+    /*
+     * VDB's shape for "Record(s) were not found". We build every path here, so a 400 should be
+     * about the vehicle rather than the request -- and callers treat it as one: repair pricing
+     * caches it for the freshness window, and the schedule sync marks the car as having no
+     * factory schedule FOREVER.
+     *
+     * LOGGED, because that assumption is now in doubt. On 11 August 2026 a 2004 Passat came back
+     * `no_record` from the market-value endpoint during a burst of calls, then priced normally
+     * through this same client minutes later. A 400 that is really a throttle -- the plans sell a
+     * credits-per-SECOND limit, one on the entry tier -- would be cached as "this car has no
+     * data" and never revisited. Nobody could tell which it had been afterwards, because the body
+     * was discarded here. Now it is not, so the next occurrence is diagnosable rather than a
+     * theory worth acting on blind.
+     */
+    console.warn(
+      `Vehicle Databases answered 400 for ${path}, read as "no record": ${detail.slice(0, 200) || '(empty body)'}`,
+    );
     return { outcome: 'no_record' };
   }
   if (status === 401) {
-    console.warn('Vehicle Databases rejected VEHICLEDATABASES_API_KEY (401). Repair pricing is off until it is fixed.');
+    refusedAt = new Date();
+    console.warn(
+      'Vehicle Databases rejected VEHICLEDATABASES_API_KEY (401). Repair pricing is off until it ' +
+        'is fixed; no further calls will be made for an hour beyond one probe.',
+    );
   } else if (status === 403) {
-    console.warn('Vehicle Databases call quota is spent (403). Repair pricing is degraded until the allowance resets.');
+    refusedAt = new Date();
+    console.warn(
+      'Vehicle Databases call quota is spent (403). Repair pricing and factory schedules are ' +
+        'degraded until the allowance resets; no further calls will be made for an hour beyond ' +
+        'one probe.',
+    );
   } else {
     console.warn(`Vehicle Databases returned ${status} for ${path}.`);
   }
   return { outcome: 'unavailable' };
+}
+
+/**
+ * Whether the vendor is currently refusing everything -- and, when the probe interval has
+ * elapsed, disarms itself so exactly ONE call gets through to find out.
+ *
+ * Disarming here rather than after a successful probe is what makes the probe a probe: if that
+ * call is refused too, `failure` re-arms it and the next hour is quiet again. If it succeeds,
+ * there was nothing to re-arm. Either way one call per interval reaches the vendor, never more.
+ */
+function refusalInForce(now: Date): boolean {
+  if (!refusedAt) return false;
+  if (now.getTime() - refusedAt.getTime() >= REFUSAL_PROBE_MS) {
+    refusedAt = undefined;
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Whether the vendor is refusing every call right now, for logging and for scripts that would
+ * rather report a spent allowance than grind through a fleet making calls that cannot land.
+ */
+export function vehicleDatabasesIsRefusing(now: Date = new Date()): boolean {
+  return refusedAt !== undefined && now.getTime() - refusedAt.getTime() < REFUSAL_PROBE_MS;
+}
+
+/** The error body as text, or empty if it cannot be read. Never throws -- this is for a log line. */
+async function readBodyText(response: Response): Promise<string> {
+  try {
+    return (await response.text()).replace(/\s+/g, ' ').trim();
+  } catch {
+    return '';
+  }
 }
 
 function isSuccessEnvelope(body: unknown): boolean {

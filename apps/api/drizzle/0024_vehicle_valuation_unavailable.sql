@@ -1,0 +1,19 @@
+-- "We cannot price this car" -- a verdict the app could describe and never record.
+--
+-- `valuationUnavailable` already existed in the shared types and ValueCard already read it and
+-- had a message for it. There was no column and nothing ever wrote one, so it was permanently
+-- false and the card's "we can't value this car" branch was unreachable. A car the vendor had
+-- refused looked exactly like a car nobody had got round to pricing yet: both said "coming soon",
+-- and for one of them nothing was coming.
+--
+-- FOUND ON A REAL CAR. A 2018 Cadillac CTS, VIN 1G6A85SS3J0118332. NHTSA decodes it cleanly --
+-- "check digit correct" -- and MarketCheck answers 422 "unable to decode": an ordinary car simply
+-- absent from their data. Because the client read that as a transient failure, the car was
+-- re-asked on every nightly sweep and failed identically each time, forever.
+--
+-- NOT NULLABLE, DEFAULT FALSE, unlike the necessity columns in 0023 which needed a "never judged"
+-- state. There is no third state here: false means no conclusive refusal is on file, and
+-- `market_value_checked_at` already separates "priced" from "never asked". A default of false is
+-- therefore a fact about every existing row rather than an assumption about one -- no car has
+-- been refused until the sync says so.
+ALTER TABLE "vehicles" ADD COLUMN "valuation_unavailable" boolean DEFAULT false NOT NULL;

@@ -201,9 +201,14 @@ export interface MaintenanceItem {
  * - `none_published` -- asked and answered: the vendor has no schedule for this vehicle. This
  *   is final. The car is marked and never asked again, so nothing further will arrive.
  * - `no_vin` -- the lookup is keyed by VIN and this car has none, so it was never attempted.
- *   The only one of the three the owner can do something about.
+ *   The only one an owner can do something about.
+ * - `unreachable` -- we asked and the supplier did not answer. NOT `pending`, which promises
+ *   something is coming: a spent call allowance answers the same way every hour of every day,
+ *   so "should fill in on a later visit" is a promise nothing is working towards. This is the
+ *   same distinction RecallReport draws with `unreachable`, and it exists for the same reason --
+ *   an owner must be able to tell "we checked" from "we could not check".
  */
-export type MaintenanceCheckStatus = 'ok' | 'pending' | 'none_published' | 'no_vin';
+export type MaintenanceCheckStatus = 'ok' | 'pending' | 'none_published' | 'no_vin' | 'unreachable';
 
 /**
  * Upkeep jobs plus how the schedule lookup ended, for the same reason RecallReport carries a
@@ -455,7 +460,16 @@ export interface NecessitySignal {
 }
 
 /** Why a band came out `not_enough` -- three states an owner should not be told the same thing about. */
-export type NecessityShortfall = 'never_asked' | 'nothing_to_check_against' | 'nothing_spoke_either_way';
+export type NecessityShortfall =
+  | 'never_asked'
+  | 'nothing_to_check_against'
+  | 'nothing_spoke_either_way'
+  /**
+   * A supplier we needed did not answer, so this is not a verdict at all. Kept apart from
+   * `nothing_to_check_against` -- which means we asked and there was genuinely nothing -- because
+   * a spent call allowance must never read as a considered conclusion about someone's repair.
+   */
+  | 'source_unavailable';
 
 /**
  * The verdict and everything it rests on, snapshotted with the assessment.

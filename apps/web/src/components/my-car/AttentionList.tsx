@@ -236,7 +236,12 @@ export function AttentionList({
   if (recallsFailed || (recalls && recalls.status !== 'ok')) {
     unknowns.push({ name: 'recalls', target: 'recalls' });
   }
-  if (maintenanceFailed) unknowns.push({ name: 'upkeep', target: 'maintenance' });
+  // `unreachable` joins the request failing, for the reason the recall and complaint feeds above
+  // are tested on their status and not just their transport: a supplier that refuses every call
+  // is as unchecked as one we never got a response from, and `no_vin` has its own row already.
+  if (maintenanceFailed || maintenance?.status === 'unreachable') {
+    unknowns.push({ name: 'upkeep', target: 'maintenance' });
+  }
   if (issuesFailed || (issues && issues.status !== 'ok')) {
     unknowns.push({ name: 'owner complaints', target: 'issues' });
   }

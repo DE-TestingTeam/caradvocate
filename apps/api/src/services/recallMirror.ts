@@ -87,6 +87,37 @@ export async function lookupMirroredRecalls(
   }
 }
 
+/**
+ * Whether this make and model appear in the file AT ALL, in any year -- which is what turns zero
+ * rows from "we may be spelling it wrong" into "no campaigns for this year".
+ *
+ * THE DISTINCTION THE HEADER INSISTS ON IS ABOUT THE NAME, NOT THE CAR. Zero rows is ambiguous
+ * only because the model might be filed under a spelling we did not try. If the same make and
+ * model carry campaigns in other years, that doubt is settled: the file uses this exact name, so
+ * a year with nothing in it has nothing in it.
+ *
+ * Found on a real 2010 Mitsubishi Eclipse. The file holds Eclipse recalls for 2005 through 2009
+ * and Eclipse Cross for 2018 and 2019, and nothing for 2010 -- because that year has no
+ * campaigns. NHTSA's live API refuses every name for it, including the two its own published
+ * list offers ("ECLIPSE HATCHBACK", "ECLIPSE SPYDER" both answer 400), so the car reached its
+ * owner as "Couldn't check recalls" when the truth was that it is clear.
+ *
+ * That failure mode is not rare, and it lands on the worst possible screen: most cars have no
+ * recalls in most years, and the first thing a new owner saw was the app's most alarming card.
+ *
+ * A model absent from the file entirely still answers `undefined`. "GMT-400" is the case that
+ * matters -- a platform code no manufacturer sells -- and it must stay unknown rather than clear.
+ */
+async function nameIsInTheFile(db: Database, key: RecallLookup): Promise<boolean> {
+  const [row] = await db
+    .select({ year: nhtsaRecallModels.year })
+    .from(nhtsaRecallModels)
+    .where(and(eq(nhtsaRecallModels.make, key.make), eq(nhtsaRecallModels.model, key.model)))
+    .limit(1);
+
+  return row !== undefined;
+}
+
 async function queryMirror(db: Database, lookup: RecallLookup): Promise<FetchedRecall[] | undefined> {
   const key = normaliseKey(lookup);
 
@@ -115,7 +146,7 @@ async function queryMirror(db: Database, lookup: RecallLookup): Promise<FetchedR
       ),
     );
 
-  if (rows.length === 0) return undefined;
+  if (rows.length === 0) return (await nameIsInTheFile(db, key)) ? [] : undefined;
 
   return rows.map((row) => ({
     campaignNumber: row.campaignNumber,

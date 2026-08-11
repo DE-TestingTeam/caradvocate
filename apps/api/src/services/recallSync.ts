@@ -107,12 +107,26 @@ function statusOf(sync: SyncState | undefined): RecallCheckStatus {
 async function syncModelRecalls(db: Database, lookup: RecallLookup, now: Date): Promise<boolean> {
   const result = await resolveAndFetch(db, lookup);
 
-  // NHTSA answered and files nothing under any name this car resolves to. A real answer, so
-  // it is recorded as one and earns the full freshness window -- but qualified, so it can
-  // never reach an owner as "no open recalls".
+  /*
+   * NHTSA's live API files nothing under any name this car resolves to -- but that is a statement
+   * about its VOCABULARY, and the mirror gets asked before it becomes a statement about the car.
+   *
+   * This used to return here, and a 2010 Mitsubishi Eclipse is what it cost: the API refuses
+   * every name for it, including the two NHTSA's own published list offers, so its owner was
+   * shown "Couldn't check recalls" on a car the bulk file can prove is clear. The mirror holds
+   * Eclipse campaigns for 2005-2009 and none for 2010, which -- the name being confirmed by those
+   * other years -- is an answer. See `nameIsInTheFile` in services/recallMirror.ts.
+   *
+   * `model_not_listed` is still the answer when the mirror cannot help either, and still earns
+   * the full freshness window: two sources have now been asked instead of one.
+   */
   if (result.outcome === 'unknown_model') {
-    await recordCheck(db, FEED, lookup, now, true, 'model_not_listed');
-    return true;
+    const mirrored = await lookupMirroredRecalls(db, lookup);
+    if (mirrored === undefined) {
+      await recordCheck(db, FEED, lookup, now, true, 'model_not_listed');
+      return true;
+    }
+    return storeRecalls(db, lookup, now, mirrored);
   }
 
   // The mirror is asked only when the API gave no answer at all.
@@ -124,6 +138,22 @@ async function syncModelRecalls(db: Database, lookup: RecallLookup, now: Date): 
     return false;
   }
 
+  return storeRecalls(db, lookup, now, fetched);
+}
+
+/**
+ * Replaces this model's mirrored recalls with what a source just returned, and records the check.
+ *
+ * Extracted so the `unknown_model` branch above can store a mirror answer through exactly the
+ * same path as a live one -- a second copy of the delete-then-upsert would be a second place for
+ * a superseded campaign to linger.
+ */
+async function storeRecalls(
+  db: Database,
+  lookup: RecallLookup,
+  now: Date,
+  fetched: FetchedRecall[],
+): Promise<boolean> {
   await db.transaction(async (tx) => {
     const keep = fetched.map((recall) => recall.campaignNumber);
 

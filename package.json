@@ -27,6 +27,8 @@
     "verify:token": "tsx --env-file-if-exists=.env scripts/verifyToken.mts",
     "check:necessity": "tsx scripts/checkNecessity.mts",
     "probe:ask": "tsx --env-file-if-exists=.env scripts/probeAskGuardrails.mts",
+    "probe:breaker": "tsx --env-file-if-exists=.env scripts/probeVendorBreaker.mts",
+    "probe:valuation": "tsx --env-file-if-exists=.env scripts/probeValuation.mts",
     "test:chat": "tsx --env-file-if-exists=.env scripts/testChat.mts"
   }
 }

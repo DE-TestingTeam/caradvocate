@@ -20,7 +20,7 @@
  * schedule lists, what the owner has already had done.
  */
 import Anthropic from '@anthropic-ai/sdk';
-import type { NecessityBand } from '@caradvocate/shared';
+import type { NecessityBand, NecessityShortfall } from '@caradvocate/shared';
 import { env } from '../env.js';
 import type { NecessityFinding } from './necessity.js';
 
@@ -75,6 +75,8 @@ const SHORTFALLS: Readonly<Record<string, string>> = {
     'We hold no owner-report pattern for this part on this model, and no manufacturer schedule for this car, so there was nothing independent to check it against.',
   nothing_spoke_either_way:
     'We checked what we hold about this car and this model, and none of it points either way.',
+  source_unavailable:
+    'We could not reach the service that holds this information, so we have not been able to check this repair at all. This is not a finding about your car — try again later.',
 };
 
 export interface NecessityProse {
@@ -88,7 +90,19 @@ export interface NecessityProse {
  * deterministic (db/fixtures.ts) and so composes its prose rather than calling a model -- the
  * same three words an owner sees either way, because these were never the model's to choose.
  */
-export function necessityVerdict(band: NecessityBand): { headline: string; badge: string } {
+export function necessityVerdict(
+  band: NecessityBand,
+  shortfall?: NecessityShortfall,
+): { headline: string; badge: string } {
+  /*
+   * The one place a shortfall changes the words on the card. "Not enough to say either way" is a
+   * conclusion -- we looked at both sides and they balanced -- and putting it over a supplier
+   * that never answered is the misreport this whole change exists to stop. Still the same band:
+   * `not_enough` is correct, it is only the wording that was overclaiming.
+   */
+  if (shortfall === 'source_unavailable') {
+    return { headline: 'We could not check this', badge: 'COULD NOT CHECK' };
+  }
   const { headline, badge } = VERDICTS[band];
   return { headline, badge };
 }
@@ -100,10 +114,14 @@ export function necessityVerdict(band: NecessityBand): { headline: string; badge
  * the composed body. An assessment must not fail to save because a language model was busy.
  */
 export async function writeNecessityProse(finding: NecessityFinding): Promise<NecessityProse> {
-  const verdict = VERDICTS[finding.band];
+  const verdict = necessityVerdict(finding.band, finding.shortfall);
   const body = composeBody(finding);
 
-  if (!env.ANTHROPIC_API_KEY) return { ...verdict, body };
+  // Nothing to phrase and nothing to risk phrasing: we did not get to look, so the sentence is
+  // already the whole answer and a model call would only be an opportunity to embellish it.
+  if (!env.ANTHROPIC_API_KEY || finding.shortfall === 'source_unavailable') {
+    return { ...verdict, body };
+  }
 
   try {
     const rewritten = await rewrite(finding, body);
@@ -188,7 +206,6 @@ Rules:
 /** The rewritten body, or undefined if the model gave back nothing usable. */
 async function rewrite(finding: NecessityFinding, composed: string): Promise<string | undefined> {
   const verdict = VERDICTS[finding.band];
-
   const facts = finding.signals
     .map((signal) => `- [${signal.stance}] ${signal.detail}`)
     .join('\n');

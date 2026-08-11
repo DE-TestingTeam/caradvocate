@@ -38,7 +38,7 @@ import type {
 import type { Database } from '../db/index.js';
 import { modelOwnerReports, serviceRecords } from '../db/schema.js';
 import { loadMaintenanceItems } from './maintenanceDue.js';
-import { modelMatches, type ModelKey } from './modelFeed.js';
+import { modelMatches, readSyncState, type ModelKey } from './modelFeed.js';
 
 /** What kind of evidence can bear on a repair at all. See REPAIR_EVIDENCE. */
 type RepairKind = 'wear' | 'failure';
@@ -185,6 +185,12 @@ export interface NecessityInput {
   failureRecord?: ComponentFailureRecord;
   scheduledJob?: ScheduledJobStatus;
   /**
+   * True when a source this verdict needed was asked and did not answer -- a spent call
+   * allowance, an outage. Overrides every other shortfall: "we could not check" is not a
+   * finding about the repair, and must never be served as one.
+   */
+  sourceUnavailable?: boolean;
+  /**
    * True only when this car's intervals are the MANUFACTURER'S. The caller decides, because only
    * it can see `vehicles.maintenance_schedule_checked_at`, and the seed writes intervals too
    * (services/maintenanceScheduleSync.ts). False degrades every schedule signal to silence: a
@@ -274,11 +280,27 @@ export function assessNecessity(input: NecessityInput): NecessityFinding {
     band: 'not_enough',
     signals,
     checked,
-    shortfall:
-      checked.failureRecord || checked.factorySchedule
-        ? 'nothing_spoke_either_way'
-        : 'nothing_to_check_against',
+    shortfall: shortfallFor(input, checked),
   };
+}
+
+/**
+ * Why nothing could be said, ranked by which fact the owner most needs.
+ *
+ * AN UNREACHABLE SOURCE OUTRANKS BOTH OF THE OTHERS. "There was nothing to check this against"
+ * is a statement about the world; "we could not reach the supplier" is a statement about us, and
+ * on 11 August 2026 the second was being served as the first -- Vehicle Databases had answered
+ * 403 "out of call volume quota" to every call for days, and the verdict came out reading as a
+ * considered "not enough to say". Being unable to ask is not a finding.
+ */
+function shortfallFor(
+  input: NecessityInput,
+  checked: { failureRecord: boolean; factorySchedule: boolean },
+): NecessityShortfall {
+  if (input.sourceUnavailable) return 'source_unavailable';
+  return checked.failureRecord || checked.factorySchedule
+    ? 'nothing_spoke_either_way'
+    : 'nothing_to_check_against';
 }
 
 /**
@@ -618,6 +640,16 @@ export async function loadNecessityFinding(
   const wantsFailureRecord = evidence?.kind === 'failure' && evidence.component !== undefined;
   const wantsSchedule = scheduleIsFactory && evidence?.scheduleLabel !== undefined;
 
+  /*
+   * Only for a WEAR job on a car with no schedule, which is the one shape where a silent vendor
+   * changes the answer. A failure job never reads the schedule, and a car already carrying
+   * intervals got its answer whatever happened since -- neither needs the query.
+   */
+  const scheduleSync =
+    evidence?.kind === 'wear' && !scheduleIsFactory
+      ? await readSyncState(db, 'maintenance_schedule', vehicle)
+      : undefined;
+
   // One round, not a chain: this sits on the owner's create request. Queries whose answer could
   // not be used are not issued at all -- a wear job never reads the failure record.
   const [failureRows, scheduledItems, historyRows] = await Promise.all([
@@ -688,6 +720,10 @@ export async function loadNecessityFinding(
         }
       : {}),
     scheduleIsFactory,
+    // Asked and unanswered. A conclusive reply would have marked the car, so an unmarked car
+    // with a failed sync on file was never actually checked -- see routes/vehicle.ts, which
+    // draws the same distinction for the upkeep list.
+    ...(scheduleSync && !scheduleSync.succeededAt ? { sourceUnavailable: true } : {}),
     ...(lastService
       ? { lastSameRepair: { date: lastService.serviceDate, mileage: lastService.mileageAtService } }
       : {}),

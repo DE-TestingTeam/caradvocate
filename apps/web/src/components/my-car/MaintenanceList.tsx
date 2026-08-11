@@ -109,6 +109,23 @@ function NothingToShow({ status }: { status: MaintenanceCheckStatus }) {
     );
   }
 
+  if (status === 'unreachable') {
+    return (
+      // NOT the `pending` wording above, and the difference is the whole point of this branch:
+      // that one says "should fill in on a later visit", which is a promise nothing is working
+      // towards while the supplier is refusing every call. Says what happened, and does not
+      // guess at when -- we do not know when an allowance resets or an outage ends.
+      <p className="flex items-start gap-2 py-2 text-sm text-muted-foreground">
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning-strong" />
+        <span>
+          We could not reach the service that holds this car's factory schedule. This is not a
+          finding about your car — we have not been able to ask. We keep retrying, and this fills
+          in once they answer.
+        </span>
+      </p>
+    );
+  }
+
   return (
     <p className="flex items-start gap-2 py-2 text-sm text-muted-foreground">
       <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning-strong" />

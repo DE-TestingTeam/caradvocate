@@ -50,7 +50,7 @@ Four invariants:
 | Free | Maintenance schedule | ✅ Factory intervals from Vehicle Databases, VIN required |
 | Free | Model known issues | ✅ |
 | Free | Ask CA Q&A + banded severity | ✅ |
-| Paid | Necessity check | ⚠️ Built 10 August; verdict quality is gated on the complaint mirror |
+| Paid | Necessity check | ⚠️ Built 10 August; verdict quality is gated on vendor coverage |
 | Paid | Parts benchmark | ⚠️ Total only, no itemisation |
 | Paid | Labor baseline | ⚠️ Dollars and hours shown; no rate, and no vendor publishes one |
 | Paid | Past assessments · "Repair complete" writeback | ✅ |
@@ -105,9 +105,21 @@ assessment lands on `not_enough`** — correct, and a change from the fixture te
 68,400 miles with reported grinding..." as a hand-typed answer to a question the app could not yet
 answer. Verdicts get better as the mirror fills, not as the rules change.
 
-`npm run check:necessity` runs the rules over 14 hand-built cases offline and asserts each band,
+`npm run check:necessity` runs the rules over 20 hand-built cases offline and asserts each band,
 and prints the composed body for every one, since a case in the right band saying something an
-owner would not follow is still broken.
+owner would not follow is still broken. Six of those cases are regressions found by running the
+loader against the live database rather than by inventing inputs — including a sentence that
+claimed a car at 68,400 miles was "within the range" of reports clustering at 5,199–14,500, and a
+perfectly ordinary oil change 4,500 miles on being called out as "a short interval to be doing it
+again". A false accusation is the worst thing this feature can do, so a wear job with no factory
+interval now says nothing about a repeat at all.
+
+**A supplier that does not answer is its own verdict — added 11 August.** `source_unavailable`
+outranks every other shortfall, and the card reads "We could not check this" rather than "Not
+enough to say either way". The second is a conclusion; serving it over a spent call allowance was
+the app's own rule about three outcomes being broken in the one place that is paid for. The prose
+model is skipped entirely in that state: there is nothing to phrase, only an opportunity to
+embellish.
 
 **One hole is documented rather than closed.** `scheduleIsFactory` is derived from
 `vehicles.maintenance_schedule_checked_at`, which is set both when real intervals arrive and when
@@ -130,6 +142,24 @@ read as authoritative. A separate column on the sync would close it.
 
 **Not sourced: the trade-in range.** Premium-tier MarketCheck data this key does not carry.
 `tradeInLow`/`tradeInHigh` are null for every real car.
+
+**"Cannot be estimated" is now actually recorded — fixed 11 August.** It was described here as
+working and was not: `valuationUnavailable` existed in the shared types and `ValueCard` read it,
+but there was no column and nothing wrote one, so it was permanently false and the card's "we
+can't value this car" branch was unreachable. Migration `0024` adds it.
+
+The bug underneath was worse than the missing column. MarketCheck answers HTTP 400 "Failed to
+decode VIN" for a car absent from its data, and the client read that as transient — so the car was
+re-asked on every nightly sweep and failed identically every time, forever, while the card said
+"coming soon". Found on a real 2018 Cadillac CTS whose VIN **NHTSA decodes cleanly**; MarketCheck
+answers 422 "unable to decode" for it. The key is fine: the F-350 decoded and priced in the same
+minute.
+
+The client now hands a decode failure up undecided (`decode_failed`), because it cannot tell the
+two causes apart and they need opposite responses — one missing car is a fact about that car, a key
+without the decode entitlement fails this way on **every** car. `marketValueSync.ts` decides, and
+only calls it conclusive while some *other* car has priced within two refresh cycles. On the day a
+key breaks, that evidence disappears and every failure stays retryable.
 
 **3. Parts benchmark — one line, not a breakdown.** The vendor publishes no itemisation, so the
 sync writes a single row reading "All parts for this repair". Minor.
@@ -286,6 +316,35 @@ table — the single place that answers it, so the two cannot drift.
 - **Vehicle Databases is metered** and returns 403 on *every* call once the monthly allowance is
   spent. The code treats "no answer" differently from "no record", so a spent quota does not wipe
   out pricing we already hold.
+
+  **One refusal now stops the vendor being called at all.** A 401 or a 403 is not about the
+  vehicle being asked for: both answer the same way to *every* call until somebody acts. But the
+  retry gates in `modelFeed.ts` are per model, so six models sat on their own 15-minute and hourly
+  clocks each independently rediscovering the same fact — roughly **24 guaranteed 403s an hour**
+  while anyone used the app. `vehicleDatabases.ts` now holds one vendor-wide refusal in memory and
+  lets exactly one call an hour through to test it. `npm run probe:breaker` measures it the only
+  way it is observable — by whether a request leaves the machine — and reads
+  `884ms → unavailable (went to the vendor)` followed by three at `0ms`.
+
+  The hour is a deliberate figure: the refusal we are recovering from ends on a monthly reset we
+  cannot see, so the probe interval decides how long the app stays dark after the vendor comes
+  back. It caps that at an hour for at most ~24 calls a month.
+
+  **Note what this does NOT settle.** `modelFeed.ts` reasons that retrying a broken key is free
+  because "a rejected call is not a billed call". That is an assumption about someone else's
+  billing, still unverified — if it is wrong, the allowance was being spent on being told the
+  allowance was spent, and the breaker is what stops that spiral. Worth confirming on the vendor
+  dashboard: what the allowance is, when it resets, and whether rejected calls count against it.
+
+  **It was spent on 11 August, and nothing said so.** Six of ten cars had no repair pricing, four
+  had no factory schedule, the paid feature was empty for all of them, and the upkeep list told
+  those owners it was "still working out the manufacturer's service schedule … this should fill in
+  on a later visit" — a promise nothing was working towards. Three changes: `MaintenanceCheckStatus`
+  gains **`unreachable`**, distinct from `pending`, with wording that says what happened and does
+  not guess at when; the attention list counts it among "couldn't check", where the recall and
+  complaint feeds already were; and the API prints a **feed-health line at startup** beside the
+  keys, failures first. Degrading quietly is right for a request and wrong for an operator, and
+  this took someone thinking to run a query to notice.
 - **Repair pricing is per model with no fallback.** No data means the checker shows nothing rather
   than another car's prices. A Pathfinder judged against Civic brake prices sends the owner to argue
   with a shop that did nothing wrong.

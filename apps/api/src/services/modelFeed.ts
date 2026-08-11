@@ -6,7 +6,7 @@
  * once -- but the freshness window itself is per feed, because one of the three vendors bills
  * per call and the other two do not. See `FRESH_MS`.
  */
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import type { Database } from '../db/index.js';
 import { modelFeedSyncs } from '../db/schema.js';
 
@@ -109,6 +109,34 @@ export interface SyncState {
   checkedAt: Date;
   succeededAt: Date | null;
   outcome: SyncOutcome | null;
+}
+
+/**
+ * How each outside feed has been answering lately, for the startup banner.
+ *
+ * WHY THIS IS PRINTED AT ALL: on 11 August 2026 Vehicle Databases had been answering 403 "out of
+ * call volume quota" to every call for days. Six of ten cars had no repair pricing and four had
+ * no factory schedule, the paid feature was empty for all of them, and nothing anywhere said so.
+ * It surfaced only because someone thought to run a query. A failing supplier degrades this app
+ * quietly by design -- that is the right behaviour for a request, and the wrong one for an
+ * operator, who needs the same fact on one line beside the keys.
+ *
+ * Read once at boot and never again: this is orientation, not monitoring. It says what has been
+ * happening, not what is happening now.
+ */
+export async function feedHealth(db: Database): Promise<{ feed: string; ok: number; failed: number }[]> {
+  const rows = await db
+    .select({
+      feed: modelFeedSyncs.feed,
+      ok: sql<number>`count(*) filter (where ${modelFeedSyncs.succeededAt} is not null)`,
+      failed: sql<number>`count(*) filter (where ${modelFeedSyncs.succeededAt} is null)`,
+    })
+    .from(modelFeedSyncs)
+    .groupBy(modelFeedSyncs.feed);
+
+  return rows
+    .map((row) => ({ feed: row.feed, ok: Number(row.ok), failed: Number(row.failed) }))
+    .sort((a, b) => b.failed - a.failed || a.feed.localeCompare(b.feed));
 }
 
 /** The sync record for one feed and model, if it has ever been checked. */
